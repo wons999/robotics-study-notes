@@ -5,9 +5,10 @@ interface Props {
 }
 
 const { page, section } = Astro.props;
-const repo = 'wons999/robotics-study-notes';
+const repo = 'wons999/robotics-study-notes-feedback';
 const title = `[논문 Survey 피드백] ${page} - ${section}`;
 const body = [
+  '원본 사이트: https://wons999.github.io/robotics-study-notes/',
   `페이지: ${page}`,
   `섹션: ${section}`,
   '',
@@ -18,7 +19,7 @@ const href = `https://github.com/${repo}/issues/new?title=${encodeURIComponent(t
 ---
 
 <p class="section-feedback">
-  <a href={href} target="_blank" rel="noreferrer">이 섹션에 피드백 남기기</a>
+  <a href={href} target="_blank" rel="noreferrer">관리자 피드백 남기기</a>
 </p>
 
 <style>
