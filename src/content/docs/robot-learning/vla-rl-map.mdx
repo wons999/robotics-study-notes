@@ -1,0 +1,26 @@
+---
+title: VLA, RL, and Robot Learning Map
+description: A map for tracking modern robot learning research.
+---
+
+# VLA, RL, and Robot Learning Map
+
+## Where the Pieces Fit
+
+| Method | Strength | Risk |
+| --- | --- | --- |
+| Behavior cloning | Simple, stable, data-driven | Distribution shift and poor recovery |
+| Diffusion policy | Strong multimodal action modeling | Latency and data hunger |
+| Reinforcement learning | Can optimize contact-rich behavior | Reward design and sim-to-real gap |
+| VLA | General instruction-conditioned behavior | Embodiment mismatch and low-level control burden |
+| Residual learning | Adds learned correction to a controller | Residual can hide model or control issues |
+
+## System Lens
+
+When reading a robot learning paper, always identify:
+
+- The embodiment: mobile base, single arm, dual arm, full-body platform, or simulated agent.
+- The action space: joint position, end-effector delta, torque, gripper command, action tokens.
+- The control frequency and latency.
+- The data source: teleoperation, scripted policy, simulation, real robot, human videos.
+- The evaluation gap between benchmark tasks and real deployment.

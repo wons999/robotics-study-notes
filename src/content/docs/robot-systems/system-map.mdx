@@ -1,0 +1,27 @@
+---
+title: Robot Systems Map
+description: A map for organizing robotics hardware, sensing, control, learning, and evaluation questions.
+---
+
+# Robot Systems Map
+
+## Main Axes
+
+| Axis | What to Record |
+| --- | --- |
+| Mechanics | DoF, actuation, compliance, backlash, durability |
+| Sensing | observation sources, calibration, noise, latency, reliability |
+| Control | joint control, task-space control, impedance, safety constraints |
+| Learning | data collection, imitation policy, RL fine-tuning, residual control |
+| Evaluation | task success, robustness, recovery, repeatability, cycle time |
+
+## Working Hypothesis
+
+Robot behavior is not only a policy problem. It is a hardware, sensing, control, and data problem. Notes in this section should make those dependencies explicit.
+
+## Questions to Keep Asking
+
+- Which task failures are caused by perception, control, mechanics, or data?
+- What should be solved with model-based control before learning is added?
+- Which observations are stable enough for closed-loop policy inputs?
+- What action representation is natural for this system: joint command, task-space command, torque, or latent motor command?

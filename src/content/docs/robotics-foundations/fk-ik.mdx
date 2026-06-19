@@ -1,0 +1,43 @@
+---
+title: FK, IK, and Jacobian
+description: First foundation note for pose, kinematics, and inverse kinematics.
+---
+
+# FK, IK, and Jacobian
+
+## Why This Matters
+
+Robot manipulation depends on knowing where the end effector is, how joint motion changes its pose, and how to choose joint updates that move it toward a useful target without breaking constraints.
+
+## Core Terms
+
+| Term | Meaning | Practical Question |
+| --- | --- | --- |
+| FK | joint angles to end-effector pose | Where is the end effector now? |
+| IK | desired end-effector pose to joint angles | How do I move the robot there? |
+| Jacobian | local map from joint velocity to end-effector velocity | Which joints move the end effector in this direction? |
+| Singularity | configuration where motion directions are lost or amplified | Why did the solver suddenly become unstable? |
+| Redundancy | more DoF than task constraints | Which posture should the robot prefer? |
+
+## Minimal Numerical IK Loop
+
+```txt
+q <- current joint state
+repeat:
+  x <- FK(q)
+  e <- target_pose_error(x_target, x)
+  J <- jacobian(q)
+  dq <- J.T (J J.T + lambda^2 I)^-1 e
+  q <- q + alpha dq
+```
+
+## Notes for Manipulation Systems
+
+In manipulation, IK is rarely only about reaching a pose. Joint limits, collisions, contact, controller bandwidth, and object motion can all become part of the problem. A clean geometric solution can still be impractical if it ignores system constraints.
+
+## Open Questions
+
+- What coordinate frame conventions does our robot stack use?
+- Which task frame is the controller using?
+- Where are joint limits, collision constraints, and preferred postures encoded?
+- How should feedback modify an IK or impedance objective?

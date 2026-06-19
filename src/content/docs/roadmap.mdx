@@ -1,0 +1,52 @@
+---
+title: Study Roadmap
+description: A practical roadmap for rebuilding robotics fundamentals while tracking VLA, RL, and robotics research.
+---
+
+# Study Roadmap
+
+## North Star
+
+robotic systems에서 perception, control, and learning이 어떻게 연결되는지 설명하고, 작은 실험으로 검증하고, 논문 아이디어를 실제 시스템 제약과 비교할 수 있는 사람이 되는 것.
+
+## Phase 1: Foundations That Pay Rent
+
+| Week | Topic | Output |
+| --- | --- | --- |
+| 1 | SE(3), FK, coordinate frames | 2-link/6-DoF pose notebook, frame convention note |
+| 2 | Jacobian and numerical IK | damped least-squares IK implementation |
+| 3 | Dynamics and control | joint PD, computed torque, impedance control note |
+| 4 | Contact and manipulation basics | grasp/contact vocabulary, wrench/friction cone summary |
+
+## Phase 2: Manipulation & Robot Systems
+
+| Theme | Questions |
+| --- | --- |
+| Manipulation | What constraints make manipulation tasks difficult? |
+| Sensing | Which observations are useful for closed-loop behavior? |
+| Actuation | How do bandwidth, compliance, and limits shape the controller? |
+| System evaluation | Which metrics reveal real progress beyond demo success? |
+
+## Phase 3: Robot Learning Follow-up
+
+| Theme | What to Track |
+| --- | --- |
+| Imitation learning | data collection, teleoperation, action representation |
+| RL | reward design, sim-to-real, residual policy, contact-rich tasks |
+| Diffusion policy | action chunking, temporal consistency, latency |
+| VLA | vision-language grounding, low-level action decoding, cross-embodiment transfer |
+
+## Weekly Loop
+
+1. Pick one concept or paper.
+2. Write a one-page intuition note.
+3. Implement or reproduce a tiny version.
+4. Extract practical implications for robotics systems.
+5. Record open questions for the next week.
+
+## Reading Queue
+
+- Modern Robotics: mechanics, planning, and control.
+- Underactuated Robotics: dynamics, planning, and learning for control.
+- Robot manipulation learning surveys.
+- VLA surveys and recent robotics manipulation benchmarks.

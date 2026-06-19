@@ -1,0 +1,28 @@
+---
+title: VLA Survey Map
+description: A starting map for following vision-language-action model research.
+---
+
+# VLA Survey Map
+
+## What VLA Means Here
+
+A vision-language-action model connects visual observations and language instructions to robot actions. For manipulation, the hard part is not only semantic understanding; it is producing actions that survive embodiment constraints, latency, contact, and safety requirements.
+
+## Tracking Categories
+
+| Category | Notes to Capture |
+| --- | --- |
+| Architecture | monolithic, hierarchical, planner-policy split, action decoder |
+| Data | Open X-Embodiment, teleoperation, human videos, synthetic data |
+| Action representation | discrete tokens, continuous deltas, action chunks, flow/diffusion |
+| Embodiment | mobile base, single arm, dual arm, full-body platform, simulated agent |
+| Evaluation | task diversity, real robot success, generalization, safety |
+
+## Practical Reading Questions
+
+- Does the model directly control fingers or only arm/gripper actions?
+- Is the policy fast enough for closed-loop manipulation?
+- What assumptions are made about calibration, camera placement, and robot morphology?
+- How much task success comes from data scale versus controller quality?
+- Can the idea be tested in a small simulator before touching hardware?

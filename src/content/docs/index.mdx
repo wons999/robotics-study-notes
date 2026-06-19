@@ -1,0 +1,40 @@
+---
+title: Robotics Study Notes
+description: A working knowledge base for robotics foundations, control, and robot learning.
+template: splash
+hero:
+  tagline: 로보틱스 기초와 robot learning 연구를 정리하는 공부 노트.
+  actions:
+    - text: Open Roadmap
+      link: /roadmap/
+      icon: right-arrow
+      variant: primary
+    - text: Paper Template
+      link: /paper-notes/template/
+      icon: document
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Current Focus
+
+이 사이트는 기초 로보틱스와 최신 robot learning 연구를 같은 공간에서 연결하기 위한 작업 노트입니다. 목표는 논문을 모으는 것이 아니라, 시스템을 이해하고 작은 실험으로 검증할 수 있는 판단력을 쌓는 것입니다.
+
+<CardGrid>
+  <Card title="Robotics Foundations" icon="seti:config">
+    FK, IK, Jacobian, dynamics, trajectory generation, impedance control, whole-body control을 차근차근 정리합니다.
+  </Card>
+  <Card title="Robot Systems" icon="seti:folder">
+    sensing, actuation, manipulation, control architecture, evaluation을 시스템 관점에서 정리합니다.
+  </Card>
+  <Card title="Robot Learning" icon="seti:python">
+    imitation learning, RL, diffusion policy, VLA, multimodal policy learning을 구현 관점으로 따라갑니다.
+  </Card>
+  <Card title="Paper Notes" icon="seti:markdown">
+    각 논문을 문제 설정, 핵심 아이디어, 실험 조건, 내 연구와의 연결, 한계로 압축합니다.
+  </Card>
+</CardGrid>
+
+## Operating Principle
+
+매주 하나의 주제를 잡고 `개념 -> 수식 -> 작은 구현 -> 논문 연결 -> 후속 질문` 순서로 정리합니다. 좋은 노트는 나중에 다시 읽었을 때 “무엇을 이해했고, 어떤 실험으로 확인할 수 있지?”라는 질문에 답해야 합니다.
