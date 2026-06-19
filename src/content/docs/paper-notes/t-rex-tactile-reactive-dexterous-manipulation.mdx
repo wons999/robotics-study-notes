@@ -335,6 +335,20 @@ T-Rex는 12개 real-world tactile-reactive task에서 평가된다. 과제는 in
 
 논문은 T-Rex가 평균 65% 성공률로 가장 높은 성능을 보였고, 가장 강한 baseline인 EgoScale 평균 35% 대비 30%p 높다고 보고한다.
 
+표의 숫자는 각 task에서 16회 rollout 기준으로 계산한 성공률(%)이다. `Avg.`는 12개 task 성공률의 평균이다.
+
+비교 모델은 다음처럼 읽으면 된다.
+
+| method | 간단한 설명 |
+| --- | --- |
+| ViTacFormer | vision-touch cross-modal representation과 future tactile prediction을 쓰는 ACT-style visuo-tactile imitation policy. |
+| RDP | slow latent diffusion policy와 fast tactile feedback controller를 결합한 contact-rich manipulation용 slow-fast policy. |
+| Tactile-VLA | tactile feedback을 VLA reasoning과 hybrid position-force control에 연결하는 tactile-aware VLA baseline. |
+| EgoScale | 대규모 human egocentric video pretraining을 통해 dexterous manipulation prior를 얻는 foundation-style baseline. |
+| pi_0.5 | flow matching 기반 continuous action expert를 쓰는 general robot control VLA baseline. |
+| pi_0.5 + tactile | pi_0.5의 state input에 10개 fingertip의 6D force/torque tactile observation을 단순 concatenate한 tactile-conditioned variant. |
+| T-Rex | tactile-rich mid-training, spatio-temporal tactile encoder, asynchronous tactile expert를 결합한 제안 모델. |
+
 | method | Flip Page | Transfer Egg | Wipe Plate | Apply Paste | Split Cup | Sort Mahjong | Open Lock | Refill Tablet | Acid-Base Neut. | Extract Card | Deal Poker | Screw Bulb | Avg. |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | ViTacFormer | 9 | 0 | 4 | 1 | 4 | 7 | 0 | 0 | 0 | 2 | 2 | 1 | 3 |
@@ -353,7 +367,7 @@ T-Rex는 12개 real-world tactile-reactive task에서 평가된다. 과제는 in
 
 ### tactile modality와 architecture ablation
 
-Table 2는 6개 대표 tactile-reactive task에서 tactile modality와 architecture design을 제거/변경한 결과다.
+Table 2는 6개 대표 tactile-reactive task에서 tactile modality와 architecture design을 제거/변경한 결과다. 표의 숫자는 task별 성공률(%)이고, `Average` 괄호 안의 값은 Full Model 평균 65% 대비 하락 폭이다.
 
 | configuration | Flip Page | Apply Toothpaste | Split Cup | Open Lock | Extract Card | Screw Lightbulb | Average |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -364,8 +378,10 @@ Table 2는 6개 대표 tactile-reactive task에서 tactile modality와 architect
 | MLP Force + VQ-VAE Force | 92 | 63 | 65 | 38 | 67 | 28 | 59 (-6%) |
 | w/o Async | 92 | 61 | 73 | 45 | 59 | 30 | 60 (-5%) |
 
+각 configuration의 의미는 다음과 같다.
+
 | ablation | 무엇을 검증하나 | 해석 |
-| --- | --- |
+| --- | --- | --- |
 | w/o Tactile | tactile feedback 자체의 필요성 | 평균 -23%p로 가장 큰 하락. contact-rich task에서는 vision/proprioception만으로 부족하다. |
 | MLP Force + Deform | force history를 VQ-VAE 대신 단순 MLP로 처리 | 평균 -7%p. temporal force를 discrete token으로 압축하는 설계가 도움이 된다. |
 | Deform only | force stream 없이 deformation map만 사용 | 평균 -11%p. spatial contact geometry만으로는 force dynamics가 부족하다. |
@@ -440,7 +456,7 @@ Figure 6은 100시간 T-Rex dataset mid-training과 100시간 task-specific data
 
 <SectionFeedback page="T-Rex" section="Citation Trail" />
 
-이 섹션이 기존의 “T-Rex 읽기 흐름”을 대신한다. T-Rex를 중심으로 직접 비교해야 할 tactile/VLA 논문과, 논문 내부 방법론을 이해하는 데 필요한 기반 논문을 함께 정리한다. 별도 지도 페이지로 분리하지 않고 T-Rex content 안에서 citation 흐름을 추적한다.
+T-Rex를 중심으로 직접 비교해야 할 tactile/VLA 논문과, 논문 내부 방법론을 이해하는 데 필요한 기반 논문을 함께 정리한다.
 
 ### 직접 비교하거나 가까운 논문
 
