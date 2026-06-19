@@ -1,6 +1,6 @@
 ---
 title: Tactile-VLA
-description: tactile feedback으로 VLA의 물리적 지식을 contact-rich manipulation에 연결하는 논문 노트.
+description: tactile feedback으로 VLA의 물리적 지식을 contact-rich manipulation에 연결하는 상세 노트.
 ---
 
 # Tactile-VLA
@@ -10,31 +10,62 @@ description: tactile feedback으로 VLA의 물리적 지식을 contact-rich mani
 | 항목 | 내용 |
 | --- | --- |
 | 논문 | Tactile-VLA: Unlocking Vision-Language-Action Model's Physical Knowledge for Tactile Generalization |
+| 저자 | Jialei Huang, Shuo Wang, Fanqi Lin, Yihang Hu, Chuan Wen, Yang Gao |
 | 연도 | arXiv, 2025 |
 | 링크 | https://arxiv.org/abs/2507.09160 |
-| 태그 | tactile, VLA, physical reasoning, force control |
+| 태그 | tactile, VLA, physical reasoning, hybrid position-force control |
 
 ## 한 줄 요약
 
-Tactile-VLA는 pretrained VLA가 가진 물리적 상식을 tactile feedback과 연결해 contact-rich task에서 더 잘 일반화하게 만들려는 시도다.
+Tactile-VLA는 pretrained VLA가 이미 가진 물리적 상식을 tactile sensing과 연결해, 접촉이 중요한 task에서 instruction following과 adaptive reasoning을 가능하게 하려는 framework다.
 
-## 데이터셋과 문제 설정
+## 왜 T-Rex와 연결되는가
 
-문제는 language-conditioned robot manipulation에서 접촉 상태가 중요한 경우다. vision-language만으로는 힘, 압력, 미끄러짐을 충분히 알 수 없기 때문에 tactile signal을 모델과 controller에 연결한다.
+T-Rex와 Tactile-VLA는 모두 “VLA가 물리적 접촉을 잘 모른다”는 문제에서 출발한다. 차이는 tactile을 쓰는 레벨이다.
 
-## 방법론과 모델 구조
+| 관점 | Tactile-VLA | T-Rex |
+| --- | --- | --- |
+| tactile의 역할 | VLA reasoning과 physical commonsense를 activate | fast action refinement |
+| controller | hybrid position-force controller 강조 | tactile expert가 flow matching denoising 후반부 보정 |
+| 데이터 | 적은 demonstration으로 tactile grounding | 100시간 tactile-rich mid-training |
+
+## 문제 설정
+
+| 항목 | 내용 |
+| --- | --- |
+| task | tactile-aware instruction following, contact-rich manipulation |
+| observation | vision, language, tactile feedback |
+| action | VLA intent를 hybrid position-force controller로 실행 |
+| 핵심 난점 | VLA의 semantic knowledge와 실제 force/tactile interaction 사이의 gap |
+
+## 방법론
+
+Tactile-VLA는 pretrained VLA가 가진 “물리 상식”을 tactile feedback과 연결하려 한다. 예를 들어 “부드럽게 누르기”, “단단히 잡기”, “미끄러지면 다시 조정하기” 같은 개념은 language/vision pretraining 안에 어느 정도 들어 있을 수 있지만, 로봇이 실제 tactile sensor를 통해 그 상태를 인식하고 action에 반영해야만 쓸 수 있다.
+
+## 모델 구조
 
 | 구성 | 역할 |
 | --- | --- |
-| VLA backbone | instruction과 visual context 처리 |
-| tactile fusion | 접촉 정보를 정책 입력에 통합 |
-| hybrid position-force controller | VLA output을 접촉 상황에 맞는 실행으로 변환 |
+| VLA backbone | image와 instruction을 기반으로 task intent 생성 |
+| tactile fusion module | tactile state를 VLA의 reasoning/action generation에 연결 |
+| tactile reasoning module | 접촉 feedback에 따라 strategy를 조정 |
+| hybrid position-force controller | model intent를 contact-sensitive action으로 변환 |
 
-## T-Rex와의 관계
+## 실험에서 봐야 할 점
 
-Tactile-VLA는 tactile을 VLA reasoning에 연결하는 쪽에 강하고, T-Rex는 tactile을 high-frequency correction signal로 쓰는 쪽에 더 강하다. 둘은 tactile-aware VLA라는 같은 문제를 다른 속도/구조 관점에서 푼다.
+- tactile feedback이 없을 때와 있을 때 instruction following이 얼마나 달라지는가?
+- tactile-relevant commonsense가 zero-shot으로 드러나는가?
+- 적은 demonstration만으로 tactile grounding이 가능한가?
+- controller가 policy의 모호한 intent를 실제 force behavior로 잘 바꾸는가?
 
-## 기억할 점
+## T-Rex를 읽기 위한 기억 포인트
 
-- VLA에 tactile을 넣는 목적은 semantic reasoning뿐 아니라 물리적 interaction grounding이다.
-- 다만 tactile을 넣는 것만으로 충분하지 않고, timing과 architecture가 중요하다.
+- Tactile-VLA는 tactile을 “VLA의 physical knowledge를 깨우는 grounding signal”로 본다.
+- T-Rex는 tactile을 “실행 중 빠르게 action을 고치는 signal”로 본다.
+- T-Rex가 왜 단순 tactile concatenation보다 구조적 tactile expert가 필요하다고 주장하는지 비교하기 좋다.
+
+## 한계
+
+- high-frequency tactile reactivity 자체가 핵심인 논문은 아니다.
+- tactile grounding이 sensor와 task distribution에 의존할 수 있다.
+- hybrid controller가 잘 설계되어야 VLA의 intent가 실제 접촉 행동으로 바뀐다.

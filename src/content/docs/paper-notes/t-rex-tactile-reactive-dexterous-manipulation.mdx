@@ -210,19 +210,25 @@ T-Rex는 target task마다 많은 demonstration을 새로 모으기보다, tacti
 
 ## Citation Trail
 
+이 논문은 혼자 읽기보다 아래 흐름으로 같이 읽는 것이 좋다. 직접 비교 논문은 “T-Rex가 무엇을 새로 하는지”를 보여주고, 기반 방법론은 “왜 이런 구조가 나왔는지”를 설명한다.
+
 ### 직접 비교하거나 가까운 논문
 
-- [Reactive Diffusion Policy](./reactive-diffusion-policy/): slow-fast visual-tactile control.
-- [ViTacFormer](./vitacformer-visuotactile-dexterous-manipulation/): cross-modal visuo-tactile representation.
-- [Tactile-VLA](./tactile-vla-physical-knowledge/): tactile-aware VLA.
-- [VLA-Touch](./vla-touch-dual-level-tactile-feedback/): VLA 주변에 tactile planning/execution module을 붙이는 방식.
-- [ForceVLA](./forcevla-force-aware-moe/): force-aware MoE로 contact-rich manipulation을 보강하는 방식.
-- [EgoScale](./egoscale-scaling-dexterous-manipulation/): human egocentric data scaling.
-- [pi_0](./pi0-vla-flow-model/): flow matching 기반 continuous action VLA.
+| 논문 | T-Rex와의 연결 | 먼저 볼 포인트 |
+| --- | --- | --- |
+| [Reactive Diffusion Policy](./reactive-diffusion-policy/) | slow visual policy와 fast tactile correction이라는 문제의식을 공유한다. | action chunk 실행 중 tactile feedback을 어떻게 반영하는가 |
+| [ViTacFormer](./vitacformer-visuotactile-dexterous-manipulation/) | vision-touch cross-modal representation 관점의 가까운 비교군이다. | future tactile prediction이 representation에 어떤 역할을 하는가 |
+| [Tactile-VLA](./tactile-vla-physical-knowledge/) | VLA의 physical knowledge를 tactile feedback과 연결한다. | tactile이 reasoning과 force control에 어떻게 들어가는가 |
+| [VLA-Touch](./vla-touch-dual-level-tactile-feedback/) | frozen VLA 주변에 tactile planning/execution module을 붙이는 modular approach다. | high-level tactile feedback과 low-level diffusion controller의 분리 |
+| [ForceVLA](./forcevla-force-aware-moe/) | force-aware MoE로 contact-rich VLA를 보강한다. | force-torque signal과 fingertip tactile signal의 차이 |
+| [EgoScale](./egoscale-scaling-dexterous-manipulation/) | human egocentric data scaling과 dexterous prior 학습의 기반이다. | human video prior가 robot hand에 어떻게 transfer되는가 |
+| [pi_0](./pi0-vla-flow-model/) | flow matching 기반 continuous action VLA의 대표 baseline이다. | continuous action generation이 token action보다 유리한 지점 |
 
 ### 기반 방법론
 
-- [Flow Matching](./flow-matching-generative-modeling/): continuous action generation의 수학적 기반.
-- [VQ-VAE](./vq-vae-neural-discrete-representation-learning/): force history를 discrete tactile token으로 압축하는 기반.
-- [Open X-Embodiment / RT-X](./open-x-embodiment-rt-x/): robot data scaling의 대표 흐름.
-- [RT-2](./rt-2-vla-web-knowledge/): VLA framing의 중요한 출발점.
+| 기반 | T-Rex에서 쓰이는 위치 | 먼저 볼 포인트 |
+| --- | --- | --- |
+| [Flow Matching](./flow-matching-generative-modeling/) | action expert와 tactile expert가 action denoising path를 나누어 처리하는 수학적 기반이다. | noise에서 action으로 가는 vector field를 어떻게 학습하는가 |
+| [VQ-VAE](./vq-vae-neural-discrete-representation-learning/) | fingertip force history를 discrete tactile token으로 압축하는 데 쓰인다. | raw force signal을 token으로 바꾸면 무엇이 좋아지고 무엇을 잃는가 |
+| [Open X-Embodiment / RT-X](./open-x-embodiment-rt-x/) | VLA/robot foundation model에서 data scaling이 왜 중요한지 보여준다. | broad robot data scaling과 tactile-rich data scaling의 차이 |
+| [RT-2](./rt-2-vla-web-knowledge/) | VLA라는 문제 설정의 중요한 출발점이다. | web-scale VLM knowledge를 robot action token으로 연결하는 방식 |

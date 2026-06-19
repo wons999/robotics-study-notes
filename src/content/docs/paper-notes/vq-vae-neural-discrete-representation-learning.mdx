@@ -1,6 +1,6 @@
 ---
 title: VQ-VAE
-description: tactile force history tokenization을 이해하기 위한 discrete representation 노트.
+description: T-Rex의 tactile force history tokenization을 이해하기 위한 discrete representation 상세 노트.
 ---
 
 # VQ-VAE
@@ -10,20 +10,55 @@ description: tactile force history tokenization을 이해하기 위한 discrete 
 | 항목 | 내용 |
 | --- | --- |
 | 논문 | Neural Discrete Representation Learning |
+| 저자 | Aaron van den Oord, Oriol Vinyals, Koray Kavukcuoglu |
 | 연도 | NeurIPS, 2017 |
 | 링크 | https://arxiv.org/abs/1711.00937 |
-| 태그 | VQ-VAE, discrete latent, representation learning |
+| 태그 | VQ-VAE, discrete latent, vector quantization, representation learning |
 
 ## 한 줄 요약
 
-VQ-VAE는 encoder output을 continuous latent가 아니라 codebook의 discrete vector로 quantize하여 compact한 token-like representation을 학습한다.
+VQ-VAE는 encoder output을 continuous Gaussian latent가 아니라 codebook의 discrete vector로 quantize하여, compact한 token-like latent representation을 학습하는 generative model이다.
 
-## T-Rex와의 관계
+## 왜 T-Rex와 연결되는가
 
-T-Rex는 fingertip force history를 VQ-VAE 방식으로 discrete tactile token으로 압축한다. 빠르고 noisy한 force stream을 그대로 쓰기보다 token화하면 temporal contact pattern을 더 안정적으로 표현할 수 있다.
+T-Rex는 fingertip force history를 그대로 policy에 넣지 않고, per-finger VQ-VAE를 사용해 discrete tactile token으로 압축한다. 즉 VQ-VAE는 T-Rex tactile encoder의 temporal force stream을 이해하는 기반이다.
 
-## 기억할 점
+## 직관
 
-- discrete token은 compact하고 sequence model에 넣기 쉽다.
-- 너무 거칠게 quantize하면 미세한 force 변화가 사라질 수 있다.
-- codebook collapse 같은 학습 안정성 문제를 주의해야 한다.
+연속적인 force signal은 빠르고 noisy하다. 예를 들어 grasp 중 force가 조금씩 변하는 모든 값을 raw로 넣으면 모델이 noise와 의미 있는 contact pattern을 구분하기 어렵다. VQ-VAE는 이런 signal을 codebook token으로 묶어준다.
+
+| raw force history | VQ-VAE tactile token |
+| --- | --- |
+| 연속값, noisy, sensor drift 영향 | discrete pattern, compact, sequence modeling에 적합 |
+| 미세 변화까지 보존 가능 | 정보 손실 가능 |
+| 모델 입력이 커질 수 있음 | token 수를 줄일 수 있음 |
+
+## 모델 구조
+
+| 구성 | 역할 |
+| --- | --- |
+| encoder | input을 latent vector로 변환 |
+| codebook | latent vector를 가장 가까운 discrete code로 quantize |
+| decoder | discrete code에서 input을 복원 |
+| commitment/codebook loss | encoder와 codebook이 안정적으로 맞춰지도록 학습 |
+
+## 방법론
+
+VQ-VAE는 latent를 discrete code로 강제한다. 이 덕분에 autoregressive prior나 transformer가 token sequence처럼 다루기 쉬워진다. 원래 논문은 image, video, speech 같은 modality에서 discrete representation의 장점을 보여준다.
+
+## T-Rex에서의 역할
+
+T-Rex tactile encoder는 두 stream을 가진다.
+
+| stream | 기반 |
+| --- | --- |
+| temporal force stream | VQ-VAE로 force history를 token화 |
+| spatial deformation stream | convolution encoder로 tactile deformation map 처리 |
+
+VQ-VAE는 이 중 temporal force stream의 핵심이다. 손가락마다 최근 force history를 discrete token으로 만들면, tactile expert가 빠른 contact pattern을 더 안정적으로 읽을 수 있다.
+
+## 읽을 때 주의할 점
+
+- quantization은 정보를 줄이는 대신 안정성을 준다.
+- codebook이 잘 학습되지 않으면 특정 code만 쓰는 collapse가 생길 수 있다.
+- tactile force의 미세한 continuous variation이 중요한 task에서는 token granularity가 중요하다.

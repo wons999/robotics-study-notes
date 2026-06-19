@@ -1,6 +1,6 @@
 ---
 title: pi_0
-description: flow matching 기반 VLA action generation 논문 노트.
+description: flow matching 기반 VLA action generation 상세 노트.
 ---
 
 # pi_0: Vision-Language-Action Flow Model
@@ -10,27 +10,64 @@ description: flow matching 기반 VLA action generation 논문 노트.
 | 항목 | 내용 |
 | --- | --- |
 | 논문 | pi_0: A Vision-Language-Action Flow Model for General Robot Control |
+| 저자 | Kevin Black, Noah Brown, Danny Driess, Adnan Esmail, Michael Equi, Chelsea Finn, Niccolo Fusai, Lachy Groom, Karol Hausman, Brian Ichter, Szymon Jakubczak, Tim Jones, Liyiming Ke, Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Lucy Xiaoyang Shi, James Tanner, Quan Vuong, Anna Walling, Haohuan Wang, Ury Zhilinsky |
 | 연도 | arXiv, 2024 |
 | 링크 | https://arxiv.org/abs/2410.24164 |
 | 태그 | VLA, flow matching, continuous action, robot foundation model |
 
 ## 한 줄 요약
 
-pi_0는 pretrained vision-language backbone과 flow matching action expert를 결합해 continuous robot action을 생성하는 generalist robot policy다.
+pi_0는 pretrained vision-language model 위에 flow matching action expert를 붙여, 다양한 robot platform에서 continuous action을 생성하는 generalist robot policy다.
 
-## 방법론과 모델 구조
+## 왜 T-Rex와 연결되는가
+
+T-Rex는 pi_0 계열 VLA의 한계를 tactile-reactive direction으로 확장한 것으로 볼 수 있다.
+
+| 관점 | pi_0 | T-Rex |
+| --- | --- | --- |
+| action generation | flow matching 기반 continuous action | cascaded flow matching + tactile refinement |
+| sensory input | vision, language, robot state 중심 | vision, language, robot state, tactile force/deformation |
+| control frequency | continuous action generation을 강조 | visual stream과 tactile stream의 variable rate |
+| contact handling | tactile이 핵심은 아님 | tactile-reactive contact correction이 핵심 |
+
+## 문제 설정
+
+robot foundation model은 여러 robot, 여러 task, 여러 instruction을 하나의 policy로 다루고 싶다. 문제는 action이 text처럼 discrete token만으로 표현하기 어렵다는 것이다. 특히 high-DoF dexterous robot에서는 continuous action distribution을 잘 모델링해야 한다.
+
+## 데이터와 task
+
+pi_0는 single-arm, dual-arm, mobile manipulation 등 다양한 robot platform의 trajectory를 학습한다. 평가 task도 laundry folding, table cleaning, box assembly처럼 long-horizon manipulation을 포함한다.
+
+## 모델 구조
 
 | 구성 | 역할 |
 | --- | --- |
-| VLM backbone | image와 language instruction 처리 |
-| flow action expert | continuous action trajectory 생성 |
-| robot data mixture | 여러 robot embodiment와 task에서 action distribution 학습 |
+| pretrained VLM backbone | Internet-scale semantic/visual prior 제공 |
+| action expert | robot trajectory data에서 continuous action generation 학습 |
+| flow matching objective | noise에서 action으로 이동하는 vector field 학습 |
+| fine-tuning path | target skill에 적응 |
 
-## T-Rex와의 관계
+## 방법론
 
-T-Rex는 pi_0 계열의 flow matching action generation을 tactile-reactive하게 확장한다. pi_0가 coarse continuous action generation의 기반이라면, T-Rex는 그 action을 tactile expert가 빠르게 보정하는 구조다.
+pi_0의 중요한 선택은 action을 discrete token으로만 보지 않고, continuous trajectory sample로 다룬다는 것이다. Flow matching은 이 continuous action을 생성하는 데 쓰인다.
 
-## 기억할 점
+이 관점은 T-Rex에서 그대로 이어진다. T-Rex는 flow matching denoising path를 action expert와 tactile expert가 나누어 처리한다. pi_0가 “continuous action VLA”라면, T-Rex는 “tactile-reactive continuous action VLA”에 가깝다.
 
-- VLA action을 token으로만 다루지 않고 continuous distribution으로 생성할 수 있다.
-- tactile feedback이 없으면 contact-rich dexterity에는 여전히 약할 수 있다.
+## 실험에서 봐야 할 점
+
+- pretraining 후 zero-shot behavior가 어느 정도 가능한가?
+- fine-tuning으로 새 skill을 얼마나 빨리 얻는가?
+- discrete action token 방식 대비 continuous flow action의 장점은 무엇인가?
+- contact-rich task에서는 어떤 failure가 생기는가?
+
+## T-Rex를 읽기 위한 기억 포인트
+
+- T-Rex의 기반 action generation을 이해하려면 pi_0와 Flow Matching을 먼저 잡는 것이 좋다.
+- pi_0의 action expert가 tactile을 직접 빠르게 반영하지 못하는 부분이 T-Rex의 출발점이다.
+- flow matching은 “VLA가 continuous robot action을 어떻게 낼 것인가”의 중요한 답 중 하나다.
+
+## 한계
+
+- tactile/force feedback은 중심 modality가 아니다.
+- contact-rich dexterous manipulation에서는 빠른 closed-loop correction이 부족할 수 있다.
+- 다양한 robot data가 있어도 sensor modality gap은 별도로 해결해야 한다.

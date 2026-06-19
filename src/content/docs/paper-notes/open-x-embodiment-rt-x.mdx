@@ -1,6 +1,6 @@
 ---
 title: Open X-Embodiment / RT-X
-description: multi-robot dataset과 cross-embodiment robot learning 노트.
+description: multi-robot dataset과 cross-embodiment robot learning 상세 노트.
 ---
 
 # Open X-Embodiment / RT-X
@@ -10,18 +10,49 @@ description: multi-robot dataset과 cross-embodiment robot learning 노트.
 | 항목 | 내용 |
 | --- | --- |
 | 논문 | Open X-Embodiment: Robotic Learning Datasets and RT-X Models |
+| 저자 | Open X-Embodiment Collaboration |
 | 연도 | arXiv, 2023 |
 | 링크 | https://arxiv.org/abs/2310.08864 |
-| 태그 | robot dataset, cross-embodiment learning, RT-X, VLA |
+| 태그 | robot dataset, cross-embodiment learning, RT-X, VLA, robot data scaling |
 
 ## 한 줄 요약
 
-Open X-Embodiment는 여러 기관과 여러 로봇의 demonstration을 표준화해 cross-embodiment robot learning을 가능하게 만든 데이터셋/모델 흐름이다.
+Open X-Embodiment는 21개 기관, 22개 robot embodiment의 manipulation data를 표준화해 cross-robot policy training과 RT-X model을 가능하게 한 대규모 robot dataset 흐름이다.
+
+## 왜 T-Rex와 연결되는가
+
+T-Rex의 데이터셋을 이해하려면 Open X-Embodiment와 비교하면 좋다.
+
+| 관점 | Open X-Embodiment | T-Rex Dataset |
+| --- | --- | --- |
+| 목표 | 여러 robot embodiment를 아우르는 broad robot data scaling | tactile-rich bimanual dexterous contact data scaling |
+| modality | 주로 vision, action, robot state 중심 | RGB, proprioception, fingertip tactile deformation, force |
+| 장점 | cross-embodiment generality | contact-rich tactile grounding |
+| 약점 | dense tactile/contact modality가 부족할 수 있음 | platform-specific bimanual dexterous setup |
 
 ## 데이터셋
 
-다양한 robot embodiment, task, skill을 하나의 대규모 dataset으로 묶는다. 이후 OpenVLA 같은 모델들이 이 데이터 흐름 위에서 학습된다.
+Open X-Embodiment는 다양한 로봇과 과제를 하나의 표준 format으로 묶는다. 논문은 22개 robot, 527 skills, 160,266 tasks 규모를 보고한다. 중요한 점은 “각 로봇마다 따로 policy를 학습한다”는 관행에서 벗어나, 여러 robot data를 합쳐 positive transfer를 노린다는 것이다.
 
-## T-Rex와의 관계
+## 모델 구조와 방법론
 
-Open X-Embodiment는 broad robot data scaling의 대표 흐름이고, T-Rex는 tactile-rich dexterous bimanual data scaling의 대표 흐름으로 볼 수 있다.
+RT-X는 이런 multi-robot dataset 위에서 학습되는 generalist robot policy family다.
+
+| 구성 | 의미 |
+| --- | --- |
+| standardized data format | 서로 다른 robot data를 하나의 training pipeline에 넣기 위한 기반 |
+| multi-robot training | 다른 robot의 경험을 활용해 target robot 성능을 높임 |
+| high-capacity policy | 다양한 embodiment/task를 하나의 model에 압축 |
+| downstream adaptation | 새 robot/task에 더 효율적으로 적응 |
+
+## T-Rex를 읽기 위한 기억 포인트
+
+- Open X-Embodiment는 broad data scaling의 대표 사례다.
+- T-Rex는 tactile-rich data scaling의 대표 사례로 볼 수 있다.
+- 앞으로 robot foundation model에는 broad embodiment data와 rich physical feedback data가 모두 필요할 가능성이 크다.
+
+## 한계
+
+- cross-embodiment data를 모아도 tactile/force/contact modality가 충분하지 않으면 contact-rich task는 약할 수 있다.
+- robot morphology가 다르면 action representation과 controller interface가 크게 달라진다.
+- high-DoF hand data는 일반 manipulator data보다 훨씬 표준화가 어렵다.
