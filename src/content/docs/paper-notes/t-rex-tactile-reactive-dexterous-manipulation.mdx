@@ -161,28 +161,55 @@ T-Rex는 Mixture-of-Transformer-Experts 구조다. 중요한 점은 expert들이
 
 논문 Appendix A의 Table 4 기준으로 T-Rex의 주요 모델/학습 설정은 다음과 같다.
 
-| 구분 | 항목 | 값 |
-| --- | --- | --- |
-| Latent expert | VLM backbone | Qwen3VL-2B |
-| Latent expert | hidden feature dimension | 2048 |
-| Latent expert | transformer layers | 28 |
-| Latent expert | max sequence length | 2048 |
-| Latent expert | parameter size | 1.41B |
-| Latent expert | attention | Flash Attention 2 |
-| Action expert | VLM backbone | Qwen3VL-2B |
-| Action expert | action dimension | 62 |
-| Action expert | action chunk | 16 |
-| Action expert | training timestep sampling | Beta(1.5, 1.0) |
-| Action expert | inference timesteps | 6 |
-| Action expert | parameter size | 1.41B |
-| Tactile expert | action dimension | 62 |
-| Tactile expert | action chunk | 16 |
-| Tactile expert | FFN intermediate size | 1536 |
-| Tactile expert | training timestep sampling | Beta(1.5, 1.0) |
-| Tactile expert | inference timesteps | 4 |
-| Tactile expert | parameter size | 0.62B |
+#### latent expert
 
-학습은 AdamW, peak learning rate `1e-4`, cosine scheduler, min learning rate 0, weight decay 0, warmup ratio 0, gradient clipping 1.0, bf16 mixed precision, NVIDIA H100 24장, DeepSpeed ZeRO stage 1, per-device batch size 16, gradient accumulation 1로 수행된다.
+| 항목 | 값 |
+| --- | --- |
+| VLM backbone | Qwen3VL-2B |
+| hidden feature dimension | 2048 |
+| transformer layers | 28 |
+| max sequence length | 2048 |
+| parameter size | 1.41B |
+| attention implementation | Flash Attention 2 |
+
+#### action expert
+
+| 항목 | 값 |
+| --- | --- |
+| VLM backbone | Qwen3VL-2B |
+| action dimension | 62 |
+| action chunk | 16 |
+| training timestep sampling | Beta(1.5, 1.0) |
+| inference timesteps | 6 |
+| parameter size | 1.41B |
+
+#### tactile expert
+
+| 항목 | 값 |
+| --- | --- |
+| action dimension | 62 |
+| action chunk | 16 |
+| FFN intermediate size | 1536 |
+| training timestep sampling | Beta(1.5, 1.0) |
+| inference timesteps | 4 |
+| parameter size | 0.62B |
+
+#### training configuration
+
+| 항목 | 값 |
+| --- | --- |
+| optimizer | AdamW |
+| peak learning rate | `1e-4` |
+| min learning rate | 0 |
+| LR scheduler | cosine with min LR |
+| weight decay | 0 |
+| warmup ratio | 0 |
+| gradient clipping | 1.0 |
+| GPU | NVIDIA H100 x 24 |
+| distributed training | DeepSpeed ZeRO stage 1 |
+| per-device batch size | 16 |
+| gradient accumulation steps | 1 |
+| mixed precision | bf16 |
 
 ### tactile encoder
 
