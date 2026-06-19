@@ -1,64 +1,32 @@
 ---
 title: SaTA
-description: Survey note on spatially anchored tactile awareness for dexterous manipulation.
+description: tactile feature를 손의 kinematic frame에 고정해 dexterous manipulation을 안정화하는 논문 노트.
 ---
 
-# Spatially Anchored Tactile Awareness for Robust Dexterous Manipulation
+# Spatially Anchored Tactile Awareness
 
-## Metadata
+## 메타데이터
 
-| Field | Value |
+| 항목 | 내용 |
 | --- | --- |
-| Title | Spatially Anchored Tactile Awareness for Robust Dexterous Manipulation |
-| Authors | Jialei Huang, Yang Ye, Yuanqing Gong, Xuezhou Zhu, Yang Gao, Kaifeng Zhang |
-| Venue / Year | arXiv, 2025 |
-| Link | https://arxiv.org/abs/2510.14647 |
-| Tags | tactile, dexterous manipulation, forward kinematics, spatial grounding, contact geometry |
+| 논문 | Spatially Anchored Tactile Awareness for Robust Dexterous Manipulation |
+| 연도 | arXiv, 2025 |
+| 링크 | https://arxiv.org/abs/2510.14647 |
+| 태그 | tactile, dexterous manipulation, forward kinematics, contact geometry |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 1
-- Role: Related tactile representation for dexterous precision
-- Parent paper: T-Rex
+SaTA는 tactile feature를 hand kinematic frame에 anchoring하여 contact geometry를 더 명확히 표현하려는 dexterous manipulation 방법이다.
 
-## One-line Summary
+## 방법론
 
-SaTA anchors tactile features in the hand's kinematic frame so policies can reason about contact geometry for high-precision dexterous manipulation.
+raw tactile signal은 풍부하지만 “손의 어디에서 어떤 접촉이 일어났는가”가 명확하지 않을 수 있다. SaTA는 forward kinematics를 이용해 tactile feature를 hand coordinate에 배치하여 policy가 접촉 위치와 object geometry를 더 잘 이해하게 한다.
 
-## Problem Setting
+## T-Rex와의 관계
 
-- Robot embodiment: dexterous hand manipulation setup.
-- Observation: tactile sensor signals spatially grounded through hand kinematics.
-- Action: dexterous manipulation actions.
-- Data: demonstrations for precision contact tasks.
-- Task: sub-millimeter and contact-sensitive tasks such as USB-C mating, light bulb installation, and card sliding.
+T-Rex는 force history와 deformation map을 사용하고, SaTA는 tactile feature의 spatial grounding을 강조한다. T-Rex를 더 깊게 이해할 때 “tactile representation은 시간 정보와 공간 정보를 모두 가져야 한다”는 관점을 보강해준다.
 
-## Core Idea
+## 한계
 
-Raw tactile observations are informative but not automatically geometrically meaningful. SaTA uses forward kinematics to anchor tactile features to the hand coordinate frame, allowing the policy to infer object geometry and contact relationships more directly.
-
-## Method Details
-
-- Architecture: end-to-end policy with spatially anchored tactile representations.
-- Training recipe: train on precision dexterous manipulation tasks.
-- Data: tactile-rich task data.
-- Inference / control loop: policy reasons over contact signals grounded to hand geometry.
-
-## What I Should Remember
-
-- Tactile representation should preserve both sensory richness and spatial relation to the hand.
-- T-Rex uses deformation maps and force histories; SaTA highlights the importance of kinematic grounding.
-- This paper is important for thinking about tactile representation beyond feature fusion.
-
-## Limitations
-
-- Requires accurate kinematic calibration and sensor placement.
-- It is not a VLA foundation model.
-- Transfer across hands may require rethinking the tactile frame representation.
-
-## Citation Trail
-
-- Depends on: forward kinematics, tactile policy learning, dexterous manipulation.
-- Follow next: T-Rex tactile encoder details, ViTacFormer, tactile calibration papers.
-- Why next: these compare temporal, spatial, and cross-modal tactile representation choices.
+- sensor 위치와 kinematic calibration이 정확해야 한다.
+- hand가 바뀌면 tactile frame 설계를 다시 봐야 한다.

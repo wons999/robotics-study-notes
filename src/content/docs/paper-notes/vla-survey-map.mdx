@@ -1,28 +1,28 @@
 ---
 title: VLA Survey Map
-description: A starting map for following vision-language-action model research.
+description: vision-language-action model 연구를 따라가기 위한 시작 지도.
 ---
 
 # VLA Survey Map
 
-## What VLA Means Here
+## 여기서 말하는 VLA
 
-A vision-language-action model connects visual observations and language instructions to robot actions. For manipulation, the hard part is not only semantic understanding; it is producing actions that survive embodiment constraints, latency, contact, and safety requirements.
+VLA는 visual observation과 language instruction을 받아 robot action을 생성하는 모델 계열이다. Manipulation에서 어려운 점은 semantic understanding만이 아니다. 실제 로봇에서는 embodiment constraint, latency, contact, safety, controller interface가 함께 들어온다.
 
-## Tracking Categories
+## 읽을 때 기록할 축
 
-| Category | Notes to Capture |
+| 축 | 기록할 내용 |
 | --- | --- |
 | Architecture | monolithic, hierarchical, planner-policy split, action decoder |
-| Data | Open X-Embodiment, teleoperation, human videos, synthetic data |
-| Action representation | discrete tokens, continuous deltas, action chunks, flow/diffusion |
-| Embodiment | mobile base, single arm, dual arm, full-body platform, simulated agent |
-| Evaluation | task diversity, real robot success, generalization, safety |
+| Data | Open X-Embodiment, teleoperation, human video, synthetic data |
+| Action representation | discrete token, continuous delta, action chunk, flow/diffusion |
+| Embodiment | single arm, dual arm, mobile base, humanoid, dexterous hand |
+| Evaluation | real robot success, generalization, recovery, safety |
 
-## Practical Reading Questions
+## 읽기 질문
 
-- Does the model directly control fingers or only arm/gripper actions?
-- Is the policy fast enough for closed-loop manipulation?
-- What assumptions are made about calibration, camera placement, and robot morphology?
-- How much task success comes from data scale versus controller quality?
-- Can the idea be tested in a small simulator before touching hardware?
+- 모델이 finger까지 직접 제어하는가, 아니면 arm/gripper command만 내는가?
+- policy가 closed-loop manipulation에 충분히 빠른가?
+- camera, calibration, robot morphology에 어떤 가정을 두는가?
+- 성능이 data scale에서 온 것인가, controller quality에서 온 것인가?
+- 작은 simulator나 toy setup에서 먼저 검증할 수 있는 아이디어인가?

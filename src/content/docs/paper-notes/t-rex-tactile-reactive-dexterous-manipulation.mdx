@@ -1,130 +1,228 @@
 ---
-title: T-Rex - Tactile-Reactive Dexterous Manipulation
-description: Detailed note on the T-Rex tactile-reactive dexterous manipulation paper.
+title: T-Rex - 촉각 반응형 Dexterous Manipulation
+description: T-Rex 논문의 데이터셋, 모델 구조, 방법론, 실험 결과를 한국어로 정리한 상세 노트.
 ---
 
 # T-Rex: Tactile-Reactive Dexterous Manipulation
 
-## Metadata
+![T-Rex 개요](https://arxiv.org/html/2606.17055v1/x1.png)
 
-| Field | Value |
+그림 출처: [T-Rex arXiv HTML](https://arxiv.org/html/2606.17055v1)
+
+## 메타데이터
+
+| 항목 | 내용 |
 | --- | --- |
-| Title | T-Rex: Tactile-Reactive Dexterous Manipulation |
-| Authors | Dantong Niu, Zhuoyang Liu, Zekai Wang, Boning Shao, Zhao-Heng Yin, Anirudh Pai, Yuvan Sharma, Stefano Saravalle, Ruijie Zheng, Jing Wang, Ryan Punamiya, Mengda Xu, Yuqi Xie, Yunfan Jiang, Letian Fu, Konstantinos Kallidromitis, Matteo Gioia, Junyi Zhang, Jiaxin Ge, Haiwen Feng, Fabio Galasso, Wei Zhan, David M. Chan, Yutong Bai, Roei Herzig, Jiahui Lei, Fei-Fei Li, Ken Goldberg, Jitendra Malik, Pieter Abbeel, Yuke Zhu, Danfei Xu, Jim Fan, Trevor Darrell |
-| Venue / Year | arXiv, 2026 |
-| Link | https://arxiv.org/html/2606.17055v1 |
-| Tags | tactile, dexterous manipulation, VLA, flow matching, bimanual manipulation, contact-rich control |
+| 논문 | T-Rex: Tactile-Reactive Dexterous Manipulation |
+| 연도 | arXiv, 2026 |
+| 링크 | https://arxiv.org/html/2606.17055v1 |
+| 키워드 | tactile, dexterous manipulation, VLA, flow matching, bimanual manipulation, contact-rich control |
+| 이 노트의 위치 | T-Rex citation trail의 seed paper |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 0
-- Role: Seed paper
-- Parent paper: None
+T-Rex는 vision-language-action 계열 정책에 **빠른 tactile refinement expert**를 붙이고, 100시간 규모의 tactile-rich bimanual robot dataset으로 mid-training하여, 접촉이 중요한 dexterous manipulation에서 더 안정적으로 반응하게 만든 모델이다.
 
-## One-line Summary
+## 문제의식
 
-T-Rex extends VLA-style dexterous manipulation with a high-frequency tactile refinement expert, a 100-hour tactile-rich robot dataset, and a three-stage training recipe for contact-rich bimanual manipulation.
+기존 VLA나 imitation policy는 이미지와 언어를 보고 그럴듯한 action을 만들 수 있지만, contact-rich manipulation에서는 자주 깨진다. 이유는 크게 세 가지다.
 
-## Problem Setting
-
-| Item | Description |
+| 문제 | 왜 중요한가 |
 | --- | --- |
-| Robot embodiment | Fixed-base bimanual Dexmate Vega-1, two 7-DoF arms, two 22-DoF Sharpa Wave dexterous hands |
-| Observation | Head RGB, wrist RGB, robot states, per-finger force vectors, tactile deformation maps, language instruction |
-| Action | Relative end-effector delta control for arms and absolute joint control for fingers |
-| Data | Large human egocentric pretraining, 100-hour tactile-grounded robot mid-training dataset, about 100 demonstrations for skill-specific post-training |
-| Tasks | 12 real-world tactile-reactive tasks involving insertion, deformation, force-sensitive handling, bimanual coordination, and fine contact adjustment |
-| Evaluation | Average task success rate over randomized trials, with progress or additive rubrics depending on task |
+| tactile signal 부족 | 물체가 미끄러지는지, 눌리는지, 끼워졌는지 같은 정보는 RGB만으로 늦거나 부정확하게 보인다. |
+| 주파수 mismatch | VLA backbone은 무겁고 느린데, 촉각 feedback은 빠르게 반응해야 한다. |
+| 데이터 분포 부족 | 고자유도 손과 양팔 조작에서 접촉이 풍부한 robot data가 충분하지 않다. |
 
-## Core Idea
+T-Rex의 핵심 주장은 단순하다. **Touch를 또 하나의 input token으로만 넣으면 부족하고, tactile feedback을 빠른 제어 보정 신호로 다룰 구조가 필요하다.**
 
-T-Rex argues that modern manipulation VLAs have two bottlenecks for dexterous contact-rich tasks:
+## 시스템 설정
 
-- They often lack tactile data and therefore miss micro-slip, force, and deformation signals.
-- Their visual-language backbones operate too slowly for high-frequency contact correction.
+| 항목 | 내용 |
+| --- | --- |
+| 로봇 | 고정형 bimanual Dexmate Vega-1 |
+| 팔 | 양쪽 7-DoF arm |
+| 손 | 양쪽 22-DoF Sharpa Wave dexterous hand |
+| 관측 | head RGB, wrist RGB, robot state, fingertip force, tactile deformation map, language instruction |
+| action | arm은 relative end-effector delta, finger는 absolute joint command |
+| 제어 관점 | low-frequency visual action chunk + high-frequency tactile correction |
 
-The paper addresses this with a **variable-rate Mixture-of-Transformer-Experts (MoT)** architecture. A low-frequency action expert produces a coarse visuomotor action chunk, while a high-frequency tactile expert reuses cached visual-language context and refines the action using real-time tactile observations.
+## 데이터셋
 
-## Method Details
+![T-Rex Dataset](https://arxiv.org/html/2606.17055v1/x2.png)
 
-### Model Architecture
+그림 출처: [T-Rex Figure 2](https://arxiv.org/html/2606.17055v1)
 
-T-Rex has three main expert roles:
+### 데이터셋 규모
 
-- Latent expert: processes visual-language context and predicts future visual representations.
-- Action expert: performs low-frequency flow-matching action generation from visual-language context.
-- Tactile expert: performs high-frequency action refinement conditioned on tactile force and deformation signals.
+| 항목 | 값 |
+| --- | --- |
+| 총 길이 | 100시간 |
+| episode 수 | 7,755개 |
+| object 수 | 207개 |
+| motor primitive 수 | 22개 |
+| object-motor primitive 조합 | 502개 |
+| median episode length | 약 29.8초 |
+| 수집 기간 | 10주 |
 
-The tactile encoder uses two complementary tactile streams:
+### 기록되는 modality
 
-- Temporal force stream: a per-finger VQ-VAE compresses recent force history into discrete tactile tokens.
-- Spatial deformation stream: a lightweight convolutional encoder extracts local contact geometry from deformation maps.
+각 episode는 timestamp가 맞춰진 여러 stream으로 저장된다.
 
-### Asynchronous Cascaded Flow Matching
+| modality | 구체 내용 |
+| --- | --- |
+| RGB | head ZED X Mini 1개, wrist ZED X One S 2개, 640x360, 30Hz |
+| proprioception | 양팔 joint position/velocity, 양손 22-DoF joint state |
+| wrist pose | 양손 wrist의 SE(3) end-effector pose |
+| tactile | 10개 fingertip의 deformation depth map과 6-axis net wrench |
+| language | VLM 기반으로 생성하고 사람이 검수한 task instruction |
 
-The action expert and tactile expert share the same flow-matching target but operate over different parts of the denoising path:
+### taxonomy가 중요한 이유
 
-- Slow stream: runs the visual-language and action expert once per action chunk.
-- Fast stream: runs more frequently, using real-time tactile tokens and cached visual-language context.
+T-Rex dataset은 “task 이름 몇 개”로만 구성되지 않는다. 207개 object와 22개 motor primitive를 조합한 뒤, 물리적으로 말이 되는 조합만 남긴다. 예를 들어 단단한 block에 `pour`를 적용하는 식의 불가능한 조합은 제거한다.
 
-This split is the central engineering idea. It lets the expensive visual stack stay low-frequency while tactile correction remains responsive.
+이 방식의 장점은 policy가 개별 task만 외우는 것이 아니라 다음 같은 재사용 가능한 contact behavior를 배우게 한다는 점이다.
 
-### Training Recipe
+- 누르기
+- 잡기
+- 밀기
+- 문지르기
+- 끼우기
+- 비틀기
+- 변형시키기
+- 미끄러짐을 보정하기
 
-T-Rex uses a three-stage recipe:
+## 모델 구조
 
-1. Large-scale human egocentric pretraining to learn broad visuomotor priors.
-2. Tactile-grounded robot mid-training on 100 hours of bimanual tactile-synchronized teleoperation data.
-3. Skill-specific post-training with a small number of target demonstrations.
+![T-Rex 모델 구조](https://arxiv.org/html/2606.17055v1/x3.png)
 
-The paper emphasizes that tactile mid-training is not just extra task data. It is meant to align high-level human-derived priors with robot-executable contact dynamics.
+그림 출처: [T-Rex Figure 3](https://arxiv.org/html/2606.17055v1)
 
-## Dataset
+T-Rex는 Mixture-of-Transformer-Experts 구조다. 중요한 점은 expert들이 같은 속도로 돌지 않는다는 것이다. visual-language reasoning은 느리게, tactile correction은 빠르게 동작한다.
 
-The T-Rex Dataset contains 100 hours of tactile-synchronized bimanual manipulation data, more than 200 everyday objects, and 22 motor primitives. It is organized around motor primitives and object interactions rather than only narrow task demonstrations.
+| 구성요소 | 역할 |
+| --- | --- |
+| Vision-language backbone | 이미지와 언어 instruction에서 task context를 만든다. |
+| Latent expert | visual-language context를 처리하고 future visual representation을 예측한다. |
+| Action expert | coarse action chunk를 low-frequency로 생성한다. |
+| Tactile expert | tactile force/deformation을 보고 action을 high-frequency로 보정한다. |
+| Tactile encoder | force history와 deformation map을 tactile token으로 바꾼다. |
 
-This matters because the authors want mid-training data that teaches reusable contact behavior: press, slide, grasp, wipe, insert, deform, and other physical interactions.
+### tactile encoder
 
-## Results
+T-Rex의 tactile encoder는 두 갈래다.
 
-T-Rex is compared against visuo-tactile imitation policies, tactile-aware VLA variants, EgoScale, and pi_0-style baselines. On the 12 tactile-reactive tasks, the paper reports the strongest average success rate and over 30% improvement over the strongest baseline.
+| stream | 입력 | 역할 |
+| --- | --- | --- |
+| temporal force stream | fingertip force history | 최근 contact force 변화를 VQ-VAE token으로 압축한다. |
+| spatial deformation stream | tactile deformation map | 접촉 위치와 국소 변형 형태를 convolution encoder로 뽑는다. |
 
-Important ablations:
+이 설계는 중요한 trade-off를 건드린다. Force vector는 빠르고 compact하지만 접촉 geometry를 잃기 쉽고, deformation map은 공간 정보가 풍부하지만 처리 비용이 있다. T-Rex는 둘을 함께 써서 시간적 force 변화와 공간적 접촉 형상을 동시에 잡으려 한다.
 
-- Removing tactile input substantially reduces average success.
-- Using simpler tactile encoders performs worse than the full force-history plus deformation representation.
-- Removing asynchronous refinement hurts performance.
-- Human pretraining and tactile-grounded mid-training both contribute; the full three-stage recipe performs best.
+## 핵심 방법론: Asynchronous Cascaded Flow Matching
 
-## What I Should Remember
+T-Rex는 action generation을 flow matching으로 본다. 일반적인 flow matching은 noise에서 action으로 가는 denoising trajectory를 학습한다. T-Rex는 이 trajectory를 둘로 나눈다.
 
-- Tactile is treated as a **fast corrective signal**, not only as another low-frequency input token.
-- The architecture separates slow visual-language planning from fast tactile refinement without fully separating the model into unrelated systems.
-- The mid-training dataset is designed around reusable motor primitives, which is different from collecting only task-specific demonstrations.
-- The core design tension is frequency mismatch: VLA reasoning is slow, tactile feedback must be fast.
-- Naively concatenating tactile signals to a pretrained policy can degrade performance; tactile integration needs architectural support.
+| 단계 | 담당 expert | 의미 |
+| --- | --- | --- |
+| 앞부분 denoising | action expert | visual-language context 기반의 coarse action 생성 |
+| 뒷부분 denoising | tactile expert | 실제 tactile feedback을 반영한 빠른 action refinement |
 
-## Limitations
+이 구조를 “asynchronous cascaded”라고 볼 수 있다. 비싼 visual-language 계산은 action chunk 단위로 낮은 주파수에서 수행하고, tactile expert는 cached context를 재사용하면서 더 높은 주파수로 action을 보정한다.
 
-- Long-horizon tasks with tight contact tolerances may still need online interaction, RL, or refinement beyond offline post-training.
-- Tactile hardware remains a bottleneck because sensors drift, distort, vary across devices, and often lack dense palm coverage.
-- The system relies on a significant bimanual dexterous hardware and teleoperation stack.
-- The reported benchmark is real-world but still platform-specific.
+### 왜 이게 중요한가
+
+Contact-rich manipulation에서는 몇 프레임 사이에도 상황이 바뀐다. 손가락이 살짝 미끄러지거나, 물체가 변형되거나, 삽입 축이 틀어질 수 있다. 이때 매번 큰 VLA를 다시 돌리면 느리고, tactile을 action chunk 시작점에만 넣으면 늦다. T-Rex의 구조는 이 문제를 architecture level에서 해결하려는 시도다.
+
+## 학습 recipe
+
+T-Rex는 세 단계로 학습한다.
+
+| 단계 | 데이터 | 목적 |
+| --- | --- | --- |
+| pre-training | 대규모 human egocentric video/action data | 넓은 visuomotor prior 학습 |
+| mid-training | 100시간 T-Rex tactile robot dataset | robot embodiment와 tactile contact dynamics에 맞춤 |
+| post-training | target task별 약 100개 demonstration | 특정 평가 task에 빠르게 적응 |
+
+여기서 가장 중요한 단계는 mid-training이다. T-Rex는 tactile dataset을 단순 추가 데이터가 아니라, human-derived prior를 실제 robot contact dynamics에 연결하는 grounding 단계로 본다.
+
+## 평가 task와 결과
+
+![T-Rex 주요 결과](https://arxiv.org/html/2606.17055v1/x4.png)
+
+그림 출처: [T-Rex Figure 4](https://arxiv.org/html/2606.17055v1)
+
+T-Rex는 12개 real-world tactile-reactive task에서 평가된다. 과제는 insertion, deformable object handling, force-sensitive transfer, bimanual coordination처럼 RGB만으로는 부족한 조작을 포함한다.
+
+비교 대상은 다음 계열이다.
+
+- vision-only 혹은 visuo-tactile imitation policy
+- tactile-aware VLA
+- EgoScale 계열
+- pi_0 계열 flow-matching VLA
+- RDP 같은 slow-fast tactile policy
+
+논문은 T-Rex가 평균 성공률에서 가장 좋은 성능을 보였고, 강한 baseline 대비 30% 이상 개선했다고 보고한다.
+
+## Ablation: 무엇이 성능을 만들었나
+
+![T-Rex ablation](https://arxiv.org/html/2606.17055v1/x5.png)
+
+그림 출처: [T-Rex Figure 5](https://arxiv.org/html/2606.17055v1)
+
+중요한 ablation 포인트는 다음과 같다.
+
+| 제거/변경 | 관찰 |
+| --- | --- |
+| tactile input 제거 | 평균 성공률이 크게 떨어진다. |
+| tactile encoder 단순화 | force history와 deformation map을 함께 쓰는 full encoder보다 약하다. |
+| asynchronous refinement 제거 | contact 변화에 빠르게 반응하지 못한다. |
+| human pre-training 제거 | broad visuomotor prior가 약해진다. |
+| tactile mid-training 제거 | robot contact dynamics grounding이 약해진다. |
+
+핵심 결론은 **데이터, tactile representation, 비동기 control-frequency 설계가 함께 필요하다**는 것이다. 어느 하나만 넣는다고 T-Rex 수준이 나오지 않는다.
+
+## Data efficiency
+
+![T-Rex data efficiency](https://arxiv.org/html/2606.17055v1/x6.png)
+
+그림 출처: [T-Rex Figure 6](https://arxiv.org/html/2606.17055v1)
+
+T-Rex는 target task마다 많은 demonstration을 새로 모으기보다, tactile-rich mid-training을 먼저 해두고 post-training demo 수를 줄이는 방향을 노린다. 이 관점에서 Figure 6은 “foundation-style robot policy가 tactile dataset을 통해 얼마나 빠르게 downstream task에 적응하는가”를 보는 그림이다.
+
+## 실패 사례와 한계
+
+논문이 스스로 인정하는 한계는 꽤 현실적이다.
+
+| 한계 | 해석 |
+| --- | --- |
+| long-horizon precision task | offline BC/post-training만으로는 tight contact tolerance를 끝까지 맞추기 어렵다. |
+| tactile hardware bottleneck | sensor drift, calibration, device variation, palm coverage 문제가 남아 있다. |
+| platform specificity | 특정 bimanual dexterous hardware와 teleoperation stack에 의존한다. |
+| online recovery 부족 | 실패 후 회복이나 탐색은 RL/online adaptation이 더 필요할 수 있다. |
+
+## 이 논문을 읽을 때 기억할 것
+
+- tactile은 “추가 observation”이 아니라 **빠른 correction signal**로 다뤄야 한다.
+- VLA의 느린 reasoning과 tactile의 빠른 feedback 사이에는 구조적 mismatch가 있다.
+- T-Rex의 핵심은 이 mismatch를 variable-rate MoT와 cascaded flow matching으로 나눈 것이다.
+- 100시간 tactile dataset은 task demo 모음이 아니라 reusable motor primitive와 contact behavior를 배우기 위한 mid-training corpus다.
+- force history와 deformation map을 함께 쓰는 tactile representation이 중요하다.
 
 ## Citation Trail
 
-### Direct Baselines and Nearest Neighbors
+### 직접 비교하거나 가까운 논문
 
-- [Reactive Diffusion Policy](./reactive-diffusion-policy/): slow-fast visual-tactile control for contact-rich tasks.
-- [ViTacFormer](./vitacformer-visuotactile-dexterous-manipulation/): cross-modal visuo-tactile representation learning for dexterous manipulation.
-- [Tactile-VLA](./tactile-vla-physical-knowledge/): tactile-aware VLA with physical interaction reasoning.
-- [EgoScale](./egoscale-scaling-dexterous-manipulation/): large-scale egocentric human video pretraining for dexterous manipulation.
-- [pi_0](./pi0-vla-flow-model/): flow-matching VLA action generation.
+- [Reactive Diffusion Policy](./reactive-diffusion-policy/): slow-fast visual-tactile control.
+- [ViTacFormer](./vitacformer-visuotactile-dexterous-manipulation/): cross-modal visuo-tactile representation.
+- [Tactile-VLA](./tactile-vla-physical-knowledge/): tactile-aware VLA.
+- [VLA-Touch](./vla-touch-dual-level-tactile-feedback/): VLA 주변에 tactile planning/execution module을 붙이는 방식.
+- [ForceVLA](./forcevla-force-aware-moe/): force-aware MoE로 contact-rich manipulation을 보강하는 방식.
+- [EgoScale](./egoscale-scaling-dexterous-manipulation/): human egocentric data scaling.
+- [pi_0](./pi0-vla-flow-model/): flow matching 기반 continuous action VLA.
 
-### Foundational Building Blocks
+### 기반 방법론
 
-- [Flow Matching](./flow-matching-generative-modeling/): vector-field regression objective used for action generation.
-- [VQ-VAE](./vq-vae-neural-discrete-representation-learning/): discrete latent representation method used for tactile force history.
-- [Open X-Embodiment / RT-X](./open-x-embodiment-rt-x/): broad robot data scaling context for VLA models.
-- [RT-2](./rt-2-vla-web-knowledge/): early VLA framing that maps web-scale VLM knowledge into robot action.
+- [Flow Matching](./flow-matching-generative-modeling/): continuous action generation의 수학적 기반.
+- [VQ-VAE](./vq-vae-neural-discrete-representation-learning/): force history를 discrete tactile token으로 압축하는 기반.
+- [Open X-Embodiment / RT-X](./open-x-embodiment-rt-x/): robot data scaling의 대표 흐름.
+- [RT-2](./rt-2-vla-web-knowledge/): VLA framing의 중요한 출발점.

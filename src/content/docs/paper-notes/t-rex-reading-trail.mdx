@@ -1,28 +1,28 @@
 ---
-title: T-Rex Reading Trail
-description: Citation trail for tactile-reactive dexterous manipulation papers.
+title: T-Rex 읽기 흐름
+description: tactile-reactive dexterous manipulation 논문들을 따라가기 위한 citation trail.
 ---
 
-# T-Rex Reading Trail
+# T-Rex 읽기 흐름
 
-This page tracks the paper graph around **T-Rex: Tactile-Reactive Dexterous Manipulation**. The goal is to avoid isolated paper summaries: every note should record which earlier papers it depends on and which papers should be followed next.
+이 페이지는 **T-Rex: Tactile-Reactive Dexterous Manipulation**을 중심으로 논문 그래프를 따라가기 위한 지도다. 목표는 논문 하나를 고립해서 요약하는 것이 아니라, 어떤 논문이 어떤 문제를 열었고 다음 논문이 그 문제를 어떻게 이어받는지 추적하는 것이다.
 
-## Trail Policy
+## 읽기 규칙
 
-| Depth | Meaning | Action |
+| 깊이 | 의미 | 정리 방식 |
 | --- | --- | --- |
-| 0 | Seed paper | Write a detailed note. |
-| 1 | Direct conceptual or baseline papers used by the seed | Write one note per paper. |
-| 2 | Foundational methods, datasets, or model families behind depth-1 papers | Write compact notes first, expand when studied. |
-| Later | Recursive expansion | Add when a paper becomes important enough to affect understanding. |
+| 0 | 시작 논문 | 자세한 한국어 노트 작성 |
+| 1 | 시작 논문의 직접 비교군 또는 가까운 선행 연구 | 논문별 survey card 작성 |
+| 2 | 방법론, 데이터셋, model family의 기반 논문 | compact note 작성 후 필요하면 확장 |
+| 이후 | citation을 따라 계속 확장 | 실제 이해에 필요해질 때 추가 |
 
-## Seed
+## Seed Paper
 
 - [T-Rex: Tactile-Reactive Dexterous Manipulation](./t-rex-tactile-reactive-dexterous-manipulation/)
 
-## First Wave Papers
+## 첫 번째 확장 묶음
 
-### Tactile-Reactive Manipulation
+### tactile-reactive manipulation
 
 - [Reactive Diffusion Policy](./reactive-diffusion-policy/)
 - [ViTacFormer](./vitacformer-visuotactile-dexterous-manipulation/)
@@ -35,14 +35,14 @@ This page tracks the paper graph around **T-Rex: Tactile-Reactive Dexterous Mani
 - [SaTA](./sata-spatially-anchored-tactile-awareness/)
 - [Learning Visuotactile Skills with Two Multifingered Hands](./learning-visuotactile-skills-two-multifingered-hands/)
 
-### Tactile Representation and Multimodal Alignment
+### tactile representation과 multimodal alignment
 
 - [Dexterity from Touch](./dexterity-from-touch/)
 - [The Power of the Senses](./power-of-the-senses/)
 - [A Touch, Vision, and Language Dataset](./touch-vision-language-dataset/)
 - [VQ-VAE](./vq-vae-neural-discrete-representation-learning/)
 
-### VLA and Robot Foundation Models
+### VLA와 robot foundation model
 
 - [EgoScale](./egoscale-scaling-dexterous-manipulation/)
 - [pi_0](./pi0-vla-flow-model/)
@@ -50,16 +50,16 @@ This page tracks the paper graph around **T-Rex: Tactile-Reactive Dexterous Mani
 - [OpenVLA](./openvla-open-source-vla/)
 - [RT-2](./rt-2-vla-web-knowledge/)
 
-### Data and Generative Modeling Foundations
+### 데이터와 generative modeling 기반
 
 - [Open X-Embodiment / RT-X](./open-x-embodiment-rt-x/)
 - [Ego4D](./ego4d-egocentric-video/)
 - [Flow Matching](./flow-matching-generative-modeling/)
 - [FAST](./fast-action-tokenization/)
 
-## Next Expansion Queue
+## 다음 확장 후보
 
-- ACT and Diffusion Policy: needed to understand several imitation-learning baselines.
-- EgoMimic, DexWild, EgoDex, and EgoVLA: needed for human-video-to-robot transfer.
-- Octo, DROID, BridgeData v2: needed for action representation and robot data scaling.
-- Pinocchio, Pink, and CasADi: useful for the real robot teleoperation/control stack, but lower priority for the paper-survey trail.
+- ACT와 Diffusion Policy: action chunking과 imitation learning baseline 이해에 필요하다.
+- EgoMimic, DexWild, EgoDex, EgoVLA: human video에서 robot action으로 넘어가는 흐름을 이해하는 데 필요하다.
+- Octo, DROID, BridgeData v2: robot data scaling과 cross-embodiment learning의 데이터 생태계를 이해하는 데 필요하다.
+- Pinocchio, Pink, CasADi: 논문 survey보다는 실제 로봇 제어 stack을 이해할 때 필요하다.

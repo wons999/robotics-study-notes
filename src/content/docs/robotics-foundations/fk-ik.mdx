@@ -1,25 +1,25 @@
 ---
-title: FK, IK, and Jacobian
-description: First foundation note for pose, kinematics, and inverse kinematics.
+title: FK, IK, Jacobian
+description: pose, kinematics, inverse kinematics를 위한 첫 기초 노트.
 ---
 
-# FK, IK, and Jacobian
+# FK, IK, Jacobian
 
-## Why This Matters
+## 왜 중요한가
 
-Robot manipulation depends on knowing where the end effector is, how joint motion changes its pose, and how to choose joint updates that move it toward a useful target without breaking constraints.
+로봇 manipulation은 end-effector가 지금 어디 있는지, joint motion이 pose를 어떻게 바꾸는지, 그리고 constraint를 깨지 않으면서 목표 pose로 가려면 joint를 어떻게 업데이트해야 하는지에 달려 있다.
 
-## Core Terms
+## 핵심 용어
 
-| Term | Meaning | Practical Question |
+| 용어 | 의미 | 실전 질문 |
 | --- | --- | --- |
-| FK | joint angles to end-effector pose | Where is the end effector now? |
-| IK | desired end-effector pose to joint angles | How do I move the robot there? |
-| Jacobian | local map from joint velocity to end-effector velocity | Which joints move the end effector in this direction? |
-| Singularity | configuration where motion directions are lost or amplified | Why did the solver suddenly become unstable? |
-| Redundancy | more DoF than task constraints | Which posture should the robot prefer? |
+| FK | joint angle에서 end-effector pose를 계산 | end-effector가 지금 어디 있는가? |
+| IK | 원하는 end-effector pose에서 joint angle을 찾음 | 로봇을 어떻게 그 위치로 보낼 것인가? |
+| Jacobian | joint velocity와 end-effector velocity의 local map | 어떤 joint가 이 방향 움직임을 만드는가? |
+| Singularity | 움직일 수 있는 방향이 사라지거나 증폭되는 configuration | solver가 왜 갑자기 불안정해졌는가? |
+| Redundancy | task constraint보다 DoF가 많은 상태 | 로봇이 어떤 posture를 선호해야 하는가? |
 
-## Minimal Numerical IK Loop
+## 최소 numerical IK 루프
 
 ```txt
 q <- current joint state
@@ -31,13 +31,13 @@ repeat:
   q <- q + alpha dq
 ```
 
-## Notes for Manipulation Systems
+## Manipulation 시스템에서의 메모
 
-In manipulation, IK is rarely only about reaching a pose. Joint limits, collisions, contact, controller bandwidth, and object motion can all become part of the problem. A clean geometric solution can still be impractical if it ignores system constraints.
+Manipulation에서 IK는 단순히 pose에 도달하는 문제로 끝나지 않는다. joint limit, collision, contact, controller bandwidth, object motion이 모두 문제에 들어온다. 기하학적으로 깔끔한 해라도 시스템 constraint를 무시하면 실제로는 쓸 수 없을 수 있다.
 
-## Open Questions
+## 열린 질문
 
-- What coordinate frame conventions does our robot stack use?
-- Which task frame is the controller using?
-- Where are joint limits, collision constraints, and preferred postures encoded?
-- How should feedback modify an IK or impedance objective?
+- robot stack은 어떤 coordinate frame convention을 쓰는가?
+- controller는 어떤 task frame을 기준으로 움직이는가?
+- joint limit, collision constraint, preferred posture는 어디에 encode되어 있는가?
+- feedback은 IK나 impedance objective를 어떻게 바꿔야 하는가?

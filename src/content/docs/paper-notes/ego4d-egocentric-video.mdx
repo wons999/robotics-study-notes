@@ -1,62 +1,23 @@
 ---
 title: Ego4D
-description: Survey note on Ego4D as a large egocentric video dataset.
+description: egocentric video data가 robot manipulation pretraining에 주는 의미.
 ---
 
-# Ego4D: Around the World in 3,000 Hours of Egocentric Video
+# Ego4D
 
-## Metadata
+## 메타데이터
 
-| Field | Value |
+| 항목 | 내용 |
 | --- | --- |
-| Title | Ego4D: Around the World in 3,000 Hours of Egocentric Video |
-| Authors | Kristen Grauman, Andrew Westbury, Eugene Byrne, Zachary Chavis, Antonino Furnari, Rohit Girdhar, and collaborators |
-| Venue / Year | CVPR, 2022 |
-| Link | https://arxiv.org/abs/2110.07058 |
-| Tags | egocentric video, first-person perception, dataset, human activity, manipulation |
+| 논문 | Ego4D: Around the World in 3,000 Hours of Egocentric Video |
+| 연도 | CVPR, 2022 |
+| 링크 | https://arxiv.org/abs/2110.07058 |
+| 태그 | egocentric video, first-person perception, human activity |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 2
-- Role: Human egocentric video foundation
-- Parent paper: EgoScale / T-Rex
+Ego4D는 1인칭 시점 human activity video를 대규모로 모은 dataset으로, human behavior prior를 배우는 robot learning 연구의 중요한 기반이다.
 
-## One-line Summary
+## T-Rex와의 관계
 
-Ego4D is a large-scale first-person video dataset and benchmark suite for understanding human activity from egocentric perception.
-
-## Problem Setting
-
-- Data source: first-person videos from camera wearers in many daily-life scenarios.
-- Observation: egocentric video, with optional audio, gaze, stereo, 3D meshes, and synchronized views for subsets.
-- Task: episodic memory, hand-object interaction, activity forecasting, social interaction, and other first-person perception tasks.
-
-## Core Idea
-
-Third-person vision datasets do not capture the perceptual geometry of acting in the world. Ego4D supplies first-person video at scale, making it relevant for models that learn manipulation priors from human behavior.
-
-## Method Details
-
-- Architecture: dataset and benchmark, not a single policy model.
-- Training recipe: supports downstream self-supervised and supervised egocentric learning.
-- Data: thousands of hours of daily-life egocentric video from many locations and scenarios.
-- Inference / control loop: not directly a robot control paper.
-
-## What I Should Remember
-
-- Ego4D is part of the data lineage behind human-video pretraining for robot manipulation.
-- EgoScale and T-Rex-style recipes depend on the idea that human egocentric data contains useful action priors.
-- Ego4D itself does not solve robot execution or tactile grounding.
-
-## Limitations
-
-- Human video is not robot action data.
-- It lacks direct robot proprioception, force, tactile, and embodiment constraints.
-- Retargeting from human motion to robot action remains a separate problem.
-
-## Citation Trail
-
-- Depends on: egocentric perception benchmarks.
-- Follow next: EgoScale, EgoMimic, EgoDex, DexWild.
-- Why next: these papers turn first-person video into robot manipulation priors.
+T-Rex와 EgoScale 계열은 human egocentric data에서 손-물체 상호작용 prior를 얻으려 한다. 다만 Ego4D 자체는 robot action, force, tactile, proprioception을 포함하지 않으므로 robot execution으로 옮기는 별도 alignment가 필요하다.

@@ -1,64 +1,27 @@
 ---
 title: RT-2
-description: Survey note on RT-2 and the VLA framing.
+description: web-scale vision-language knowledge를 robot action으로 transfer하는 VLA 출발점 노트.
 ---
 
-# RT-2: Vision-Language-Action Models Transfer Web Knowledge to Robotic Control
+# RT-2
 
-## Metadata
+## 메타데이터
 
-| Field | Value |
+| 항목 | 내용 |
 | --- | --- |
-| Title | RT-2: Vision-Language-Action Models Transfer Web Knowledge to Robotic Control |
-| Authors | Anthony Brohan, Noah Brown, Justice Carbajal, Yevgen Chebotar, Xi Chen, and collaborators |
-| Venue / Year | CoRL, 2023 |
-| Link | https://arxiv.org/abs/2307.15818 |
-| Tags | VLA, web-scale pretraining, robot control, action tokenization, semantic generalization |
+| 논문 | RT-2: Vision-Language-Action Models Transfer Web Knowledge to Robotic Control |
+| 연도 | CoRL, 2023 |
+| 링크 | https://arxiv.org/abs/2307.15818 |
+| 태그 | VLA, web knowledge, action tokenization, semantic generalization |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 2
-- Role: Foundational VLA framing
-- Parent paper: T-Rex / OpenVLA / tactile-aware VLA papers
+RT-2는 vision-language model을 robot trajectory와 함께 finetuning하여, web-scale semantic knowledge를 robot action으로 옮기는 VLA framing을 보여준 논문이다.
 
-## One-line Summary
+## 방법론
 
-RT-2 shows that a vision-language model can be co-finetuned on robot trajectories by representing robot actions as tokens, transferring web-scale semantic knowledge into robot control.
+robot action을 text token처럼 표현하고, VLM이 image와 instruction을 보고 action token을 출력하게 한다. 이 아이디어가 이후 OpenVLA, pi_0, tactile-aware VLA 흐름의 출발점 중 하나다.
 
-## Problem Setting
+## T-Rex와의 관계
 
-- Robot embodiment: real robot manipulation platform.
-- Observation: camera image and language instruction.
-- Action: robot action encoded as text-like tokens.
-- Data: robot trajectories plus Internet-scale vision-language tasks.
-- Task: robotic manipulation with semantic generalization and emergent reasoning.
-
-## Core Idea
-
-The key move is to put robot actions into the same modeling format as language tokens. That allows the VLM to output robot actions directly while retaining web-scale semantic knowledge.
-
-## Method Details
-
-- Architecture: large VLM co-finetuned on robot and web vision-language data.
-- Training recipe: mix natural language responses and robot action token sequences.
-- Data: robot trajectories plus web-scale vision-language data.
-- Inference / control loop: image and instruction in, action token sequence out.
-
-## What I Should Remember
-
-- RT-2 popularized the VLA framing: vision-language-action as one model family.
-- It emphasizes semantic generalization, not tactile feedback.
-- T-Rex inherits the VLA idea but targets the physical gap: contact, force, tactile reactivity, and dexterous timing.
-
-## Limitations
-
-- Tokenized actions can be awkward for fine continuous control.
-- Tactile and force feedback are not central.
-- Web knowledge does not directly solve contact-rich manipulation.
-
-## Citation Trail
-
-- Depends on: PaLI-X, PaLM-E, RT-1.
-- Follow next: OpenVLA, pi_0, RT-X.
-- Why next: these show how VLA models moved from tokenized web-knowledge transfer toward open and continuous-control systems.
+RT-2는 semantic generalization을 열었지만, tactile/contact-rich control 문제는 직접 다루지 않는다. T-Rex는 VLA framing을 물리적 접촉과 dexterous manipulation으로 확장하는 흐름에 있다.

@@ -1,64 +1,32 @@
 ---
 title: VTAM
-description: Survey note on video-tactile-action models for physical interaction.
+description: video-tactile-action model로 contact-rich physical interaction을 다루는 논문 노트.
 ---
 
-# VTAM: Video-Tactile-Action Models for Complex Physical Interaction Beyond VLAs
+# VTAM
 
-## Metadata
+## 메타데이터
 
-| Field | Value |
+| 항목 | 내용 |
 | --- | --- |
-| Title | VTAM: Video-Tactile-Action Models for Complex Physical Interaction Beyond VLAs |
-| Authors | Haoran Yuan, Weigang Yi, Zhenyu Zhang, Wendi Chen, Yuchen Mo, Jiashi Yin, Xinzhuo Li, Xiangyu Zeng, Chuan Wen, Cewu Lu, Katherine Driggs-Campbell, Ismini Lourentzou |
-| Venue / Year | arXiv, 2026 |
-| Link | https://arxiv.org/abs/2603.23481 |
-| Tags | tactile, video-action model, world model, contact-rich manipulation, multimodal fusion |
+| 논문 | VTAM: Video-Tactile-Action Models for Complex Physical Interaction Beyond VLAs |
+| 연도 | arXiv, 2026 |
+| 링크 | https://arxiv.org/abs/2603.23481 |
+| 태그 | tactile, video-action model, world model, contact-rich manipulation |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 1
-- Role: Related tactile world/action model
-- Parent paper: T-Rex
+VTAM은 video-action model에 tactile stream을 붙여, 시각적으로 보이지 않는 contact state를 action prediction에 반영하려는 모델이다.
 
-## One-line Summary
+## 방법론과 모델 구조
 
-VTAM augments video-action models with tactile streams so action models can correct visual estimation errors in contact-rich physical interaction.
+pretrained video transformer를 기반으로 하고, tactile modality를 추가한다. tactile regularization을 통해 모델이 touch를 무시하지 않도록 유도한다.
 
-## Problem Setting
+## T-Rex와의 관계
 
-- Robot embodiment: contact-rich manipulation setup.
-- Observation: video streams plus tactile feedback.
-- Action: action predictions from a video-tactile action model.
-- Data: contact-rich manipulation data with tactile feedback.
-- Task: physical interaction tasks where visual tokens alone miss force and contact transitions.
+VTAM은 language-first VLA보다 video/world-model 계열에 가깝다. T-Rex의 latent expert가 future visual representation을 예측한다는 점을 생각하면, VTAM은 T-Rex의 “visual dynamics + tactile grounding” 측면을 이해하는 데 도움이 된다.
 
-## Core Idea
+## 기억할 점
 
-Video-action models can model temporal visual dynamics, but contact state is often partially or fully invisible. VTAM adds tactile grounding to pretrained video transformers, using lightweight modality-transfer finetuning and a tactile regularization loss to prevent the model from ignoring touch.
-
-## Method Details
-
-- Architecture: pretrained video transformer augmented with tactile streams.
-- Training recipe: modality-transfer finetuning plus tactile regularization for balanced cross-modal attention.
-- Data: video-tactile-action data for contact-rich tasks.
-- Inference / control loop: action prediction grounded by video and tactile observations.
-
-## What I Should Remember
-
-- VTAM focuses on video-action/world-model style policies rather than language-first VLA policies.
-- It supports the same thesis as T-Rex: visual dynamics are not enough for contact.
-- T-Rex's tactile expert can be read as a control-frequency answer to the same physical grounding problem.
-
-## Limitations
-
-- It may not provide the same language-conditioned generality as VLA systems.
-- Tactile fusion quality depends on attention balance and data diversity.
-- It is still tied to the tactile sensing setup used in training.
-
-## Citation Trail
-
-- Depends on: video-action models, world models, tactile representation learning.
-- Follow next: World Action Models, DreamDojo, FLARE.
-- Why next: these explain the video/world-model branch related to T-Rex's future visual prediction expert.
+- contact state는 이미지에서 안 보이는 경우가 많다.
+- tactile은 world/action model이 물리 상호작용을 놓치지 않게 하는 grounding signal이 될 수 있다.

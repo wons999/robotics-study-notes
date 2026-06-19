@@ -1,64 +1,27 @@
 ---
 title: OpenVLA
-description: Survey note on OpenVLA as an open-source vision-language-action model.
+description: open-source VLA model과 robot data scaling 노트.
 ---
 
-# OpenVLA: An Open-Source Vision-Language-Action Model
+# OpenVLA
 
-## Metadata
+## 메타데이터
 
-| Field | Value |
+| 항목 | 내용 |
 | --- | --- |
-| Title | OpenVLA: An Open-Source Vision-Language-Action Model |
-| Authors | Moo Jin Kim, Karl Pertsch, Siddharth Karamcheti, Ted Xiao, Ashwin Balakrishna, Suraj Nair, Rafael Rafailov, Ethan Foster, Grace Lam, Pannag Sanketi, Quan Vuong, Thomas Kollar, Benjamin Burchfiel, Russ Tedrake, Dorsa Sadigh, Sergey Levine, Percy Liang, Chelsea Finn |
-| Venue / Year | arXiv, 2024 |
-| Link | https://arxiv.org/abs/2406.09246 |
-| Tags | VLA, open-source, robot foundation model, Open X-Embodiment, fine-tuning |
+| 논문 | OpenVLA: An Open-Source Vision-Language-Action Model |
+| 연도 | arXiv, 2024 |
+| 링크 | https://arxiv.org/abs/2406.09246 |
+| 태그 | VLA, open-source, Open X-Embodiment, fine-tuning |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 2
-- Role: Foundational VLA reference
-- Parent paper: T-Rex / tactile-aware VLA papers
+OpenVLA는 대규모 robot demonstration으로 학습된 open-source VLA로, 이후 VLA 연구의 실험 기반을 넓힌 모델이다.
 
-## One-line Summary
+## 데이터셋과 모델 구조
 
-OpenVLA is a 7B-parameter open-source VLA trained on a large robot demonstration mixture and designed for efficient fine-tuning to new manipulation tasks.
+Open X-Embodiment 계열의 robot demonstration을 사용한다. image-language input을 받아 robot action을 예측하는 구조이며, open model이라는 점이 중요하다.
 
-## Problem Setting
+## T-Rex와의 관계
 
-- Robot embodiment: multiple embodiments from Open X-Embodiment.
-- Observation: image and language instruction.
-- Action: robot actions represented for VLA training.
-- Data: about 970k real-world robot demonstrations.
-- Task: generalist manipulation and fine-tuning to new tasks.
-
-## Core Idea
-
-OpenVLA addresses a practical bottleneck in VLA research: many strong VLAs were closed. It provides an open model, training recipe, and fine-tuning path for robot manipulation.
-
-## Method Details
-
-- Architecture: Llama 2 language backbone with DINOv2 and SigLIP visual features.
-- Training recipe: large-scale robot demonstration training with efficient adaptation options.
-- Data: Open X-Embodiment-style robot demonstrations.
-- Inference / control loop: image-language conditioned robot action prediction.
-
-## What I Should Remember
-
-- OpenVLA is a key baseline for open VLA experimentation.
-- It is mostly visual-language-action, not tactile-reactive.
-- Tactile-VLA-style papers can be viewed as attempts to extend this VLA family into contact-rich sensing.
-
-## Limitations
-
-- Tactile and force signals are not central.
-- Discrete or tokenized action formulations can struggle with high-frequency dexterous correction.
-- Fine-tuning remains necessary for many target domains.
-
-## Citation Trail
-
-- Depends on: RT-2, Open X-Embodiment, DINOv2, SigLIP, Llama.
-- Follow next: RT-2, Open X-Embodiment.
-- Why next: these explain the VLA framing and data foundation.
+OpenVLA는 visual-language-action baseline family에 속한다. T-Rex는 이 계열이 tactile과 high-frequency contact correction을 충분히 다루지 못한다는 점을 보완한다.

@@ -1,27 +1,27 @@
 ---
-title: Robot Systems Map
-description: A map for organizing robotics hardware, sensing, control, learning, and evaluation questions.
+title: 로봇 시스템 지도
+description: 로봇 hardware, sensing, control, learning, evaluation 질문을 정리하는 지도.
 ---
 
-# Robot Systems Map
+# 로봇 시스템 지도
 
-## Main Axes
+## 주요 축
 
-| Axis | What to Record |
+| 축 | 기록할 내용 |
 | --- | --- |
 | Mechanics | DoF, actuation, compliance, backlash, durability |
-| Sensing | observation sources, calibration, noise, latency, reliability |
-| Control | joint control, task-space control, impedance, safety constraints |
+| Sensing | observation source, calibration, noise, latency, reliability |
+| Control | joint control, task-space control, impedance, safety constraint |
 | Learning | data collection, imitation policy, RL fine-tuning, residual control |
 | Evaluation | task success, robustness, recovery, repeatability, cycle time |
 
-## Working Hypothesis
+## 작업 가설
 
-Robot behavior is not only a policy problem. It is a hardware, sensing, control, and data problem. Notes in this section should make those dependencies explicit.
+로봇 behavior는 policy만의 문제가 아니다. hardware, sensing, control, data가 함께 만드는 결과다. 이 섹션의 노트는 그 의존성을 명시적으로 드러내야 한다.
 
-## Questions to Keep Asking
+## 계속 물어볼 질문
 
-- Which task failures are caused by perception, control, mechanics, or data?
-- What should be solved with model-based control before learning is added?
-- Which observations are stable enough for closed-loop policy inputs?
-- What action representation is natural for this system: joint command, task-space command, torque, or latent motor command?
+- task failure가 perception, control, mechanics, data 중 어디서 생겼는가?
+- learning을 얹기 전에 model-based control로 해결해야 할 부분은 무엇인가?
+- closed-loop policy input으로 쓸 만큼 안정적인 observation은 무엇인가?
+- 이 시스템에 자연스러운 action representation은 joint command, task-space command, torque, latent motor command 중 무엇인가?

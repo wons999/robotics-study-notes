@@ -1,52 +1,52 @@
 ---
-title: Study Roadmap
-description: A practical roadmap for rebuilding robotics fundamentals while tracking VLA, RL, and robotics research.
+title: 공부 로드맵
+description: 로보틱스 기초를 다시 쌓으면서 VLA, RL, 로봇 연구를 따라가기 위한 실전 로드맵.
 ---
 
-# Study Roadmap
+# 공부 로드맵
 
-## North Star
+## 목표
 
-robotic systems에서 perception, control, and learning이 어떻게 연결되는지 설명하고, 작은 실험으로 검증하고, 논문 아이디어를 실제 시스템 제약과 비교할 수 있는 사람이 되는 것.
+로봇 시스템에서 perception, control, learning이 어떻게 연결되는지 설명하고, 작은 실험으로 검증하고, 논문 아이디어를 실제 시스템 제약과 비교할 수 있는 사람이 되는 것.
 
-## Phase 1: Foundations That Pay Rent
+## 1단계: 바로 써먹는 기초
 
-| Week | Topic | Output |
+| 주차 | 주제 | 결과물 |
 | --- | --- | --- |
-| 1 | SE(3), FK, coordinate frames | 2-link/6-DoF pose notebook, frame convention note |
-| 2 | Jacobian and numerical IK | damped least-squares IK implementation |
-| 3 | Dynamics and control | joint PD, computed torque, impedance control note |
-| 4 | Contact and manipulation basics | grasp/contact vocabulary, wrench/friction cone summary |
+| 1 | SE(3), FK, 좌표계 | 2-link/6-DoF pose notebook, frame convention note |
+| 2 | Jacobian과 numerical IK | damped least-squares IK 구현 |
+| 3 | Dynamics와 control | joint PD, computed torque, impedance control 정리 |
+| 4 | Contact와 manipulation 기초 | grasp/contact 용어, wrench/friction cone 요약 |
 
-## Phase 2: Manipulation & Robot Systems
+## 2단계: Manipulation과 로봇 시스템
 
-| Theme | Questions |
+| 주제 | 질문 |
 | --- | --- |
-| Manipulation | What constraints make manipulation tasks difficult? |
-| Sensing | Which observations are useful for closed-loop behavior? |
-| Actuation | How do bandwidth, compliance, and limits shape the controller? |
-| System evaluation | Which metrics reveal real progress beyond demo success? |
+| Manipulation | 어떤 제약 때문에 조작 과제가 어려워지는가? |
+| Sensing | closed-loop behavior에 실제로 도움이 되는 관측은 무엇인가? |
+| Actuation | bandwidth, compliance, limit가 controller를 어떻게 제한하는가? |
+| System evaluation | 데모 성공률 너머의 진짜 진전을 어떤 metric으로 볼 수 있는가? |
 
-## Phase 3: Robot Learning Follow-up
+## 3단계: Robot Learning Follow-up
 
-| Theme | What to Track |
+| 주제 | 따라갈 내용 |
 | --- | --- |
 | Imitation learning | data collection, teleoperation, action representation |
-| RL | reward design, sim-to-real, residual policy, contact-rich tasks |
+| RL | reward design, sim-to-real, residual policy, contact-rich task |
 | Diffusion policy | action chunking, temporal consistency, latency |
 | VLA | vision-language grounding, low-level action decoding, cross-embodiment transfer |
 
-## Weekly Loop
+## 주간 루프
 
-1. Pick one concept or paper.
-2. Write a one-page intuition note.
-3. Implement or reproduce a tiny version.
-4. Extract practical implications for robotics systems.
-5. Record open questions for the next week.
+1. 개념이나 논문 하나를 고른다.
+2. 한 페이지짜리 직관 노트를 쓴다.
+3. 아주 작은 구현이나 재현 실험을 만든다.
+4. 로봇 시스템 관점의 실전 의미를 뽑는다.
+5. 다음 주에 이어갈 질문을 남긴다.
 
-## Reading Queue
+## 읽을 자료 큐
 
-- Modern Robotics: mechanics, planning, and control.
-- Underactuated Robotics: dynamics, planning, and learning for control.
-- Robot manipulation learning surveys.
-- VLA surveys and recent robotics manipulation benchmarks.
+- Modern Robotics: mechanics, planning, control.
+- Underactuated Robotics: dynamics, planning, learning for control.
+- Robot manipulation learning survey.
+- VLA survey와 최신 manipulation benchmark.

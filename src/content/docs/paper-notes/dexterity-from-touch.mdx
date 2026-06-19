@@ -1,64 +1,32 @@
 ---
 title: Dexterity from Touch
-description: Survey note on self-supervised tactile representation learning with robotic play.
+description: robotic play로 tactile representation을 self-supervised pretraining하는 논문 노트.
 ---
 
-# Dexterity from Touch: Self-Supervised Pre-Training of Tactile Representations with Robotic Play
+# Dexterity from Touch
 
-## Metadata
+## 메타데이터
 
-| Field | Value |
+| 항목 | 내용 |
 | --- | --- |
-| Title | Dexterity from Touch: Self-Supervised Pre-Training of Tactile Representations with Robotic Play |
-| Authors | Irmak Guzey, Ben Evans, Soumith Chintala, Lerrel Pinto |
-| Venue / Year | arXiv, 2023 |
-| Link | https://arxiv.org/abs/2303.12076 |
-| Tags | tactile, self-supervised learning, robotic play, dexterous manipulation |
+| 논문 | Dexterity from Touch: Self-Supervised Pre-Training of Tactile Representations with Robotic Play |
+| 연도 | arXiv, 2023 |
+| 링크 | https://arxiv.org/abs/2303.12076 |
+| 태그 | tactile, self-supervised learning, robotic play, dexterous manipulation |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 2
-- Role: Earlier tactile representation learning paper
-- Parent paper: T-Rex / ViTacFormer
+T-Dex는 robotic play data로 tactile encoder를 self-supervised pretraining하고, 적은 demonstration으로 dexterous task policy를 학습한다.
 
-## One-line Summary
+## 데이터셋과 방법론
 
-T-Dex learns tactile encoders from self-supervised robotic play, then uses those representations with a small number of demonstrations for dexterous tasks.
+먼저 task label이 없는 tactile-rich play data를 모은다. 이 데이터로 tactile representation을 학습한 뒤, downstream task에서는 적은 demonstration으로 policy를 만든다.
 
-## Problem Setting
+## T-Rex와의 관계
 
-- Robot embodiment: multi-fingered robot with tactile sensing.
-- Observation: tactile readings plus visual observations.
-- Action: policies for dexterous manipulation.
-- Data: play data for tactile pretraining and a few demonstrations for target tasks.
-- Task: fine-grained dexterous manipulation where vision or torque alone is insufficient.
+T-Rex의 tactile mid-training과 철학이 비슷하다. task-specific demo만 모으는 것보다, 넓은 tactile interaction data로 reusable contact representation을 먼저 학습하는 것이 중요하다는 흐름이다.
 
-## Core Idea
+## 기억할 점
 
-The paper separates tactile representation learning from task policy learning. First, collect broad tactile play data and train encoders without task labels. Then use the learned tactile embedding for downstream dexterous policies.
-
-## Method Details
-
-- Architecture: self-supervised tactile encoder plus non-parametric downstream policies.
-- Training recipe: pretrain on tactile play, then learn task behavior from limited demonstrations.
-- Data: 2.5 hours of play data plus few-shot demonstrations.
-- Inference / control loop: policy combines tactile and visual observations.
-
-## What I Should Remember
-
-- Tactile representation learning can be data-efficient if pretraining uses broad play.
-- This is an early signal that touch is especially useful under occlusion and fine contact.
-- T-Rex scales the idea from tactile pretraining into tactile-grounded VLA mid-training.
-
-## Limitations
-
-- Dataset and policy scale are much smaller than VLA foundation-model papers.
-- Non-parametric downstream policies may not scale to broad task families.
-- Hardware-specific tactile data can limit transfer.
-
-## Citation Trail
-
-- Depends on: self-supervised representation learning, robotic play.
-- Follow next: The Power of the Senses, ViTacFormer.
-- Why next: these extend tactile representation learning into multimodal and dexterous policy settings.
+- tactile pretraining은 data efficiency를 크게 높일 수 있다.
+- play data는 다양한 접촉 상태를 자연스럽게 포함한다.

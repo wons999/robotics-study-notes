@@ -1,64 +1,23 @@
 ---
 title: FAST
-description: Survey note on frequency-space action sequence tokenization for VLA models.
+description: VLA에서 high-frequency continuous action을 token으로 표현하는 방법 노트.
 ---
 
-# FAST: Efficient Action Tokenization for Vision-Language-Action Models
+# FAST
 
-## Metadata
+## 메타데이터
 
-| Field | Value |
+| 항목 | 내용 |
 | --- | --- |
-| Title | FAST: Efficient Action Tokenization for Vision-Language-Action Models |
-| Authors | Karl Pertsch, Kyle Stachowicz, Brian Ichter, Danny Driess, Suraj Nair, Quan Vuong, Oier Mees, Chelsea Finn, Sergey Levine |
-| Venue / Year | arXiv, 2025 |
-| Link | https://arxiv.org/abs/2501.09747 |
-| Tags | VLA, action tokenization, high-frequency control, dexterous manipulation, DCT |
+| 논문 | FAST: Efficient Action Tokenization for Vision-Language-Action Models |
+| 연도 | arXiv, 2025 |
+| 링크 | https://arxiv.org/abs/2501.09747 |
+| 태그 | VLA, action tokenization, DCT, high-frequency control |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 2
-- Role: Action representation foundation
-- Parent paper: pi_0 / T-Rex context
+FAST는 high-frequency continuous robot action sequence를 frequency-space token으로 압축해 autoregressive VLA가 더 효율적으로 action을 예측하게 만든다.
 
-## One-line Summary
+## T-Rex와의 관계
 
-FAST compresses high-frequency continuous robot action sequences into frequency-space tokens, making autoregressive VLA action modeling more practical for dexterous tasks.
-
-## Problem Setting
-
-- Robot embodiment: diverse robot action spaces and control frequencies.
-- Observation: VLA observations paired with continuous action trajectories.
-- Action: high-frequency continuous action sequences tokenized for autoregressive models.
-- Data: large robot action trajectory corpus.
-- Task: train autoregressive VLA policies for dexterous high-frequency behavior.
-
-## Core Idea
-
-Simple per-dimension, per-timestep action binning performs poorly for high-frequency dexterous control. FAST uses a discrete cosine transform based compression scheme so action sequences can be represented with fewer, more meaningful tokens.
-
-## Method Details
-
-- Architecture: action tokenizer used with VLA policies.
-- Training recipe: train or apply frequency-space tokenization over robot trajectories.
-- Data: large robot action trajectories.
-- Inference / control loop: VLA predicts compressed action tokens, then decoder reconstructs continuous actions.
-
-## What I Should Remember
-
-- FAST is another answer to the action representation problem.
-- pi_0 and T-Rex use flow matching for continuous action generation; FAST keeps an autoregressive token route viable.
-- High-frequency dexterous control exposes the weakness of naive action discretization.
-
-## Limitations
-
-- Tokenization quality depends on action sequence structure.
-- Compression can discard high-frequency details if poorly tuned.
-- It does not address tactile sensing directly.
-
-## Citation Trail
-
-- Depends on: VLA action tokenization, DCT, autoregressive sequence modeling.
-- Follow next: RT-2, OpenVLA, pi_0.
-- Why next: these show the trade-off between tokenized and continuous action-generation approaches.
+T-Rex와 pi_0는 flow matching으로 continuous action을 생성하는 쪽이고, FAST는 tokenization을 개선해 autoregressive route를 유지하는 쪽이다. action representation을 비교할 때 함께 봐야 한다.

@@ -1,64 +1,32 @@
 ---
 title: The Power of the Senses
-description: Survey note on masked multimodal learning for vision-touch manipulation.
+description: masked multimodal learning으로 vision-touch manipulation representation을 학습하는 논문 노트.
 ---
 
-# The Power of the Senses: Generalizable Manipulation from Vision and Touch through Masked Multimodal Learning
+# The Power of the Senses
 
-## Metadata
+## 메타데이터
 
-| Field | Value |
+| 항목 | 내용 |
 | --- | --- |
-| Title | The Power of the Senses: Generalizable Manipulation from Vision and Touch through Masked Multimodal Learning |
-| Authors | Carmelo Sferrazza, Younggyo Seo, Hao Liu, Youngwoon Lee, Pieter Abbeel |
-| Venue / Year | arXiv, 2023 |
-| Link | https://arxiv.org/abs/2311.00924 |
-| Tags | tactile, vision-touch fusion, masked autoencoding, reinforcement learning, multimodal policy |
+| 논문 | The Power of the Senses: Generalizable Manipulation from Vision and Touch through Masked Multimodal Learning |
+| 연도 | arXiv, 2023 |
+| 링크 | https://arxiv.org/abs/2311.00924 |
+| 태그 | tactile, vision-touch fusion, masked learning, multimodal policy |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 2
-- Role: Multimodal tactile representation foundation
-- Parent paper: T-Rex / tactile-aware VLA papers
+이 논문은 masked multimodal learning으로 vision과 touch의 대응 관계를 학습해 manipulation policy의 sample efficiency와 generalization을 높인다.
 
-## One-line Summary
+## 방법론
 
-M3L jointly learns visual-tactile representations and policies through masked multimodal learning, improving sample efficiency and generalization in manipulation.
+vision이나 touch 일부를 가리고 복원하도록 학습하면, 모델은 두 modality 사이의 구조를 배운다. 이렇게 학습한 representation은 policy가 접촉 상태를 더 잘 이해하도록 돕는다.
 
-## Problem Setting
+## T-Rex와의 관계
 
-- Robot embodiment: simulated manipulation environments with visual and tactile observations.
-- Observation: vision and touch.
-- Action: RL policy actions.
-- Data: simulated interaction data.
-- Task: insertion, door opening, and dexterous in-hand manipulation.
+T-Rex는 tactile representation을 high-frequency control에 연결하고, 이 논문은 multimodal representation learning 관점에서 tactile의 가치를 보여준다.
 
-## Core Idea
+## 기억할 점
 
-The paper uses masked multimodal learning to force the model to learn correspondences between vision and touch. This creates representations that are useful for policies and can even improve vision-only behavior at test time.
-
-## Method Details
-
-- Architecture: masked multimodal representation learner plus policy.
-- Training recipe: jointly learn policy and visual-tactile representations.
-- Data: simulated environments with paired visual and tactile observations.
-- Inference / control loop: policy uses learned multimodal representations.
-
-## What I Should Remember
-
-- Vision and touch are complementary; masking helps learn cross-modal structure.
-- This is representation-centric, whereas T-Rex is foundation-model and control-loop-centric.
-- Tactile data can improve generalization even when not all modalities are available at test time.
-
-## Limitations
-
-- Experiments are simulation-focused.
-- It does not address VLA-scale pretraining.
-- It does not directly solve high-frequency real-world tactile control.
-
-## Citation Trail
-
-- Depends on: masked autoencoders, multimodal representation learning, RL.
-- Follow next: tactile VLA alignment papers, Tactile-VLA.
-- Why next: these move from representation learning to language-conditioned contact-rich behavior.
+- tactile은 vision을 보완하는 sensor다.
+- modality masking은 vision-touch correspondence를 배우는 좋은 방법이다.

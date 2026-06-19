@@ -1,71 +1,46 @@
 ---
 title: Reactive Diffusion Policy
-description: Survey note on slow-fast visual-tactile policy learning for contact-rich manipulation.
+description: contact-rich manipulation을 위한 slow-fast visual-tactile policy 노트.
 ---
 
 # Reactive Diffusion Policy
 
-## Metadata
+## 메타데이터
 
-| Field | Value |
+| 항목 | 내용 |
 | --- | --- |
-| Title | Reactive Diffusion Policy: Slow-Fast Visual-Tactile Policy Learning for Contact-Rich Manipulation |
-| Authors | Han Xue, Jieji Ren, Wendi Chen, Gu Zhang, Yuan Fang, Guoying Gu, Huazhe Xu, Cewu Lu |
-| Venue / Year | RSS, 2025 |
-| Link | https://arxiv.org/abs/2503.02881 |
-| Tags | tactile, diffusion policy, slow-fast control, imitation learning, contact-rich manipulation |
+| 논문 | Reactive Diffusion Policy: Slow-Fast Visual-Tactile Policy Learning for Contact-Rich Manipulation |
+| 연도 | RSS, 2025 |
+| 링크 | https://arxiv.org/abs/2503.02881 |
+| 태그 | tactile, diffusion policy, slow-fast control, imitation learning |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 1
-- Role: Direct baseline and architectural predecessor
-- Parent paper: T-Rex
+RDP는 느린 latent diffusion policy와 빠른 tactile-conditioned controller를 결합해, action chunk 실행 중에도 접촉 feedback에 반응하도록 만든 정책이다.
 
-## One-line Summary
+## 데이터셋과 문제 설정
 
-RDP combines a slow latent diffusion policy with a fast tactile-conditioned controller so a robot can react to contact feedback during execution rather than waiting for the next visual action chunk.
+데이터는 tactile feedback을 포함한 teleoperation demonstration에서 온다. 핵심 과제는 RGB만 보고는 접촉 상태를 충분히 알기 어려운 contact-rich manipulation이다.
 
-## Problem Setting
+| 항목 | 내용 |
+| --- | --- |
+| observation | vision + tactile/force feedback |
+| action | latent diffusion으로 만든 action chunk와 tactile correction |
+| task | 삽입, 접촉 유지, 미끄러짐 보정처럼 빠른 feedback이 필요한 조작 |
 
-- Robot embodiment: contact-rich manipulation platform with visual and tactile or force sensing.
-- Observation: visual input plus real-time tactile or force feedback.
-- Action: action chunks modeled by a latent diffusion policy, then adjusted through a fast tactile pathway.
-- Data: demonstrations collected with TactAR, a teleoperation system that gives operators tactile feedback through augmented reality.
-- Task: contact-rich manipulation requiring quick force/contact adjustment.
+## 방법론과 모델 구조
 
-## Core Idea
+RDP는 policy를 두 속도로 나눈다. slow policy는 diffusion으로 action chunk를 만들고, fast tactile pathway는 실행 중 들어오는 touch를 이용해 행동을 조정한다.
 
-Many imitation-learning policies predict action chunks. That helps model long-horizon behavior but creates a latency problem: if tactile feedback changes midway through the chunk, the policy may not react quickly enough.
+T-Rex와의 관계는 매우 직접적이다. RDP가 “slow visual plan + fast tactile correction”이라는 구조적 문제를 먼저 보여줬고, T-Rex는 이 아이디어를 VLA/MoT와 대규모 tactile mid-training으로 확장한다.
 
-RDP addresses this with a two-level hierarchy:
+## 기억할 점
 
-- Slow latent diffusion policy: predicts high-level action chunks at low frequency.
-- Fast asymmetric tokenizer: updates behavior at higher frequency using tactile feedback.
+- tactile feedback은 action chunk 시작 시점에만 넣으면 늦다.
+- diffusion policy의 장점인 multimodal action modeling과 tactile reactivity를 함께 쓰려는 시도다.
+- T-Rex를 이해할 때 RDP는 가장 가까운 구조적 선행 연구 중 하나다.
 
-This is a direct conceptual ancestor for T-Rex's slow visual stream plus fast tactile stream.
+## 한계
 
-## Method Details
-
-- Architecture: slow latent diffusion policy plus fast tactile-conditioned tokenizer.
-- Training recipe: train a tactile-conditioned action tokenizer, then train latent diffusion over the learned action space.
-- Data: contact-rich demonstrations collected with tactile feedback in the teleoperation loop.
-- Inference / control loop: low-frequency diffusion trajectory generation with high-frequency tactile correction.
-
-## What I Should Remember
-
-- RDP frames tactile feedback as an execution-time reactivity problem.
-- It is task-specific imitation learning, not a large VLA foundation model.
-- T-Rex scales a similar slow-fast idea into a VLA/MoT framework and broader dexterous bimanual tasks.
-
-## Limitations
-
-- It is not designed as a generalist VLA.
-- The reported task scope is narrower than T-Rex.
-- It still depends on collecting contact-rich demonstrations.
-
-## Citation Trail
-
-- Depends on: diffusion policies, tactile representation learning, action chunking.
-- Follow next: Diffusion Policy, ACT, TactAR details.
-- Why next: these explain the action-chunking baseline that T-Rex and RDP are trying to make reactive.
+- generalist VLA라기보다는 task/data-specific imitation policy에 가깝다.
+- T-Rex처럼 human egocentric pretraining이나 대규모 tactile robot mid-training을 쓰지는 않는다.

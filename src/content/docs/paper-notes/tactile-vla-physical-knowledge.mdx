@@ -1,64 +1,40 @@
 ---
 title: Tactile-VLA
-description: Survey note on tactile-aware VLA models for tactile generalization.
+description: tactile feedback으로 VLA의 물리적 지식을 contact-rich manipulation에 연결하는 논문 노트.
 ---
 
-# Tactile-VLA: Unlocking Vision-Language-Action Model's Physical Knowledge for Tactile Generalization
+# Tactile-VLA
 
-## Metadata
+## 메타데이터
 
-| Field | Value |
+| 항목 | 내용 |
 | --- | --- |
-| Title | Tactile-VLA: Unlocking Vision-Language-Action Model's Physical Knowledge for Tactile Generalization |
-| Authors | Jialei Huang, Shuo Wang, Fanqi Lin, Yihang Hu, Chuan Wen, Yang Gao |
-| Venue / Year | arXiv, 2025 |
-| Link | https://arxiv.org/abs/2507.09160 |
-| Tags | tactile, VLA, force control, physical reasoning, contact-rich manipulation |
+| 논문 | Tactile-VLA: Unlocking Vision-Language-Action Model's Physical Knowledge for Tactile Generalization |
+| 연도 | arXiv, 2025 |
+| 링크 | https://arxiv.org/abs/2507.09160 |
+| 태그 | tactile, VLA, physical reasoning, force control |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 1
-- Role: Tactile-aware VLA baseline
-- Parent paper: T-Rex
+Tactile-VLA는 pretrained VLA가 가진 물리적 상식을 tactile feedback과 연결해 contact-rich task에서 더 잘 일반화하게 만들려는 시도다.
 
-## One-line Summary
+## 데이터셋과 문제 설정
 
-Tactile-VLA connects tactile sensing to a VLA so the model can use physical interaction knowledge for contact-rich instruction following and adaptive behavior.
+문제는 language-conditioned robot manipulation에서 접촉 상태가 중요한 경우다. vision-language만으로는 힘, 압력, 미끄러짐을 충분히 알 수 없기 때문에 tactile signal을 모델과 controller에 연결한다.
 
-## Problem Setting
+## 방법론과 모델 구조
 
-- Robot embodiment: robot manipulation platform with tactile sensing.
-- Observation: vision, language, action history, and tactile information.
-- Action: VLA-generated action interpreted through a hybrid position-force controller.
-- Data: a small number of demonstrations for tactile grounding.
-- Task: tactile-aware instruction following, contact-rich reasoning, and adaptive manipulation.
+| 구성 | 역할 |
+| --- | --- |
+| VLA backbone | instruction과 visual context 처리 |
+| tactile fusion | 접촉 정보를 정책 입력에 통합 |
+| hybrid position-force controller | VLA output을 접촉 상황에 맞는 실행으로 변환 |
 
-## Core Idea
+## T-Rex와의 관계
 
-The paper argues that VLM/VLA backbones already contain semantic knowledge about physical interactions, but this knowledge is not grounded in tactile execution. The method fuses tactile sensing into the policy and uses a hybrid position-force controller to turn model intent into contact-sensitive action.
+Tactile-VLA는 tactile을 VLA reasoning에 연결하는 쪽에 강하고, T-Rex는 tactile을 high-frequency correction signal로 쓰는 쪽에 더 강하다. 둘은 tactile-aware VLA라는 같은 문제를 다른 속도/구조 관점에서 푼다.
 
-## Method Details
+## 기억할 점
 
-- Architecture: vision-language-action model with tactile fusion and a tactile reasoning module.
-- Training recipe: connect tactile inputs to a pretrained model with limited demonstrations.
-- Data: tactile demonstrations for grounding physical concepts.
-- Inference / control loop: model uses tactile feedback to adapt strategy and force-position behavior.
-
-## What I Should Remember
-
-- Tactile-VLA is about activating physical commonsense in a VLA through touch.
-- It emphasizes high-level tactile reasoning and hybrid control.
-- T-Rex finds that simply adding tactile signals to pretrained VLA-style policies is not enough; architecture and timing matter.
-
-## Limitations
-
-- The paper is less focused on high-frequency tactile-reactive control than T-Rex.
-- Generality depends on how well tactile signals are aligned with the pretrained VLA.
-- Hardware and sensor assumptions can affect transfer.
-
-## Citation Trail
-
-- Depends on: VLA models, tactile-language alignment, hybrid force-position control.
-- Follow next: RT-2, OpenVLA, A Touch Vision and Language Dataset.
-- Why next: they explain the VLA and tactile-language alignment pieces behind tactile-aware reasoning.
+- VLA에 tactile을 넣는 목적은 semantic reasoning뿐 아니라 물리적 interaction grounding이다.
+- 다만 tactile을 넣는 것만으로 충분하지 않고, timing과 architecture가 중요하다.

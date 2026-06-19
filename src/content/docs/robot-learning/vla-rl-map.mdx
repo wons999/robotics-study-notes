@@ -1,26 +1,26 @@
 ---
-title: VLA, RL, and Robot Learning Map
-description: A map for tracking modern robot learning research.
+title: VLA, RL, Robot Learning 지도
+description: 최신 로봇 러닝 연구를 따라가기 위한 정리 지도.
 ---
 
-# VLA, RL, and Robot Learning Map
+# VLA, RL, Robot Learning 지도
 
-## Where the Pieces Fit
+## 각 방법의 위치
 
-| Method | Strength | Risk |
+| 방법 | 강점 | 위험 |
 | --- | --- | --- |
-| Behavior cloning | Simple, stable, data-driven | Distribution shift and poor recovery |
-| Diffusion policy | Strong multimodal action modeling | Latency and data hunger |
-| Reinforcement learning | Can optimize contact-rich behavior | Reward design and sim-to-real gap |
-| VLA | General instruction-conditioned behavior | Embodiment mismatch and low-level control burden |
-| Residual learning | Adds learned correction to a controller | Residual can hide model or control issues |
+| Behavior cloning | 단순하고 안정적이며 데이터 기반으로 시작하기 좋다 | distribution shift와 recovery가 약하다 |
+| Diffusion policy | multimodal action 분포를 잘 모델링한다 | latency와 데이터 요구량이 크다 |
+| Reinforcement learning | contact-rich behavior를 직접 최적화할 수 있다 | reward design과 sim-to-real gap이 어렵다 |
+| VLA | language instruction 기반 general behavior에 강하다 | embodiment mismatch와 low-level control 부담이 크다 |
+| Residual learning | 기존 controller 위에 학습 보정을 얹기 좋다 | residual이 모델/제어 문제를 가릴 수 있다 |
 
-## System Lens
+## 시스템 관점 체크리스트
 
-When reading a robot learning paper, always identify:
+로봇 러닝 논문을 읽을 때는 항상 다음을 먼저 확인한다.
 
-- The embodiment: mobile base, single arm, dual arm, full-body platform, or simulated agent.
-- The action space: joint position, end-effector delta, torque, gripper command, action tokens.
-- The control frequency and latency.
-- The data source: teleoperation, scripted policy, simulation, real robot, human videos.
-- The evaluation gap between benchmark tasks and real deployment.
+- Embodiment: mobile base, single arm, dual arm, full-body platform, simulated agent 중 무엇인가?
+- Action space: joint position, end-effector delta, torque, gripper command, action token 중 무엇인가?
+- Control frequency와 latency는 어느 정도인가?
+- Data source: teleoperation, scripted policy, simulation, real robot, human video 중 무엇인가?
+- Benchmark task와 real deployment 사이의 gap은 무엇인가?

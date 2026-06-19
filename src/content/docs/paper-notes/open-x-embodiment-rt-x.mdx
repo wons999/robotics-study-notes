@@ -1,64 +1,27 @@
 ---
-title: Open X-Embodiment and RT-X
-description: Survey note on the Open X-Embodiment dataset and RT-X models.
+title: Open X-Embodiment / RT-X
+description: multi-robot dataset과 cross-embodiment robot learning 노트.
 ---
 
-# Open X-Embodiment: Robotic Learning Datasets and RT-X Models
+# Open X-Embodiment / RT-X
 
-## Metadata
+## 메타데이터
 
-| Field | Value |
+| 항목 | 내용 |
 | --- | --- |
-| Title | Open X-Embodiment: Robotic Learning Datasets and RT-X Models |
-| Authors | Open X-Embodiment Collaboration |
-| Venue / Year | arXiv, 2023 |
-| Link | https://arxiv.org/abs/2310.08864 |
-| Tags | robot datasets, cross-embodiment learning, RT-X, generalist robot policy |
+| 논문 | Open X-Embodiment: Robotic Learning Datasets and RT-X Models |
+| 연도 | arXiv, 2023 |
+| 링크 | https://arxiv.org/abs/2310.08864 |
+| 태그 | robot dataset, cross-embodiment learning, RT-X, VLA |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 2
-- Role: Robot data scaling foundation
-- Parent paper: OpenVLA / pi_0 / T-Rex context
+Open X-Embodiment는 여러 기관과 여러 로봇의 demonstration을 표준화해 cross-embodiment robot learning을 가능하게 만든 데이터셋/모델 흐름이다.
 
-## One-line Summary
+## 데이터셋
 
-Open X-Embodiment standardizes and aggregates robot manipulation datasets across many robots, enabling cross-robot policy training and RT-X models.
+다양한 robot embodiment, task, skill을 하나의 대규모 dataset으로 묶는다. 이후 OpenVLA 같은 모델들이 이 데이터 흐름 위에서 학습된다.
 
-## Problem Setting
+## T-Rex와의 관계
 
-- Robot embodiment: 22 different robots from a multi-institution collaboration.
-- Observation: robot observations in standardized formats.
-- Action: robot demonstrations across many skills and embodiments.
-- Data: large-scale multi-robot dataset spanning hundreds of skills and many tasks.
-- Task: train generalist policies that transfer across robots and downstream tasks.
-
-## Core Idea
-
-Robotics historically trains separate policies for each robot and task. Open X-Embodiment asks whether robotics can move toward the consolidation seen in NLP and vision: large models trained on diverse data, then adapted.
-
-## Method Details
-
-- Architecture: RT-X models trained over multi-robot data.
-- Training recipe: standardize data and train high-capacity policies across embodiments.
-- Data: demonstrations from many robots and institutions.
-- Inference / control loop: cross-robot policy transfer and positive transfer analysis.
-
-## What I Should Remember
-
-- This is a data infrastructure paper as much as a model paper.
-- OpenVLA and many later VLA papers rely on this scaling direction.
-- T-Rex differs by focusing on tactile-rich dexterous bimanual data, not broad robot data alone.
-
-## Limitations
-
-- Cross-embodiment data does not automatically include rich tactile signals.
-- Standardization across robots is hard, especially for high-DoF hands.
-- Generality can hide gaps in contact-rich control.
-
-## Citation Trail
-
-- Depends on: RT-1, RT-2, multi-task robot learning.
-- Follow next: DROID, BridgeData v2, Octo.
-- Why next: these explain the robot dataset ecosystem behind VLA scaling.
+Open X-Embodiment는 broad robot data scaling의 대표 흐름이고, T-Rex는 tactile-rich dexterous bimanual data scaling의 대표 흐름으로 볼 수 있다.

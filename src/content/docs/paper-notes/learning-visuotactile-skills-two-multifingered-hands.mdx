@@ -1,64 +1,27 @@
 ---
 title: Learning Visuotactile Skills with Two Multifingered Hands
-description: Survey note on bimanual multifingered visuotactile manipulation.
+description: 양손 multifingered hand teleoperation과 visuotactile skill learning 논문 노트.
 ---
 
 # Learning Visuotactile Skills with Two Multifingered Hands
 
-## Metadata
+## 메타데이터
 
-| Field | Value |
+| 항목 | 내용 |
 | --- | --- |
-| Title | Learning Visuotactile Skills with Two Multifingered Hands |
-| Authors | Toru Lin, Yu Zhang, Qiyang Li, Haozhi Qi, Brent Yi, Sergey Levine, Jitendra Malik |
-| Venue / Year | arXiv, 2024 |
-| Link | https://arxiv.org/abs/2404.16823 |
-| Tags | bimanual manipulation, multifingered hand, visuotactile data, teleoperation, tactile sensing |
+| 논문 | Learning Visuotactile Skills with Two Multifingered Hands |
+| 연도 | arXiv, 2024 |
+| 링크 | https://arxiv.org/abs/2404.16823 |
+| 태그 | bimanual manipulation, multifingered hand, tactile, teleoperation |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 1
-- Role: Bimanual visuotactile manipulation precedent
-- Parent paper: T-Rex
+이 논문은 두 개의 multifingered hand로 visuotactile demonstration을 수집하고, 이를 이용해 bimanual dexterous skill을 학습하는 시스템을 다룬다.
 
-## One-line Summary
+## 데이터셋과 시스템
 
-This paper develops a low-cost hands-arms teleoperation system and studies policy learning for bimanual multifingered manipulation using vision and touch.
+핵심은 low-cost teleoperation system인 HATO와 visuotactile demonstration collection이다. dexterous hand 연구에서는 모델보다 데이터 수집 시스템이 병목인 경우가 많기 때문에 중요하다.
 
-## Problem Setting
+## T-Rex와의 관계
 
-- Robot embodiment: dual-arm setup with two multifingered hands equipped with touch sensing.
-- Observation: visuotactile data from teleoperated demonstrations.
-- Action: bimanual hand-arm policy actions.
-- Data: demonstrations collected with HATO, a low-cost teleoperation system.
-- Task: long-horizon, high-precision tasks requiring multifingered dexterity and touch.
-
-## Core Idea
-
-The paper focuses on the system bottleneck: collecting useful bimanual multifingered tactile demonstrations is hard. HATO makes data collection more accessible, then the authors examine how dataset size, sensing modality, and visual preprocessing affect policy learning.
-
-## Method Details
-
-- Architecture: policy learning stack built around HATO-collected visuotactile demonstrations.
-- Training recipe: learn skills from multimodal demonstration data.
-- Data: bimanual multifingered visuotactile demonstrations.
-- Inference / control loop: policy deployment on a dual-hand setup.
-
-## What I Should Remember
-
-- T-Rex also relies on bimanual dexterous tactile teleoperation data, but at larger scale and inside a VLA training recipe.
-- Teleoperation stack design is part of the research contribution in dexterous tactile learning.
-- Touch becomes more important as tasks become long-horizon, occluded, or contact-sensitive.
-
-## Limitations
-
-- Hardware adaptation and teleoperation details matter a lot.
-- The work is more data/system focused than foundation-model focused.
-- Scaling to broad semantic instructions requires additional modeling.
-
-## Citation Trail
-
-- Depends on: dexterous hand teleoperation, tactile sensing, imitation learning.
-- Follow next: T-Rex dataset appendix, ViTacFormer, DexWild.
-- Why next: these expand from bimanual tactile skill learning to larger dexterous datasets and policies.
+T-Rex도 bimanual dexterous tactile data collection에 크게 의존한다. 이 논문은 T-Rex dataset을 보기 전에 “어떻게 양손 multifinger tactile demo를 모을 수 있는가”를 이해하는 데 도움이 된다.

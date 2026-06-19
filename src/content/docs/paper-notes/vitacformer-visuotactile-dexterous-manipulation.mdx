@@ -1,64 +1,43 @@
 ---
 title: ViTacFormer
-description: Survey note on cross-modal visuo-tactile representation learning for dexterous manipulation.
+description: visuo-tactile dexterous manipulation을 위한 cross-modal representation 노트.
 ---
 
-# ViTacFormer: Learning Cross-Modal Representation for Visuo-Tactile Dexterous Manipulation
+# ViTacFormer
 
-## Metadata
+## 메타데이터
 
-| Field | Value |
+| 항목 | 내용 |
 | --- | --- |
-| Title | ViTacFormer: Learning Cross-Modal Representation for Visuo-Tactile Dexterous Manipulation |
-| Authors | Liang Heng, Haoran Geng, Kaifeng Zhang, Pieter Abbeel, Jitendra Malik |
-| Venue / Year | arXiv, 2025 |
-| Link | https://arxiv.org/abs/2506.15953 |
-| Tags | tactile, dexterous manipulation, representation learning, cross-attention, imitation learning |
+| 논문 | ViTacFormer: Learning Cross-Modal Representation for Visuo-Tactile Dexterous Manipulation |
+| 연도 | arXiv, 2025 |
+| 링크 | https://arxiv.org/abs/2506.15953 |
+| 태그 | tactile, dexterous manipulation, cross-modal representation |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 1
-- Role: Direct visuo-tactile dexterous manipulation baseline
-- Parent paper: T-Rex
+ViTacFormer는 vision과 touch가 서로 attend하는 representation을 학습하고, future tactile prediction을 통해 dexterous manipulation에 필요한 접촉 정보를 더 잘 담도록 만든다.
 
-## One-line Summary
+## 데이터셋과 문제 설정
 
-ViTacFormer learns a fused visual-tactile representation with cross-attention and future tactile prediction, then uses that representation for precise multi-fingered manipulation.
+대상은 multi-fingered dexterous hand가 수행하는 정밀 조작이다. observation은 vision과 tactile이고, demonstration을 통해 imitation policy를 학습한다.
 
-## Problem Setting
+## 방법론과 모델 구조
 
-- Robot embodiment: multi-fingered dexterous hand.
-- Observation: high-resolution vision and touch.
-- Action: imitation-learning policy actions for dexterous manipulation.
-- Data: real-world visuo-tactile demonstrations organized with an easy-to-challenging curriculum.
-- Task: long-horizon dexterous tasks requiring precision and contact awareness.
+핵심은 tactile을 raw state로만 쓰지 않고, vision과 결합된 latent representation으로 만드는 것이다.
 
-## Core Idea
+| 구성 | 역할 |
+| --- | --- |
+| visual encoder | object와 scene context 추출 |
+| tactile encoder | 손가락 접촉 상태 추출 |
+| cross-attention | vision-touch 상호작용을 latent feature로 통합 |
+| future tactile prediction | 앞으로의 contact 변화를 예측하게 하여 representation을 강화 |
 
-The paper treats tactile sensing as a representation-learning problem. Instead of only feeding touch as raw state, ViTacFormer builds a cross-modal latent space where visual and tactile inputs attend to each other. A future tactile prediction head encourages the representation to encode contact dynamics that matter for upcoming actions.
+## T-Rex와의 관계
 
-## Method Details
+ViTacFormer는 tactile representation learning 쪽에 가깝고, T-Rex는 여기에 VLA pretraining, tactile mid-training, high-frequency tactile expert를 얹은 더 큰 시스템이다.
 
-- Architecture: cross-attention encoder for vision-touch fusion, autoregressive tactile prediction head, imitation policy downstream.
-- Training recipe: curriculum from easier to harder tasks to refine cross-modal features.
-- Data: visuo-tactile dexterous manipulation demonstrations.
-- Inference / control loop: policy consumes fused latent features for manipulation.
+## 기억할 점
 
-## What I Should Remember
-
-- Future tactile prediction is used as an auxiliary objective to shape representation.
-- The paper is closer to tactile representation plus imitation learning than to VLA foundation modeling.
-- T-Rex uses ViTacFormer as a baseline but moves toward larger pretraining and asynchronous tactile refinement.
-
-## Limitations
-
-- Generalization is bounded by collected dexterous task data.
-- It does not solve the VLA frequency mismatch problem directly.
-- It is not framed as large-scale human-video pretraining plus robot mid-training.
-
-## Citation Trail
-
-- Depends on: tactile representation learning, cross-modal attention, imitation learning.
-- Follow next: ACT, tactile prediction objectives, Dexterity from Touch.
-- Why next: these clarify how tactile features become useful control representations.
+- tactile을 policy input으로 넣는 것보다 representation을 어떻게 만들지가 중요하다.
+- future tactile prediction은 contact dynamics를 latent space에 넣는 좋은 auxiliary objective다.

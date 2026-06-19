@@ -1,69 +1,35 @@
 ---
 title: VLA-Touch
-description: Survey note on dual-level tactile feedback for VLA models.
+description: VLA에 high-level/low-level tactile feedback을 붙이는 방법론 노트.
 ---
 
-# VLA-Touch: Enhancing Vision-Language-Action Models with Dual-Level Tactile Feedback
+# VLA-Touch
 
-## Metadata
+## 메타데이터
 
-| Field | Value |
+| 항목 | 내용 |
 | --- | --- |
-| Title | VLA-Touch: Enhancing Vision-Language-Action Models with Dual-Level Tactile Feedback |
-| Authors | Jianxin Bi, Kevin Yuchen Ma, Ce Hao, Mike Zheng Shou, Harold Soh |
-| Venue / Year | arXiv, 2025 |
-| Link | https://arxiv.org/abs/2507.17294 |
-| Tags | tactile, VLA, diffusion controller, tactile-language model, contact-rich manipulation |
+| 논문 | VLA-Touch: Enhancing Vision-Language-Action Models with Dual-Level Tactile Feedback |
+| 연도 | arXiv, 2025 |
+| 링크 | https://arxiv.org/abs/2507.17294 |
+| 태그 | tactile, VLA, diffusion controller, tactile-language model |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 1
-- Role: Related tactile-VLA integration strategy
-- Parent paper: T-Rex
+VLA-Touch는 base VLA를 크게 바꾸지 않고, tactile-language planning feedback과 tactile-conditioned diffusion controller를 붙여 contact-rich manipulation을 보강한다.
 
-## One-line Summary
+## 방법론
 
-VLA-Touch augments a base VLA without finetuning it by adding semantic tactile feedback for planning and a tactile-conditioned diffusion controller for execution refinement.
+| 수준 | 역할 |
+| --- | --- |
+| high-level tactile feedback | tactile-language model이 task planning에 필요한 접촉 의미를 제공 |
+| low-level tactile feedback | diffusion controller가 VLA action을 tactile signal로 보정 |
 
-## Problem Setting
+## T-Rex와의 관계
 
-- Robot embodiment: manipulation setup with tactile sensing.
-- Observation: VLA visual-language input plus tactile feedback.
-- Action: base VLA actions refined by a diffusion-based tactile controller.
-- Data: tactile-language model and controller data.
-- Task: contact-rich manipulation where tactile feedback improves planning and precision.
+VLA-Touch는 modular approach다. 기존 VLA 주변에 tactile module을 붙인다. T-Rex는 integrated approach다. MoT 안에 tactile expert를 넣고 tactile-rich dataset으로 함께 학습한다.
 
-## Core Idea
+## 기억할 점
 
-The paper separates tactile feedback into two levels:
-
-- High-level semantic feedback: a tactile-language model informs task planning.
-- Low-level execution feedback: a diffusion controller refines VLA-generated actions with tactile signals.
-
-This is conceptually close to T-Rex's division between slow high-level context and fast tactile correction, though T-Rex trains a unified tactile-reactive MoT model.
-
-## Method Details
-
-- Architecture: frozen base VLA plus tactile-language planning feedback and diffusion controller.
-- Training recipe: do not finetune the base VLA; add tactile modules around it.
-- Data: tactile feedback data for semantic and control-level modules.
-- Inference / control loop: base VLA proposes actions, tactile modules refine planning and execution.
-
-## What I Should Remember
-
-- VLA-Touch is modular: add touch around a VLA instead of rebuilding the VLA.
-- T-Rex is integrated: tactile refinement is part of the trained MoT policy.
-- Both papers show that tactile feedback helps at different abstraction levels.
-
-## Limitations
-
-- Modularity may limit deep integration with the base policy.
-- Performance depends on tactile-language model quality and controller alignment.
-- It may not exploit large-scale tactile mid-training in the same way as T-Rex.
-
-## Citation Trail
-
-- Depends on: tactile-language models, VLA policies, diffusion controllers.
-- Follow next: A Touch Vision and Language Dataset, pi_0, Flow Matching.
-- Why next: these explain semantic tactile feedback and generative control refinement.
+- tactile은 semantic planning과 execution refinement 두 수준 모두에서 유용하다.
+- frozen VLA를 살리는 전략과 end-to-end tactile-reactive policy 전략을 비교할 때 좋은 reference다.

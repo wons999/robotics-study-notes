@@ -1,64 +1,31 @@
 ---
 title: VTLA
-description: Survey note on vision-tactile-language-action modeling with preference learning for insertion.
+description: insertion manipulation을 위한 vision-tactile-language-action 모델 노트.
 ---
 
-# VTLA: Vision-Tactile-Language-Action Model with Preference Learning for Insertion Manipulation
+# VTLA
 
-## Metadata
+## 메타데이터
 
-| Field | Value |
+| 항목 | 내용 |
 | --- | --- |
-| Title | VTLA: Vision-Tactile-Language-Action Model with Preference Learning for Insertion Manipulation |
-| Authors | Chaofan Zhang, Peng Hao, Xiaoge Cao, Xiaoshuai Hao, Shaowei Cui, Shuo Wang |
-| Venue / Year | arXiv, 2025 |
-| Link | https://arxiv.org/abs/2505.09577 |
-| Tags | tactile, VLA, insertion, preference learning, sim-to-real |
+| 논문 | VTLA: Vision-Tactile-Language-Action Model with Preference Learning for Insertion Manipulation |
+| 연도 | arXiv, 2025 |
+| 링크 | https://arxiv.org/abs/2505.09577 |
+| 태그 | tactile, VLA, insertion, preference learning |
 
-## Survey Position
+## 한 줄 요약
 
-- Reading trail: T-Rex tactile-reactive manipulation
-- Depth: 1
-- Role: Related tactile-language-action model for contact-rich insertion
-- Parent paper: T-Rex
+VTLA는 insertion task에서 vision, touch, language, action을 함께 다루고 preference learning으로 action quality를 더 잘 학습하려는 모델이다.
 
-## One-line Summary
+## 데이터셋과 문제 설정
 
-VTLA integrates vision, tactile input, language, and actions for contact-rich insertion, using preference learning to better supervise continuous manipulation behavior.
+주요 task는 peg-in-hole이나 fingertip insertion처럼 접촉 정렬이 중요한 조작이다. simulation 기반의 vision-tactile-action-instruction 데이터를 사용해 real-world transfer를 노린다.
 
-## Problem Setting
+## 방법론
 
-- Robot embodiment: insertion manipulation setup.
-- Observation: vision, tactile input, language instruction.
-- Action: action prediction for contact-intensive insertion.
-- Data: simulation dataset with vision-tactile-action-instruction pairs.
-- Task: fingertip insertion and peg-in-hole style manipulation with real-world transfer.
+VLA 학습에서 단순 token prediction loss만으로는 continuous manipulation quality를 잘 표현하기 어렵다. VTLA는 preference learning을 사용해 더 나은 trajectory/action을 선호하도록 학습한다.
 
-## Core Idea
+## T-Rex와의 관계
 
-VTLA targets a narrow but important contact-rich setting: insertion. It uses cross-modal language grounding and Direct Preference Optimization to reduce the mismatch between token prediction style losses and continuous robot manipulation quality.
-
-## Method Details
-
-- Architecture: vision-tactile-language-action model.
-- Training recipe: language-grounded multimodal supervision plus preference learning.
-- Data: simulated vision-tactile-action-instruction dataset.
-- Inference / control loop: generate robust insertion policy behavior.
-
-## What I Should Remember
-
-- VTLA is task-family-specific compared with T-Rex.
-- It is useful for understanding tactile-language-action grounding in insertion.
-- Preference learning is a different answer to the question of how to supervise action quality.
-
-## Limitations
-
-- Focused mainly on insertion-style tasks.
-- Simulation data may not cover full tactile sensor complexity.
-- It does not address large-scale tactile mid-training.
-
-## Citation Trail
-
-- Depends on: VLA models, tactile simulation, preference learning.
-- Follow next: Tactile-VLA, ForceVLA, insertion-specific tactile control papers.
-- Why next: these compare alternative ways to make contact-rich VLA behavior stable.
+VTLA는 task family가 insertion에 가깝고, T-Rex는 더 넓은 dexterous bimanual task를 다룬다. 하지만 둘 다 contact-rich manipulation에서 tactile grounding이 중요하다는 같은 문제를 본다.
