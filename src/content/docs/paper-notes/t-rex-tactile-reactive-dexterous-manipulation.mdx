@@ -1,0 +1,130 @@
+---
+title: T-Rex - Tactile-Reactive Dexterous Manipulation
+description: Detailed note on the T-Rex tactile-reactive dexterous manipulation paper.
+---
+
+# T-Rex: Tactile-Reactive Dexterous Manipulation
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Title | T-Rex: Tactile-Reactive Dexterous Manipulation |
+| Authors | Dantong Niu, Zhuoyang Liu, Zekai Wang, Boning Shao, Zhao-Heng Yin, Anirudh Pai, Yuvan Sharma, Stefano Saravalle, Ruijie Zheng, Jing Wang, Ryan Punamiya, Mengda Xu, Yuqi Xie, Yunfan Jiang, Letian Fu, Konstantinos Kallidromitis, Matteo Gioia, Junyi Zhang, Jiaxin Ge, Haiwen Feng, Fabio Galasso, Wei Zhan, David M. Chan, Yutong Bai, Roei Herzig, Jiahui Lei, Fei-Fei Li, Ken Goldberg, Jitendra Malik, Pieter Abbeel, Yuke Zhu, Danfei Xu, Jim Fan, Trevor Darrell |
+| Venue / Year | arXiv, 2026 |
+| Link | https://arxiv.org/html/2606.17055v1 |
+| Tags | tactile, dexterous manipulation, VLA, flow matching, bimanual manipulation, contact-rich control |
+
+## Survey Position
+
+- Reading trail: T-Rex tactile-reactive manipulation
+- Depth: 0
+- Role: Seed paper
+- Parent paper: None
+
+## One-line Summary
+
+T-Rex extends VLA-style dexterous manipulation with a high-frequency tactile refinement expert, a 100-hour tactile-rich robot dataset, and a three-stage training recipe for contact-rich bimanual manipulation.
+
+## Problem Setting
+
+| Item | Description |
+| --- | --- |
+| Robot embodiment | Fixed-base bimanual Dexmate Vega-1, two 7-DoF arms, two 22-DoF Sharpa Wave dexterous hands |
+| Observation | Head RGB, wrist RGB, robot states, per-finger force vectors, tactile deformation maps, language instruction |
+| Action | Relative end-effector delta control for arms and absolute joint control for fingers |
+| Data | Large human egocentric pretraining, 100-hour tactile-grounded robot mid-training dataset, about 100 demonstrations for skill-specific post-training |
+| Tasks | 12 real-world tactile-reactive tasks involving insertion, deformation, force-sensitive handling, bimanual coordination, and fine contact adjustment |
+| Evaluation | Average task success rate over randomized trials, with progress or additive rubrics depending on task |
+
+## Core Idea
+
+T-Rex argues that modern manipulation VLAs have two bottlenecks for dexterous contact-rich tasks:
+
+- They often lack tactile data and therefore miss micro-slip, force, and deformation signals.
+- Their visual-language backbones operate too slowly for high-frequency contact correction.
+
+The paper addresses this with a **variable-rate Mixture-of-Transformer-Experts (MoT)** architecture. A low-frequency action expert produces a coarse visuomotor action chunk, while a high-frequency tactile expert reuses cached visual-language context and refines the action using real-time tactile observations.
+
+## Method Details
+
+### Model Architecture
+
+T-Rex has three main expert roles:
+
+- Latent expert: processes visual-language context and predicts future visual representations.
+- Action expert: performs low-frequency flow-matching action generation from visual-language context.
+- Tactile expert: performs high-frequency action refinement conditioned on tactile force and deformation signals.
+
+The tactile encoder uses two complementary tactile streams:
+
+- Temporal force stream: a per-finger VQ-VAE compresses recent force history into discrete tactile tokens.
+- Spatial deformation stream: a lightweight convolutional encoder extracts local contact geometry from deformation maps.
+
+### Asynchronous Cascaded Flow Matching
+
+The action expert and tactile expert share the same flow-matching target but operate over different parts of the denoising path:
+
+- Slow stream: runs the visual-language and action expert once per action chunk.
+- Fast stream: runs more frequently, using real-time tactile tokens and cached visual-language context.
+
+This split is the central engineering idea. It lets the expensive visual stack stay low-frequency while tactile correction remains responsive.
+
+### Training Recipe
+
+T-Rex uses a three-stage recipe:
+
+1. Large-scale human egocentric pretraining to learn broad visuomotor priors.
+2. Tactile-grounded robot mid-training on 100 hours of bimanual tactile-synchronized teleoperation data.
+3. Skill-specific post-training with a small number of target demonstrations.
+
+The paper emphasizes that tactile mid-training is not just extra task data. It is meant to align high-level human-derived priors with robot-executable contact dynamics.
+
+## Dataset
+
+The T-Rex Dataset contains 100 hours of tactile-synchronized bimanual manipulation data, more than 200 everyday objects, and 22 motor primitives. It is organized around motor primitives and object interactions rather than only narrow task demonstrations.
+
+This matters because the authors want mid-training data that teaches reusable contact behavior: press, slide, grasp, wipe, insert, deform, and other physical interactions.
+
+## Results
+
+T-Rex is compared against visuo-tactile imitation policies, tactile-aware VLA variants, EgoScale, and pi_0-style baselines. On the 12 tactile-reactive tasks, the paper reports the strongest average success rate and over 30% improvement over the strongest baseline.
+
+Important ablations:
+
+- Removing tactile input substantially reduces average success.
+- Using simpler tactile encoders performs worse than the full force-history plus deformation representation.
+- Removing asynchronous refinement hurts performance.
+- Human pretraining and tactile-grounded mid-training both contribute; the full three-stage recipe performs best.
+
+## What I Should Remember
+
+- Tactile is treated as a **fast corrective signal**, not only as another low-frequency input token.
+- The architecture separates slow visual-language planning from fast tactile refinement without fully separating the model into unrelated systems.
+- The mid-training dataset is designed around reusable motor primitives, which is different from collecting only task-specific demonstrations.
+- The core design tension is frequency mismatch: VLA reasoning is slow, tactile feedback must be fast.
+- Naively concatenating tactile signals to a pretrained policy can degrade performance; tactile integration needs architectural support.
+
+## Limitations
+
+- Long-horizon tasks with tight contact tolerances may still need online interaction, RL, or refinement beyond offline post-training.
+- Tactile hardware remains a bottleneck because sensors drift, distort, vary across devices, and often lack dense palm coverage.
+- The system relies on a significant bimanual dexterous hardware and teleoperation stack.
+- The reported benchmark is real-world but still platform-specific.
+
+## Citation Trail
+
+### Direct Baselines and Nearest Neighbors
+
+- [Reactive Diffusion Policy](./reactive-diffusion-policy/): slow-fast visual-tactile control for contact-rich tasks.
+- [ViTacFormer](./vitacformer-visuotactile-dexterous-manipulation/): cross-modal visuo-tactile representation learning for dexterous manipulation.
+- [Tactile-VLA](./tactile-vla-physical-knowledge/): tactile-aware VLA with physical interaction reasoning.
+- [EgoScale](./egoscale-scaling-dexterous-manipulation/): large-scale egocentric human video pretraining for dexterous manipulation.
+- [pi_0](./pi0-vla-flow-model/): flow-matching VLA action generation.
+
+### Foundational Building Blocks
+
+- [Flow Matching](./flow-matching-generative-modeling/): vector-field regression objective used for action generation.
+- [VQ-VAE](./vq-vae-neural-discrete-representation-learning/): discrete latent representation method used for tactile force history.
+- [Open X-Embodiment / RT-X](./open-x-embodiment-rt-x/): broad robot data scaling context for VLA models.
+- [RT-2](./rt-2-vla-web-knowledge/): early VLA framing that maps web-scale VLM knowledge into robot action.

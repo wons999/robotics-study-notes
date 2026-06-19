@@ -1,0 +1,62 @@
+---
+title: Ego4D
+description: Survey note on Ego4D as a large egocentric video dataset.
+---
+
+# Ego4D: Around the World in 3,000 Hours of Egocentric Video
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Title | Ego4D: Around the World in 3,000 Hours of Egocentric Video |
+| Authors | Kristen Grauman, Andrew Westbury, Eugene Byrne, Zachary Chavis, Antonino Furnari, Rohit Girdhar, and collaborators |
+| Venue / Year | CVPR, 2022 |
+| Link | https://arxiv.org/abs/2110.07058 |
+| Tags | egocentric video, first-person perception, dataset, human activity, manipulation |
+
+## Survey Position
+
+- Reading trail: T-Rex tactile-reactive manipulation
+- Depth: 2
+- Role: Human egocentric video foundation
+- Parent paper: EgoScale / T-Rex
+
+## One-line Summary
+
+Ego4D is a large-scale first-person video dataset and benchmark suite for understanding human activity from egocentric perception.
+
+## Problem Setting
+
+- Data source: first-person videos from camera wearers in many daily-life scenarios.
+- Observation: egocentric video, with optional audio, gaze, stereo, 3D meshes, and synchronized views for subsets.
+- Task: episodic memory, hand-object interaction, activity forecasting, social interaction, and other first-person perception tasks.
+
+## Core Idea
+
+Third-person vision datasets do not capture the perceptual geometry of acting in the world. Ego4D supplies first-person video at scale, making it relevant for models that learn manipulation priors from human behavior.
+
+## Method Details
+
+- Architecture: dataset and benchmark, not a single policy model.
+- Training recipe: supports downstream self-supervised and supervised egocentric learning.
+- Data: thousands of hours of daily-life egocentric video from many locations and scenarios.
+- Inference / control loop: not directly a robot control paper.
+
+## What I Should Remember
+
+- Ego4D is part of the data lineage behind human-video pretraining for robot manipulation.
+- EgoScale and T-Rex-style recipes depend on the idea that human egocentric data contains useful action priors.
+- Ego4D itself does not solve robot execution or tactile grounding.
+
+## Limitations
+
+- Human video is not robot action data.
+- It lacks direct robot proprioception, force, tactile, and embodiment constraints.
+- Retargeting from human motion to robot action remains a separate problem.
+
+## Citation Trail
+
+- Depends on: egocentric perception benchmarks.
+- Follow next: EgoScale, EgoMimic, EgoDex, DexWild.
+- Why next: these papers turn first-person video into robot manipulation priors.

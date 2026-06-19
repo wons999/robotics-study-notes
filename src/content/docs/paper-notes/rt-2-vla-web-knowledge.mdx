@@ -1,0 +1,64 @@
+---
+title: RT-2
+description: Survey note on RT-2 and the VLA framing.
+---
+
+# RT-2: Vision-Language-Action Models Transfer Web Knowledge to Robotic Control
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Title | RT-2: Vision-Language-Action Models Transfer Web Knowledge to Robotic Control |
+| Authors | Anthony Brohan, Noah Brown, Justice Carbajal, Yevgen Chebotar, Xi Chen, and collaborators |
+| Venue / Year | CoRL, 2023 |
+| Link | https://arxiv.org/abs/2307.15818 |
+| Tags | VLA, web-scale pretraining, robot control, action tokenization, semantic generalization |
+
+## Survey Position
+
+- Reading trail: T-Rex tactile-reactive manipulation
+- Depth: 2
+- Role: Foundational VLA framing
+- Parent paper: T-Rex / OpenVLA / tactile-aware VLA papers
+
+## One-line Summary
+
+RT-2 shows that a vision-language model can be co-finetuned on robot trajectories by representing robot actions as tokens, transferring web-scale semantic knowledge into robot control.
+
+## Problem Setting
+
+- Robot embodiment: real robot manipulation platform.
+- Observation: camera image and language instruction.
+- Action: robot action encoded as text-like tokens.
+- Data: robot trajectories plus Internet-scale vision-language tasks.
+- Task: robotic manipulation with semantic generalization and emergent reasoning.
+
+## Core Idea
+
+The key move is to put robot actions into the same modeling format as language tokens. That allows the VLM to output robot actions directly while retaining web-scale semantic knowledge.
+
+## Method Details
+
+- Architecture: large VLM co-finetuned on robot and web vision-language data.
+- Training recipe: mix natural language responses and robot action token sequences.
+- Data: robot trajectories plus web-scale vision-language data.
+- Inference / control loop: image and instruction in, action token sequence out.
+
+## What I Should Remember
+
+- RT-2 popularized the VLA framing: vision-language-action as one model family.
+- It emphasizes semantic generalization, not tactile feedback.
+- T-Rex inherits the VLA idea but targets the physical gap: contact, force, tactile reactivity, and dexterous timing.
+
+## Limitations
+
+- Tokenized actions can be awkward for fine continuous control.
+- Tactile and force feedback are not central.
+- Web knowledge does not directly solve contact-rich manipulation.
+
+## Citation Trail
+
+- Depends on: PaLI-X, PaLM-E, RT-1.
+- Follow next: OpenVLA, pi_0, RT-X.
+- Why next: these show how VLA models moved from tokenized web-knowledge transfer toward open and continuous-control systems.

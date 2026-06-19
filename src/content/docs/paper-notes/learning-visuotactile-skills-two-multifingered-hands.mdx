@@ -1,0 +1,64 @@
+---
+title: Learning Visuotactile Skills with Two Multifingered Hands
+description: Survey note on bimanual multifingered visuotactile manipulation.
+---
+
+# Learning Visuotactile Skills with Two Multifingered Hands
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Title | Learning Visuotactile Skills with Two Multifingered Hands |
+| Authors | Toru Lin, Yu Zhang, Qiyang Li, Haozhi Qi, Brent Yi, Sergey Levine, Jitendra Malik |
+| Venue / Year | arXiv, 2024 |
+| Link | https://arxiv.org/abs/2404.16823 |
+| Tags | bimanual manipulation, multifingered hand, visuotactile data, teleoperation, tactile sensing |
+
+## Survey Position
+
+- Reading trail: T-Rex tactile-reactive manipulation
+- Depth: 1
+- Role: Bimanual visuotactile manipulation precedent
+- Parent paper: T-Rex
+
+## One-line Summary
+
+This paper develops a low-cost hands-arms teleoperation system and studies policy learning for bimanual multifingered manipulation using vision and touch.
+
+## Problem Setting
+
+- Robot embodiment: dual-arm setup with two multifingered hands equipped with touch sensing.
+- Observation: visuotactile data from teleoperated demonstrations.
+- Action: bimanual hand-arm policy actions.
+- Data: demonstrations collected with HATO, a low-cost teleoperation system.
+- Task: long-horizon, high-precision tasks requiring multifingered dexterity and touch.
+
+## Core Idea
+
+The paper focuses on the system bottleneck: collecting useful bimanual multifingered tactile demonstrations is hard. HATO makes data collection more accessible, then the authors examine how dataset size, sensing modality, and visual preprocessing affect policy learning.
+
+## Method Details
+
+- Architecture: policy learning stack built around HATO-collected visuotactile demonstrations.
+- Training recipe: learn skills from multimodal demonstration data.
+- Data: bimanual multifingered visuotactile demonstrations.
+- Inference / control loop: policy deployment on a dual-hand setup.
+
+## What I Should Remember
+
+- T-Rex also relies on bimanual dexterous tactile teleoperation data, but at larger scale and inside a VLA training recipe.
+- Teleoperation stack design is part of the research contribution in dexterous tactile learning.
+- Touch becomes more important as tasks become long-horizon, occluded, or contact-sensitive.
+
+## Limitations
+
+- Hardware adaptation and teleoperation details matter a lot.
+- The work is more data/system focused than foundation-model focused.
+- Scaling to broad semantic instructions requires additional modeling.
+
+## Citation Trail
+
+- Depends on: dexterous hand teleoperation, tactile sensing, imitation learning.
+- Follow next: T-Rex dataset appendix, ViTacFormer, DexWild.
+- Why next: these expand from bimanual tactile skill learning to larger dexterous datasets and policies.

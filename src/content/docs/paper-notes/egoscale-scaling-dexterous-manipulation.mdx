@@ -1,0 +1,64 @@
+---
+title: EgoScale
+description: Survey note on scaling dexterous manipulation with egocentric human data.
+---
+
+# EgoScale: Scaling Dexterous Manipulation with Diverse Egocentric Human Data
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Title | EgoScale: Scaling Dexterous Manipulation with Diverse Egocentric Human Data |
+| Authors | Ruijie Zheng, Dantong Niu, Yuqi Xie, Jing Wang, Mengda Xu, Yunfan Jiang, Fernando Castaneda, Fengyuan Hu, You Liang Tan, Letian Fu, Trevor Darrell, Furong Huang, Yuke Zhu, Danfei Xu, Linxi Fan |
+| Venue / Year | arXiv, 2026 |
+| Link | https://arxiv.org/abs/2602.16710 |
+| Tags | egocentric video, dexterous manipulation, VLA, scaling laws, human-to-robot transfer |
+
+## Survey Position
+
+- Reading trail: T-Rex tactile-reactive manipulation
+- Depth: 1
+- Role: Major pretraining baseline and parent recipe
+- Parent paper: T-Rex
+
+## One-line Summary
+
+EgoScale studies whether large-scale egocentric human video can provide a predictable and transferable motor prior for dexterous robotic manipulation.
+
+## Problem Setting
+
+- Robot embodiment: high-DoF dexterous hand and transfer to lower-DoF hands.
+- Observation: egocentric human video during pretraining, robot observations during alignment and downstream manipulation.
+- Action: action-labeled human motion and robot-executable dexterous actions.
+- Data: more than 20,000 hours of action-labeled egocentric human video, then aligned robot mid-training.
+- Task: long-horizon dexterous manipulation and one-shot task adaptation.
+
+## Core Idea
+
+EgoScale is built around the hypothesis that human egocentric video is a scalable source of physical intelligence for dexterous manipulation. The paper trains a VLA on very large human video data, then aligns it to robot execution through a simpler two-stage transfer recipe.
+
+## Method Details
+
+- Architecture: VLA-style model trained from egocentric human action data and adapted to robot control.
+- Training recipe: large-scale human pretraining followed by aligned human-robot mid-training.
+- Data: large egocentric video corpus with action labels.
+- Inference / control loop: dexterous robot policy transferred from the human-derived motor prior.
+
+## What I Should Remember
+
+- T-Rex inherits the idea that human egocentric pretraining can provide broad visuomotor priors.
+- T-Rex adds tactile-grounded mid-training and a tactile expert because EgoScale alone struggles with precise contact adjustment.
+- EgoScale is a key paper for understanding the data-scaling side of T-Rex.
+
+## Limitations
+
+- Human video pretraining alone does not fully ground tactile contact dynamics.
+- Egocentric video provides rich priors but not direct robot force/tactile feedback.
+- Transfer still requires robot alignment data.
+
+## Citation Trail
+
+- Depends on: Ego4D-style egocentric video, human-to-robot transfer, VLA models.
+- Follow next: Ego4D, EgoMimic, EgoDex, DexWild, EgoVLA.
+- Why next: these papers explain the human-video data source and transfer assumptions.

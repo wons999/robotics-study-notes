@@ -1,0 +1,64 @@
+---
+title: OmniVTLA
+description: Survey note on semantic-aligned tactile sensing for vision-tactile-language-action models.
+---
+
+# OmniVTLA: Vision-Tactile-Language-Action Model with Semantic-Aligned Tactile Sensing
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Title | OmniVTLA: Vision-Tactile-Language-Action Model with Semantic-Aligned Tactile Sensing |
+| Authors | Zhengxue Cheng, Yiqian Zhang, Wenkang Zhang, Haoyu Li, Keyu Wang, Li Song, Hengdi Zhang |
+| Venue / Year | arXiv, 2025 |
+| Link | https://arxiv.org/abs/2508.08706 |
+| Tags | tactile, VLA, semantic alignment, tactile encoder, dexterous hand |
+
+## Survey Position
+
+- Reading trail: T-Rex tactile-reactive manipulation
+- Depth: 1
+- Role: Related tactile-aware VLA architecture
+- Parent paper: T-Rex
+
+## One-line Summary
+
+OmniVTLA adds semantic-aligned tactile sensing to VLA policies through dual tactile encoders and an ObjTac dataset for tactile-visual-language alignment.
+
+## Problem Setting
+
+- Robot embodiment: gripper and dexterous-hand manipulation platforms.
+- Observation: visual input, language instruction, and tactile signals.
+- Action: VLA-generated manipulation actions.
+- Data: ObjTac, a tri-modal tactile dataset with force-based tactile readings, text, and visual data.
+- Task: pick-and-place and manipulation tasks where tactile sensing improves smoothness and success.
+
+## Core Idea
+
+The paper focuses on heterogeneous tactile sensors. It proposes a dual-path tactile encoder framework: one path uses pretrained vision transformer features, and the other uses a semantically aligned tactile ViT. This attempts to make tactile representations more compatible with VLA semantic spaces.
+
+## Method Details
+
+- Architecture: dual-path tactile encoder with pretrained ViT and SA-ViT.
+- Training recipe: train semantic tactile alignment on ObjTac, then use it as initialization for VLA manipulation.
+- Data: ObjTac with force-based tactile, visual, and textual information.
+- Inference / control loop: tactile-enhanced VLA policy for manipulation.
+
+## What I Should Remember
+
+- OmniVTLA is about semantic tactile representation and sensor heterogeneity.
+- T-Rex is about high-frequency tactile-reactive refinement and dexterous bimanual control.
+- Both show that tactile needs dedicated representation design, not only raw concatenation.
+
+## Limitations
+
+- Semantic alignment alone may not provide high-frequency reactivity.
+- Dataset and sensor coverage determine transfer.
+- Contact-rich dexterity can still require temporal tactile modeling.
+
+## Citation Trail
+
+- Depends on: tactile-language alignment, VLA models, pretrained ViTs.
+- Follow next: A Touch Vision and Language Dataset, VLA-Touch, T-Rex.
+- Why next: these clarify tactile semantic alignment versus tactile control reactivity.

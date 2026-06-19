@@ -1,0 +1,62 @@
+---
+title: A Touch Vision and Language Dataset
+description: Survey note on touch-vision-language alignment.
+---
+
+# A Touch, Vision, and Language Dataset for Multimodal Alignment
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Title | A Touch, Vision, and Language Dataset for Multimodal Alignment |
+| Authors | Letian Fu, Gaurav Datta, Huang Huang, William Chung-Ho Panitch, Jaimyn Drake, Joseph Ortiz, Mustafa Mukadam, Mike Lambeta, Roberto Calandra, Ken Goldberg |
+| Venue / Year | ICML, 2024 |
+| Link | https://arxiv.org/abs/2402.13232 |
+| Tags | tactile, vision-language, multimodal alignment, dataset, tactile encoder |
+
+## Survey Position
+
+- Reading trail: T-Rex tactile-reactive manipulation
+- Depth: 2
+- Role: Tactile-language alignment foundation
+- Parent paper: T-Rex / tactile-aware VLA papers
+
+## One-line Summary
+
+This paper builds a touch-vision-language dataset and trains tactile encoders that align tactile readings with images and text.
+
+## Problem Setting
+
+- Observation: paired tactile and visual data with human or pseudo language labels.
+- Data: 44K in-the-wild vision-touch pairs, with a mix of human labels and GPT-4V pseudo-labels.
+- Task: open-vocabulary tactile classification and touch-vision-language generation/understanding.
+
+## Core Idea
+
+Touch is difficult to integrate into language models because tactile data lacks natural language labels. The paper creates aligned data and trains tactile models that can communicate with vision-language representations.
+
+## Method Details
+
+- Architecture: tactile encoder aligned to vision-language models, plus a touch-vision-language model.
+- Training recipe: train on paired touch, vision, and language labels.
+- Data: in-the-wild touch-vision pairs with language annotations.
+- Inference / control loop: not a robot policy paper; supports tactile semantic representation.
+
+## What I Should Remember
+
+- This is a bridge between tactile sensing and language grounding.
+- Tactile-VLA and VLA-Touch-like papers need this kind of semantic tactile alignment.
+- T-Rex is less about tactile semantics and more about tactile-reactive control, but the representation problem is connected.
+
+## Limitations
+
+- Alignment does not guarantee robot-executable control.
+- Pseudo-label quality can shape learned semantics.
+- The dataset is not the same as high-frequency dexterous robot interaction data.
+
+## Citation Trail
+
+- Depends on: CLIP-style alignment, tactile sensing datasets, VLMs.
+- Follow next: VLA-Touch, OmniVTLA, tactile-language models.
+- Why next: these use semantic tactile representations in robot policy pipelines.

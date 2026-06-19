@@ -1,0 +1,64 @@
+---
+title: Tactile-VLA
+description: Survey note on tactile-aware VLA models for tactile generalization.
+---
+
+# Tactile-VLA: Unlocking Vision-Language-Action Model's Physical Knowledge for Tactile Generalization
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Title | Tactile-VLA: Unlocking Vision-Language-Action Model's Physical Knowledge for Tactile Generalization |
+| Authors | Jialei Huang, Shuo Wang, Fanqi Lin, Yihang Hu, Chuan Wen, Yang Gao |
+| Venue / Year | arXiv, 2025 |
+| Link | https://arxiv.org/abs/2507.09160 |
+| Tags | tactile, VLA, force control, physical reasoning, contact-rich manipulation |
+
+## Survey Position
+
+- Reading trail: T-Rex tactile-reactive manipulation
+- Depth: 1
+- Role: Tactile-aware VLA baseline
+- Parent paper: T-Rex
+
+## One-line Summary
+
+Tactile-VLA connects tactile sensing to a VLA so the model can use physical interaction knowledge for contact-rich instruction following and adaptive behavior.
+
+## Problem Setting
+
+- Robot embodiment: robot manipulation platform with tactile sensing.
+- Observation: vision, language, action history, and tactile information.
+- Action: VLA-generated action interpreted through a hybrid position-force controller.
+- Data: a small number of demonstrations for tactile grounding.
+- Task: tactile-aware instruction following, contact-rich reasoning, and adaptive manipulation.
+
+## Core Idea
+
+The paper argues that VLM/VLA backbones already contain semantic knowledge about physical interactions, but this knowledge is not grounded in tactile execution. The method fuses tactile sensing into the policy and uses a hybrid position-force controller to turn model intent into contact-sensitive action.
+
+## Method Details
+
+- Architecture: vision-language-action model with tactile fusion and a tactile reasoning module.
+- Training recipe: connect tactile inputs to a pretrained model with limited demonstrations.
+- Data: tactile demonstrations for grounding physical concepts.
+- Inference / control loop: model uses tactile feedback to adapt strategy and force-position behavior.
+
+## What I Should Remember
+
+- Tactile-VLA is about activating physical commonsense in a VLA through touch.
+- It emphasizes high-level tactile reasoning and hybrid control.
+- T-Rex finds that simply adding tactile signals to pretrained VLA-style policies is not enough; architecture and timing matter.
+
+## Limitations
+
+- The paper is less focused on high-frequency tactile-reactive control than T-Rex.
+- Generality depends on how well tactile signals are aligned with the pretrained VLA.
+- Hardware and sensor assumptions can affect transfer.
+
+## Citation Trail
+
+- Depends on: VLA models, tactile-language alignment, hybrid force-position control.
+- Follow next: RT-2, OpenVLA, A Touch Vision and Language Dataset.
+- Why next: they explain the VLA and tactile-language alignment pieces behind tactile-aware reasoning.

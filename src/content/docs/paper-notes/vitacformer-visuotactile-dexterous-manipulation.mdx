@@ -1,0 +1,64 @@
+---
+title: ViTacFormer
+description: Survey note on cross-modal visuo-tactile representation learning for dexterous manipulation.
+---
+
+# ViTacFormer: Learning Cross-Modal Representation for Visuo-Tactile Dexterous Manipulation
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Title | ViTacFormer: Learning Cross-Modal Representation for Visuo-Tactile Dexterous Manipulation |
+| Authors | Liang Heng, Haoran Geng, Kaifeng Zhang, Pieter Abbeel, Jitendra Malik |
+| Venue / Year | arXiv, 2025 |
+| Link | https://arxiv.org/abs/2506.15953 |
+| Tags | tactile, dexterous manipulation, representation learning, cross-attention, imitation learning |
+
+## Survey Position
+
+- Reading trail: T-Rex tactile-reactive manipulation
+- Depth: 1
+- Role: Direct visuo-tactile dexterous manipulation baseline
+- Parent paper: T-Rex
+
+## One-line Summary
+
+ViTacFormer learns a fused visual-tactile representation with cross-attention and future tactile prediction, then uses that representation for precise multi-fingered manipulation.
+
+## Problem Setting
+
+- Robot embodiment: multi-fingered dexterous hand.
+- Observation: high-resolution vision and touch.
+- Action: imitation-learning policy actions for dexterous manipulation.
+- Data: real-world visuo-tactile demonstrations organized with an easy-to-challenging curriculum.
+- Task: long-horizon dexterous tasks requiring precision and contact awareness.
+
+## Core Idea
+
+The paper treats tactile sensing as a representation-learning problem. Instead of only feeding touch as raw state, ViTacFormer builds a cross-modal latent space where visual and tactile inputs attend to each other. A future tactile prediction head encourages the representation to encode contact dynamics that matter for upcoming actions.
+
+## Method Details
+
+- Architecture: cross-attention encoder for vision-touch fusion, autoregressive tactile prediction head, imitation policy downstream.
+- Training recipe: curriculum from easier to harder tasks to refine cross-modal features.
+- Data: visuo-tactile dexterous manipulation demonstrations.
+- Inference / control loop: policy consumes fused latent features for manipulation.
+
+## What I Should Remember
+
+- Future tactile prediction is used as an auxiliary objective to shape representation.
+- The paper is closer to tactile representation plus imitation learning than to VLA foundation modeling.
+- T-Rex uses ViTacFormer as a baseline but moves toward larger pretraining and asynchronous tactile refinement.
+
+## Limitations
+
+- Generalization is bounded by collected dexterous task data.
+- It does not solve the VLA frequency mismatch problem directly.
+- It is not framed as large-scale human-video pretraining plus robot mid-training.
+
+## Citation Trail
+
+- Depends on: tactile representation learning, cross-modal attention, imitation learning.
+- Follow next: ACT, tactile prediction objectives, Dexterity from Touch.
+- Why next: these clarify how tactile features become useful control representations.

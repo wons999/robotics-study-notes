@@ -1,0 +1,71 @@
+---
+title: Reactive Diffusion Policy
+description: Survey note on slow-fast visual-tactile policy learning for contact-rich manipulation.
+---
+
+# Reactive Diffusion Policy
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Title | Reactive Diffusion Policy: Slow-Fast Visual-Tactile Policy Learning for Contact-Rich Manipulation |
+| Authors | Han Xue, Jieji Ren, Wendi Chen, Gu Zhang, Yuan Fang, Guoying Gu, Huazhe Xu, Cewu Lu |
+| Venue / Year | RSS, 2025 |
+| Link | https://arxiv.org/abs/2503.02881 |
+| Tags | tactile, diffusion policy, slow-fast control, imitation learning, contact-rich manipulation |
+
+## Survey Position
+
+- Reading trail: T-Rex tactile-reactive manipulation
+- Depth: 1
+- Role: Direct baseline and architectural predecessor
+- Parent paper: T-Rex
+
+## One-line Summary
+
+RDP combines a slow latent diffusion policy with a fast tactile-conditioned controller so a robot can react to contact feedback during execution rather than waiting for the next visual action chunk.
+
+## Problem Setting
+
+- Robot embodiment: contact-rich manipulation platform with visual and tactile or force sensing.
+- Observation: visual input plus real-time tactile or force feedback.
+- Action: action chunks modeled by a latent diffusion policy, then adjusted through a fast tactile pathway.
+- Data: demonstrations collected with TactAR, a teleoperation system that gives operators tactile feedback through augmented reality.
+- Task: contact-rich manipulation requiring quick force/contact adjustment.
+
+## Core Idea
+
+Many imitation-learning policies predict action chunks. That helps model long-horizon behavior but creates a latency problem: if tactile feedback changes midway through the chunk, the policy may not react quickly enough.
+
+RDP addresses this with a two-level hierarchy:
+
+- Slow latent diffusion policy: predicts high-level action chunks at low frequency.
+- Fast asymmetric tokenizer: updates behavior at higher frequency using tactile feedback.
+
+This is a direct conceptual ancestor for T-Rex's slow visual stream plus fast tactile stream.
+
+## Method Details
+
+- Architecture: slow latent diffusion policy plus fast tactile-conditioned tokenizer.
+- Training recipe: train a tactile-conditioned action tokenizer, then train latent diffusion over the learned action space.
+- Data: contact-rich demonstrations collected with tactile feedback in the teleoperation loop.
+- Inference / control loop: low-frequency diffusion trajectory generation with high-frequency tactile correction.
+
+## What I Should Remember
+
+- RDP frames tactile feedback as an execution-time reactivity problem.
+- It is task-specific imitation learning, not a large VLA foundation model.
+- T-Rex scales a similar slow-fast idea into a VLA/MoT framework and broader dexterous bimanual tasks.
+
+## Limitations
+
+- It is not designed as a generalist VLA.
+- The reported task scope is narrower than T-Rex.
+- It still depends on collecting contact-rich demonstrations.
+
+## Citation Trail
+
+- Depends on: diffusion policies, tactile representation learning, action chunking.
+- Follow next: Diffusion Policy, ACT, TactAR details.
+- Why next: these explain the action-chunking baseline that T-Rex and RDP are trying to make reactive.

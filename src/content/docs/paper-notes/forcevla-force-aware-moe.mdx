@@ -1,0 +1,64 @@
+---
+title: ForceVLA
+description: Survey note on force-aware mixture-of-experts for contact-rich VLA manipulation.
+---
+
+# ForceVLA: Enhancing VLA Models with a Force-aware MoE for Contact-rich Manipulation
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Title | ForceVLA: Enhancing VLA Models with a Force-aware MoE for Contact-rich Manipulation |
+| Authors | Jiawen Yu, Hairuo Liu, Qiaojun Yu, Jieji Ren, Ce Hao, Haitong Ding, Guangyu Huang, Guofan Huang, Yan Song, Panpan Cai, Cewu Lu, Wenqiang Zhang |
+| Venue / Year | NeurIPS, 2025 |
+| Link | https://arxiv.org/abs/2505.22159 |
+| Tags | force sensing, VLA, MoE, contact-rich manipulation, force-torque |
+
+## Survey Position
+
+- Reading trail: T-Rex tactile-reactive manipulation
+- Depth: 1
+- Role: Related force-aware VLA architecture
+- Parent paper: T-Rex
+
+## One-line Summary
+
+ForceVLA treats force feedback as a first-class modality in a VLA and uses a force-aware mixture-of-experts module to improve contact-rich manipulation.
+
+## Problem Setting
+
+- Robot embodiment: contact-rich manipulation platform with force sensing.
+- Observation: vision, proprioception, and six-axis force-torque signals.
+- Action: VLA-style action decoding enhanced by force-aware routing.
+- Data: ForceVLA-Data, synchronized multimodal data across contact-rich tasks.
+- Task: manipulation tasks such as insertion where force feedback matters.
+
+## Core Idea
+
+ForceVLA argues that contact-rich tasks need explicit force-aware routing, not just visual-language embeddings. Its FVLMoE module dynamically integrates force feedback with pretrained visual-language features during action decoding.
+
+## Method Details
+
+- Architecture: force-aware Mixture-of-Experts fusion module.
+- Training recipe: train VLA with force-torque signals and contact-rich task data.
+- Data: synchronized vision, proprioception, and force-torque demonstrations.
+- Inference / control loop: action decoder uses real-time force features.
+
+## What I Should Remember
+
+- ForceVLA and T-Rex both elevate physical feedback into the VLA architecture.
+- ForceVLA focuses on force-aware MoE fusion; T-Rex focuses on high-frequency tactile refinement and tactile deformation/force history.
+- Both are responses to the same weakness: visual VLAs struggle in contact.
+
+## Limitations
+
+- Force sensing is not identical to dense tactile sensing.
+- Generalization depends on the diversity of contact-rich force data.
+- Timing and high-frequency control are less central than in T-Rex.
+
+## Citation Trail
+
+- Depends on: VLA models, force-torque sensing, MoE routing.
+- Follow next: pi_0, RDP, tactile-aware VLA papers.
+- Why next: these clarify the VLA baseline and alternative ways to inject physical feedback.

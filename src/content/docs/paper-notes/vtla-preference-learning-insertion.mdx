@@ -1,0 +1,64 @@
+---
+title: VTLA
+description: Survey note on vision-tactile-language-action modeling with preference learning for insertion.
+---
+
+# VTLA: Vision-Tactile-Language-Action Model with Preference Learning for Insertion Manipulation
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Title | VTLA: Vision-Tactile-Language-Action Model with Preference Learning for Insertion Manipulation |
+| Authors | Chaofan Zhang, Peng Hao, Xiaoge Cao, Xiaoshuai Hao, Shaowei Cui, Shuo Wang |
+| Venue / Year | arXiv, 2025 |
+| Link | https://arxiv.org/abs/2505.09577 |
+| Tags | tactile, VLA, insertion, preference learning, sim-to-real |
+
+## Survey Position
+
+- Reading trail: T-Rex tactile-reactive manipulation
+- Depth: 1
+- Role: Related tactile-language-action model for contact-rich insertion
+- Parent paper: T-Rex
+
+## One-line Summary
+
+VTLA integrates vision, tactile input, language, and actions for contact-rich insertion, using preference learning to better supervise continuous manipulation behavior.
+
+## Problem Setting
+
+- Robot embodiment: insertion manipulation setup.
+- Observation: vision, tactile input, language instruction.
+- Action: action prediction for contact-intensive insertion.
+- Data: simulation dataset with vision-tactile-action-instruction pairs.
+- Task: fingertip insertion and peg-in-hole style manipulation with real-world transfer.
+
+## Core Idea
+
+VTLA targets a narrow but important contact-rich setting: insertion. It uses cross-modal language grounding and Direct Preference Optimization to reduce the mismatch between token prediction style losses and continuous robot manipulation quality.
+
+## Method Details
+
+- Architecture: vision-tactile-language-action model.
+- Training recipe: language-grounded multimodal supervision plus preference learning.
+- Data: simulated vision-tactile-action-instruction dataset.
+- Inference / control loop: generate robust insertion policy behavior.
+
+## What I Should Remember
+
+- VTLA is task-family-specific compared with T-Rex.
+- It is useful for understanding tactile-language-action grounding in insertion.
+- Preference learning is a different answer to the question of how to supervise action quality.
+
+## Limitations
+
+- Focused mainly on insertion-style tasks.
+- Simulation data may not cover full tactile sensor complexity.
+- It does not address large-scale tactile mid-training.
+
+## Citation Trail
+
+- Depends on: VLA models, tactile simulation, preference learning.
+- Follow next: Tactile-VLA, ForceVLA, insertion-specific tactile control papers.
+- Why next: these compare alternative ways to make contact-rich VLA behavior stable.

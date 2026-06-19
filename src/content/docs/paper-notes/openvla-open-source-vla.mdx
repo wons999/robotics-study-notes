@@ -1,0 +1,64 @@
+---
+title: OpenVLA
+description: Survey note on OpenVLA as an open-source vision-language-action model.
+---
+
+# OpenVLA: An Open-Source Vision-Language-Action Model
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Title | OpenVLA: An Open-Source Vision-Language-Action Model |
+| Authors | Moo Jin Kim, Karl Pertsch, Siddharth Karamcheti, Ted Xiao, Ashwin Balakrishna, Suraj Nair, Rafael Rafailov, Ethan Foster, Grace Lam, Pannag Sanketi, Quan Vuong, Thomas Kollar, Benjamin Burchfiel, Russ Tedrake, Dorsa Sadigh, Sergey Levine, Percy Liang, Chelsea Finn |
+| Venue / Year | arXiv, 2024 |
+| Link | https://arxiv.org/abs/2406.09246 |
+| Tags | VLA, open-source, robot foundation model, Open X-Embodiment, fine-tuning |
+
+## Survey Position
+
+- Reading trail: T-Rex tactile-reactive manipulation
+- Depth: 2
+- Role: Foundational VLA reference
+- Parent paper: T-Rex / tactile-aware VLA papers
+
+## One-line Summary
+
+OpenVLA is a 7B-parameter open-source VLA trained on a large robot demonstration mixture and designed for efficient fine-tuning to new manipulation tasks.
+
+## Problem Setting
+
+- Robot embodiment: multiple embodiments from Open X-Embodiment.
+- Observation: image and language instruction.
+- Action: robot actions represented for VLA training.
+- Data: about 970k real-world robot demonstrations.
+- Task: generalist manipulation and fine-tuning to new tasks.
+
+## Core Idea
+
+OpenVLA addresses a practical bottleneck in VLA research: many strong VLAs were closed. It provides an open model, training recipe, and fine-tuning path for robot manipulation.
+
+## Method Details
+
+- Architecture: Llama 2 language backbone with DINOv2 and SigLIP visual features.
+- Training recipe: large-scale robot demonstration training with efficient adaptation options.
+- Data: Open X-Embodiment-style robot demonstrations.
+- Inference / control loop: image-language conditioned robot action prediction.
+
+## What I Should Remember
+
+- OpenVLA is a key baseline for open VLA experimentation.
+- It is mostly visual-language-action, not tactile-reactive.
+- Tactile-VLA-style papers can be viewed as attempts to extend this VLA family into contact-rich sensing.
+
+## Limitations
+
+- Tactile and force signals are not central.
+- Discrete or tokenized action formulations can struggle with high-frequency dexterous correction.
+- Fine-tuning remains necessary for many target domains.
+
+## Citation Trail
+
+- Depends on: RT-2, Open X-Embodiment, DINOv2, SigLIP, Llama.
+- Follow next: RT-2, Open X-Embodiment.
+- Why next: these explain the VLA framing and data foundation.

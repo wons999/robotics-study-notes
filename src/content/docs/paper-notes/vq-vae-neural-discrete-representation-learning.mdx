@@ -1,0 +1,62 @@
+---
+title: VQ-VAE
+description: Survey note on neural discrete representation learning and VQ-VAE.
+---
+
+# Neural Discrete Representation Learning
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+| Title | Neural Discrete Representation Learning |
+| Authors | Aaron van den Oord, Oriol Vinyals, Koray Kavukcuoglu |
+| Venue / Year | NeurIPS, 2017 |
+| Link | https://arxiv.org/abs/1711.00937 |
+| Tags | VQ-VAE, discrete latent variables, representation learning, generative modeling |
+
+## Survey Position
+
+- Reading trail: T-Rex tactile-reactive manipulation
+- Depth: 2
+- Role: Foundational method for T-Rex tactile force tokenization
+- Parent paper: T-Rex
+
+## One-line Summary
+
+VQ-VAE learns discrete latent codes by combining autoencoding with vector quantization, giving neural models compact symbolic-like representations.
+
+## Problem Setting
+
+- Data: images, videos, speech, and other high-dimensional signals.
+- Objective: learn useful unsupervised discrete representations.
+- Model: encoder, vector quantizer/codebook, decoder, and learned prior.
+
+## Core Idea
+
+Instead of mapping inputs into continuous Gaussian latents, VQ-VAE maps encoder outputs to the nearest learned codebook vector. This creates discrete latent tokens that can be modeled by an autoregressive prior or used as compact representations.
+
+## Method Details
+
+- Architecture: encoder, vector quantization codebook, decoder, prior model.
+- Training recipe: reconstruction objective plus codebook and commitment losses.
+- Data: demonstrated across several modalities.
+- Inference / control loop: not a control paper; used by T-Rex to compress tactile force histories.
+
+## What I Should Remember
+
+- T-Rex uses a VQ-VAE-like encoder to turn recent force histories into compact tactile tokens.
+- Discrete tactile tokens can reduce noise and drift compared with raw high-frequency force streams.
+- Codebook collapse and underused codes are practical issues to watch.
+
+## Limitations
+
+- Discretization may lose fine continuous detail.
+- Codebook design and training stability matter.
+- The original paper is not robotics-specific.
+
+## Citation Trail
+
+- Depends on: VAEs, vector quantization, autoregressive priors.
+- Follow next: VQGAN, discrete tokenization for action and tactile streams.
+- Why next: T-Rex uses discrete tactile tokens, while VLA literature often tokenizes actions or observations.
