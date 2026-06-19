@@ -19,15 +19,15 @@ description: visuo-tactile dexterous manipulation을 위한 cross-modal represen
 
 ViTacFormer는 vision과 touch를 cross-attention으로 결합하고 future tactile prediction을 auxiliary objective로 사용해, multi-fingered dexterous manipulation에 필요한 visuo-tactile representation을 학습한다.
 
-## 왜 T-Rex와 연결되는가
+## 이 논문의 위치
 
-T-Rex가 tactile을 “빠른 correction signal”로 다룬다면, ViTacFormer는 tactile을 “좋은 representation으로 어떻게 만들 것인가”에 더 집중한다.
+ViTacFormer는 tactile을 단순한 보조 센서가 아니라 dexterous manipulation representation의 핵심 modality로 다룬다. tactile-reactive control보다 “vision과 touch를 어떤 latent로 융합할 것인가”에 초점이 있는 논문이다.
 
-| 관점 | ViTacFormer | T-Rex |
+| 관점 | ViTacFormer가 강조하는 점 | 읽을 때 확인할 질문 |
 | --- | --- | --- |
-| 핵심 질문 | vision과 tactile을 어떤 latent로 융합할까? | tactile을 어떻게 빠르게 action refinement에 쓸까? |
-| 주요 구조 | cross-attention encoder + tactile prediction head | variable-rate MoT + tactile expert |
-| 데이터 관점 | dexterous task demonstration | tactile-rich bimanual mid-training corpus |
+| 핵심 질문 | vision과 tactile을 어떤 latent로 융합할까? | fused latent가 실제 action 선택에 얼마나 영향을 주는가 |
+| 주요 구조 | cross-attention encoder + tactile prediction head | 미래 tactile 예측이 contact dynamics를 잡는가 |
+| 데이터 관점 | dexterous task demonstration | curriculum이 representation 안정성에 어떤 역할을 하는가 |
 
 ## 문제 설정
 
@@ -68,11 +68,11 @@ ViTacFormer는 easy-to-challenging curriculum을 사용한다. 쉬운 task에서
 - long-horizon dexterous task에서 몇 단계까지 안정적으로 유지되는가?
 - precision task에서 tactile이 실패 유형을 어떻게 줄이는가?
 
-## T-Rex를 읽기 위한 기억 포인트
+## 기억할 점
 
-- T-Rex의 tactile encoder를 볼 때 ViTacFormer의 cross-modal representation 관점이 도움이 된다.
-- T-Rex는 force history와 deformation map을 분리해 쓰고, ViTacFormer는 vision-touch fused latent를 강조한다.
-- 두 논문 모두 tactile을 raw sensor value로만 보면 부족하다는 점을 공유한다.
+- tactile은 raw sensor value를 그대로 넣기보다 representation learning objective와 함께 설계해야 한다.
+- future tactile prediction은 contact transition을 latent에 담게 만드는 강한 auxiliary task다.
+- vision-touch fusion은 occlusion이 많은 dexterous manipulation에서 특히 중요하다.
 
 ## 한계
 

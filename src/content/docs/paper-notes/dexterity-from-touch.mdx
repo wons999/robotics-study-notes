@@ -1,6 +1,6 @@
 ---
 title: Dexterity from Touch
-description: robotic play로 tactile representation을 self-supervised pretraining하는 논문 노트.
+description: robotic play로 tactile representation을 self-supervised pretraining하는 논문 Survey.
 ---
 
 # Dexterity from Touch
@@ -22,9 +22,9 @@ T-Dex는 robotic play data로 tactile encoder를 self-supervised pretraining하�
 
 먼저 task label이 없는 tactile-rich play data를 모은다. 이 데이터로 tactile representation을 학습한 뒤, downstream task에서는 적은 demonstration으로 policy를 만든다.
 
-## T-Rex와의 관계
+## 이 논문의 위치
 
-T-Rex의 tactile mid-training과 철학이 비슷하다. task-specific demo만 모으는 것보다, 넓은 tactile interaction data로 reusable contact representation을 먼저 학습하는 것이 중요하다는 흐름이다.
+이 논문은 task-specific demonstration만 모으는 대신, 넓은 tactile interaction data로 reusable contact representation을 먼저 학습하는 흐름을 보여준다. tactile representation pretraining이 contact-rich manipulation에서 왜 필요한지 보는 데 좋은 출발점이다.
 
 ## 기억할 점
 

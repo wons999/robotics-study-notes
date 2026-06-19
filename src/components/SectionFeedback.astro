@@ -1,0 +1,39 @@
+---
+interface Props {
+  page: string;
+  section: string;
+}
+
+const { page, section } = Astro.props;
+const repo = 'wons999/robotics-study-notes';
+const title = `[논문 Survey 피드백] ${page} - ${section}`;
+const body = [
+  `페이지: ${page}`,
+  `섹션: ${section}`,
+  '',
+  '피드백:',
+  ''
+].join('\n');
+const href = `https://github.com/${repo}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+---
+
+<p class="section-feedback">
+  <a href={href} target="_blank" rel="noreferrer">이 섹션에 피드백 남기기</a>
+</p>
+
+<style>
+  .section-feedback {
+    margin-top: -0.35rem;
+    margin-bottom: 1.25rem;
+    font-size: 0.85rem;
+  }
+
+  .section-feedback a {
+    color: var(--sl-color-accent-high);
+    text-decoration: none;
+  }
+
+  .section-feedback a:hover {
+    text-decoration: underline;
+  }
+</style>

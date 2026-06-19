@@ -19,15 +19,15 @@ description: contact-rich manipulation을 위한 slow-fast visual-tactile policy
 
 RDP는 느린 latent diffusion policy와 빠른 tactile feedback controller를 결합해, action chunk를 실행하는 도중에도 접촉 변화에 즉시 반응하게 만든 visual-tactile imitation learning 방법이다.
 
-## 왜 T-Rex와 연결되는가
+## 이 논문의 위치
 
-T-Rex를 이해할 때 RDP는 거의 바로 앞 단계의 선행 연구처럼 읽으면 된다. 둘 다 같은 병목을 본다.
+RDP는 contact-rich manipulation에서 “느린 visual policy”와 “빠른 tactile correction”을 분리해야 한다는 문제를 선명하게 보여준다. tactile-reactive policy를 설계할 때 시간 스케일을 나누는 대표적인 기준 논문으로 읽을 수 있다.
 
-| 병목 | RDP의 답 | T-Rex의 확장 |
+| 병목 | RDP의 답 | 읽을 때 확인할 질문 |
 | --- | --- | --- |
-| action chunk는 길고 tactile 변화는 빠르다 | slow latent diffusion + fast tactile tokenizer | low-frequency action expert + high-frequency tactile expert |
-| contact-rich task는 vision만으로 부족하다 | tactile/force feedback을 closed-loop correction에 사용 | force history + deformation map을 tactile expert에 사용 |
-| teleoperation data에 tactile이 부족하다 | TactAR로 operator에게 tactile feedback 제공 | 100시간 tactile-synchronized bimanual dataset 구축 |
+| action chunk는 길고 tactile 변화는 빠르다 | slow latent diffusion + fast tactile tokenizer | chunk 내부 correction은 어디서 일어나는가 |
+| contact-rich task는 vision만으로 부족하다 | tactile/force feedback을 closed-loop correction에 사용 | tactile이 action을 직접 바꾸는가, representation만 바꾸는가 |
+| teleoperation data에 tactile이 부족하다 | TactAR로 operator에게 tactile feedback 제공 | demonstration 수집 단계부터 contact-aware behavior가 들어가는가 |
 
 ## 문제 설정
 
@@ -66,7 +66,7 @@ RDP는 contact-rich behavior를 두 시간 스케일로 분해한다.
 2. 빠른 시간 스케일에서는 tactile feedback이 현재 접촉 상태를 보고 action을 수정한다.
 3. 이 둘을 분리해도 완전히 따로 노는 것이 아니라, latent/action representation을 통해 연결한다.
 
-이 구조는 T-Rex의 asynchronous cascaded flow matching을 이해하는 좋은 준비 운동이다. T-Rex도 결국 “비싼 visual reasoning은 느리게, tactile correction은 빠르게”라는 같은 방향으로 간다.
+이 구조의 핵심은 “비싼 visual reasoning은 느리게, tactile correction은 빠르게”라는 시간 스케일 분해다. 이후 tactile VLA 논문들이 더 큰 backbone을 쓰더라도 이 병목은 계속 남는다.
 
 ## 실험에서 봐야 할 점
 
@@ -75,11 +75,11 @@ RDP는 contact-rich behavior를 두 시간 스케일로 분해한다.
 - 빠른 tactile pathway를 제거하면 어떤 실패가 늘어나는가?
 - action chunk 길이가 길어질수록 tactile correction의 중요성이 커지는가?
 
-## T-Rex를 읽기 위한 기억 포인트
+## 기억할 점
 
 - RDP는 tactile reactivity의 필요성을 잘 보여주는 baseline이다.
-- T-Rex는 RDP보다 더 큰 VLA/foundation model setting으로 이 문제를 가져간다.
-- RDP는 task-level imitation learning에 가깝고, T-Rex는 tactile-rich mid-training을 통한 reusable contact prior를 노린다.
+- RDP는 generalist VLA보다는 task-level imitation learning에 가깝다.
+- slow-fast architecture는 contact-rich manipulation에서 반복해서 등장하는 설계 패턴이다.
 
 ## 한계
 

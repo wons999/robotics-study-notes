@@ -1,6 +1,6 @@
 ---
 title: VQ-VAE
-description: T-Rex의 tactile force history tokenization을 이해하기 위한 discrete representation 상세 노트.
+description: sensor history와 high-dimensional signal을 discrete token으로 압축하는 representation learning 상세 노트.
 ---
 
 # VQ-VAE
@@ -19,9 +19,9 @@ description: T-Rex의 tactile force history tokenization을 이해하기 위한 
 
 VQ-VAE는 encoder output을 continuous Gaussian latent가 아니라 codebook의 discrete vector로 quantize하여, compact한 token-like latent representation을 학습하는 generative model이다.
 
-## 왜 T-Rex와 연결되는가
+## 이 논문의 위치
 
-T-Rex는 fingertip force history를 그대로 policy에 넣지 않고, per-finger VQ-VAE를 사용해 discrete tactile token으로 압축한다. 즉 VQ-VAE는 T-Rex tactile encoder의 temporal force stream을 이해하는 기반이다.
+VQ-VAE는 image, audio, video, tactile/force history처럼 연속적이고 noisy한 신호를 discrete token-like latent로 바꾸는 대표 방법이다. transformer나 autoregressive model이 sensor sequence를 다루도록 만들 때 자주 등장하는 기반 논문이다.
 
 ## 직관
 
@@ -46,16 +46,17 @@ T-Rex는 fingertip force history를 그대로 policy에 넣지 않고, per-finge
 
 VQ-VAE는 latent를 discrete code로 강제한다. 이 덕분에 autoregressive prior나 transformer가 token sequence처럼 다루기 쉬워진다. 원래 논문은 image, video, speech 같은 modality에서 discrete representation의 장점을 보여준다.
 
-## T-Rex에서의 역할
+## sensor sequence에서의 역할
 
-T-Rex tactile encoder는 두 stream을 가진다.
+로봇 tactile/force sequence에 VQ-VAE를 적용하면 빠르게 변하는 raw signal을 compact한 contact pattern token으로 바꿀 수 있다.
 
-| stream | 기반 |
-| --- | --- |
-| temporal force stream | VQ-VAE로 force history를 token화 |
-| spatial deformation stream | convolution encoder로 tactile deformation map 처리 |
+| 적용 대상 | 기대 효과 | 주의할 점 |
+| --- | --- | --- |
+| force history | noisy continuous signal을 discrete contact pattern으로 압축 | 미세한 force 차이를 잃을 수 있음 |
+| tactile deformation sequence | 접촉 형상 변화를 token sequence로 표현 | codebook이 sensor/hand configuration에 과적합될 수 있음 |
+| video/action latent | transformer가 다루기 쉬운 token stream 제공 | codebook collapse를 확인해야 함 |
 
-VQ-VAE는 이 중 temporal force stream의 핵심이다. 손가락마다 최근 force history를 discrete token으로 만들면, tactile expert가 빠른 contact pattern을 더 안정적으로 읽을 수 있다.
+중요한 질문은 tokenization이 정보를 얼마나 줄이면서도 downstream policy에는 충분한 contact state를 남기는가다.
 
 ## 읽을 때 주의할 점
 

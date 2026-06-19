@@ -21,34 +21,34 @@ export default defineConfig({
       ],
       sidebar: [
         {
-          label: 'Start',
+          label: '시작',
           items: [
-            { label: 'Home', slug: '' },
-            { label: 'Study Roadmap', slug: 'roadmap' }
+            { label: '홈', slug: '' },
+            { label: '공부 로드맵', slug: 'roadmap' }
           ]
         },
         {
-          label: 'Robotics Foundations',
+          label: '로보틱스 기초',
           items: [{ autogenerate: { directory: 'robotics-foundations' } }]
         },
         {
-          label: 'Robot Systems',
+          label: '로봇 시스템',
           items: [{ autogenerate: { directory: 'robot-systems' } }]
         },
         {
-          label: 'Robot Learning',
+          label: '로봇 러닝',
           items: [{ autogenerate: { directory: 'robot-learning' } }]
         },
         {
-          label: 'Paper Notes',
+          label: '논문 Survey',
           items: [{ autogenerate: { directory: 'paper-notes' } }]
         },
         {
-          label: 'Experiments',
+          label: '실험 노트',
           items: [{ autogenerate: { directory: 'experiments' } }]
         },
         {
-          label: 'Weekly Log',
+          label: '주간 로그',
           items: [{ autogenerate: { directory: 'weekly-log' } }]
         }
       ]
