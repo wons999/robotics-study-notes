@@ -44,6 +44,10 @@ export default defineConfig({
           items: [{ autogenerate: { directory: 'paper-notes' } }]
         },
         {
+          label: '세미나',
+          items: [{ autogenerate: { directory: 'seminars' } }]
+        },
+        {
           label: '실험 노트',
           items: [{ autogenerate: { directory: 'experiments' } }]
         },

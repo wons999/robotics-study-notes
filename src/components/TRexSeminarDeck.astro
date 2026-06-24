@@ -1,0 +1,3363 @@
+---
+const slides = [
+  {
+    eyebrow: '1. Overview',
+    title: 'T-Rex Overview',
+    kicker: 'T-Rex는 tactile signal을 단순 observation이 아니라 action을 빠르게 보정하는 control signal로 다루는 robot policy다.',
+    layout: 'split',
+    visual: '<img src="/trex/trex-overview.png" alt="T-Rex overview figure" />',
+    body: [
+      '논문은 tactile-reactive dexterous manipulation을 위해 100시간 규모의 tactile-rich dataset, variable-rate Mixture-of-Transformer-Experts architecture, spatial-temporal tactile encoder, asynchronous cascaded flow matching을 제안한다.',
+      'Figure 1은 T-Rex가 large-scale human egocentric pre-training, tactile-grounded robot mid-training, skill-specific post-training을 연결하고, low-frequency visuomotor planning과 high-frequency tactile refinement를 결합한다고 요약한다.'
+    ],
+    bullets: [
+      'Contribution 1: 100h tactile-rich bimanual manipulation dataset',
+      'Contribution 2: spatio-temporal tactile encoder와 tactile expert',
+      'Contribution 3: asynchronous tactile-reactive cascaded flow matching'
+    ],
+    insight: '핵심 관점은 “tactile을 단순 observation으로 추가한 모델”이 아니라 “tactile이 action chunk를 다시 고치는 path를 가진 모델”로 이해하는 것이다.'
+  },
+  {
+    eyebrow: '2. Dataset',
+    title: 'T-Rex 데이터셋: 무엇을 모았나?',
+    kicker: 'T-Rex Dataset은 downstream task 12개만 반복한 데이터가 아니라, reusable contact behavior를 넓게 모은 mid-training corpus다.',
+    layout: 'stack',
+    visual: '<img src="/trex/trex-dataset-analysis.png" alt="T-Rex dataset statistics" />',
+    body: [
+      'T-Rex Dataset은 207개 common household objects와 22개 motor primitives를 조합하고, 물리적으로 feasible한 object-motor primitive pair만 남겨 502개 조합을 구성한다.',
+      'Appendix G에 따르면 최종 데이터는 7,755 episodes, 100 hours이며, median episode length는 29.8초, IQR은 21.0-41.1초다. 각 retained pair는 평균 16 demonstrations를 가진다.'
+    ],
+    bullets: [
+      '207 objects, 22 motor primitives',
+      '502 feasible object-primitive pairs',
+      '7,755 episodes, 100 hours, 10 weeks collection'
+    ]
+  },
+  {
+    eyebrow: '2. Dataset',
+    title: '데이터셋에 기록되는 신호',
+    kicker: '각 episode는 vision, proprioception, tactile, action, language가 같은 시간축에서 정렬된 multimodal trajectory다.',
+    visual: '<table class="mini-table"><tr><th>Stream</th><th>내용</th></tr><tr><td>Vision</td><td>head RGB 1개, wrist RGB 2개</td></tr><tr><td>State</td><td>arm joint, hand joint, wrist pose</td></tr><tr><td>Tactile</td><td>10 fingertip deformation map + 6-axis wrench</td></tr><tr><td>Action</td><td>arm end-effector delta + hand joint command</td></tr><tr><td>Language</td><td>target object + motor primitive + sampled frames → VLM instruction → human verification</td></tr></table>',
+    body: [
+      'Appendix G는 각 episode가 time-aligned bundle로 저장되며, three monocular RGB streams, bimanual proprioception, wrist end-effector poses, per-fingertip tactile observations, natural-language instruction을 포함한다고 설명한다.',
+      'RGB stream은 head ZED X Mini 1개와 wrist-mounted ZED X One S wide-view camera 2개이며 30Hz high-level teleoperation cadence로 기록된다. tactile stream은 10개 fingertip의 single-channel deformation depth map과 6-axis net wrench를 포함한다.',
+      'language instruction은 episode마다 sampled head-camera frames 4-6장, target object name, motor-primitive name을 VLM에 제공해 imperative sentence를 생성하고, human annotator가 hallucination과 imprecise description을 검수한다.'
+    ],
+    bullets: [
+      'raw stream과 derived tactile representation을 함께 release할 계획이다.',
+      'language는 target object와 primitive를 motion trajectory에 연결한다.',
+      'VLM 생성 후 human verification을 거쳐 instruction 품질을 관리한다.'
+    ],
+    insight: '여기서 language는 단순 caption보다 “object-primitive taxonomy를 policy condition으로 바꾸는 접착제”에 가깝다.'
+  },
+  {
+    eyebrow: '2. Dataset',
+    title: '왜 task demo가 아니라 mid-training corpus인가?',
+    kicker: 'T-Rex Dataset은 특정 평가 task를 외우게 하기보다, 다양한 object-primitive 조합에서 reusable contact prior를 만들도록 설계됐다.',
+    visual: '<div class="dataset-funnel"><div class="funnel-row"><span>207 objects</span><strong>×</strong><span>22 motor primitives</span></div><div class="funnel-arrow">↓</div><div class="funnel-step">Per-primitive feasibility checklist</div><div class="invalid-pairs"><strong>Filtered examples</strong><span>solid block × pour</span><span>non-articulated object × twist</span><span>flat cloth × insert</span></div><div class="funnel-arrow">↓</div><div class="funnel-step emphasis">502 feasible object-primitive pairs</div><div class="pair-examples"><span>cup × twist</span><span>cloth × wipe</span><span>card × slide</span><span>tube × press</span><span>key × insert</span></div><div class="funnel-step">Reusable contact behavior prior</div></div>',
+    body: [
+      '논문은 기존 robot manipulation dataset이 parallel gripper나 grasp-centric dexterous hand에 치우쳐 tactile-rich dexterous interaction coverage가 제한적이라고 지적한다.',
+      'T-Rex Dataset은 narrow task-specific demonstrations 대신 verb-noun combination, motor primitive, object interaction을 중심으로 구성된다. infeasible pair는 per-primitive feasibility checklist로 수동 제거한다.',
+      '여기서 checklist는 primitive마다 “이 동작이 해당 object에 물리적으로 의미가 있는가”를 확인하는 기준이다. 논문은 solid block에 pour primitive를 적용하거나, articulating part가 없는 object에 twist primitive를 적용하는 경우처럼 성립하지 않는 조합을 제거한다고 설명한다.'
+    ],
+    bullets: [
+      'scene backdrop, distractor, object pose를 다양화해 visual overfitting을 줄인다.',
+      '예: solid block × pour, non-articulated object × twist 같은 조합은 제거한다.'
+    ],
+    insight: '이 슬라이드의 핵심은 T-Rex Dataset을 “평가 task rehearsal”이 아니라 “mid-training용 contact behavior coverage”로 해석하는 데 있다.'
+  },
+  {
+    eyebrow: '3. Model',
+    title: 'T-Rex 모델 구조 Overview',
+    kicker: '모델의 핵심은 하나의 거대한 policy가 모든 것을 같은 속도로 처리하지 않는다는 점이다.',
+    layout: 'split',
+    visual: '<img src="/trex/trex-model.png" alt="T-Rex model architecture" />',
+    body: [
+      'Figure 3에서 T-Rex는 Mixture-of-Transformer-Experts backbone과 spatial-temporal tactile encoder로 구성된다. 세 expert는 latent expert, action expert, tactile expert다.',
+      'Latent expert는 future visual prediction을 통해 temporally grounded context를 만들고, action expert는 low-frequency action denoising을 수행한다. tactile expert는 cached visual-language context를 재사용해 high-frequency tactile refinement를 수행한다.'
+    ],
+    bullets: [
+      'Latent expert: visual-language latent context',
+      'Action expert: low-frequency coarse action generation',
+      'Tactile expert: high-frequency tactile refinement'
+    ]
+  },
+  {
+    eyebrow: '4. Latent Expert',
+    title: 'Latent Expert: visual-language context를 만드는 slow reasoning module',
+    kicker: 'Latent expert는 현재 이미지와 instruction을 바탕으로 task context와 future visual representation을 만든다.',
+    visual: '<div class="expert-spec-card"><h3>Latent Expert</h3><div class="io-strip"><span>Input</span><strong>slow visual-language token prefix</strong></div><table class="micro-table"><tr><td>Code path</td><td>slow images + language prompt → Qwen processor → slow_embeds</td></tr><tr><td>Typical slow image</td><td>head camera image</td></tr><tr><td>Optional tokens</td><td>flare future-prediction query tokens</td></tr><tr><td>Backbone</td><td>Qwen3VL-2B</td></tr><tr><td>Hidden feature dim</td><td>2048</td></tr><tr><td>Layers</td><td>28 transformer layers</td></tr><tr><td>Max sequence</td><td>2048 tokens</td></tr><tr><td>Params</td><td>1.41B</td></tr><tr><td>Attention</td><td>Flash Attention 2</td></tr></table><div class="io-strip output"><span>Output</span><strong>latent KV/context, optionally extended with future visual tokens</strong></div><small>The server splits the processed VL embedding into slow_embeds and fast_embeds before flow inference.</small></div>',
+    body: [
+      'Appendix A에 따르면 latent expert는 Qwen3VL-2B 기반이며 hidden feature dimension 2048, 28 transformer layers, max sequence length 2048, 1.41B parameters, Flash Attention 2를 사용한다.',
+      '코드에서는 slow images와 language prompt를 Qwen processor에 넣어 `inputs_embeds`를 만든 뒤, `split_slow_fast_embeds()`로 slow prefix를 `slow_embeds`로 분리한다. 일반 JSON pipeline에서는 head camera가 `input_image_slow`로 들어간다.',
+      'future visual prediction을 쓰는 경우 `flare_queries`가 slow embedding 뒤에 추가된다. Dataset에는 robot states와 actions도 기록되지만, latent expert의 직접 입력 경로는 visual-language token prefix다.'
+    ],
+    bullets: [
+      '무거운 visual-language 계산은 slow stream에서 수행한다.',
+      'latent context는 action generation과 tactile refinement의 공통 조건이 된다.'
+    ],
+    insight: 'future visual prediction은 world model 전체를 만드는 수준은 아니지만, 현재 관측을 action generation에 유용한 temporal context로 밀어주는 regularizer로 볼 수 있다.'
+  },
+  {
+    eyebrow: '5. Action Expert',
+    title: 'Action Expert: coarse action chunk를 만드는 module',
+    kicker: 'Action expert는 visual-language context를 바탕으로 먼저 그럴듯한 action trajectory를 만든다.',
+    visual: '<div class="expert-spec-card"><h3>Action Expert</h3><div class="io-strip"><span>Input</span><strong>slow_embeds + action-sequence tokens</strong></div><table class="micro-table"><tr><td>Latent context</td><td>slow_embeds from head/image-language prefix</td></tr><tr><td>Fast visual tokens</td><td>fast_embeds from wrist images, prepended to action sequence</td></tr><tr><td>Robot state</td><td>optional state_embeds from normalized state_fast when use_robot_state=1</td></tr><tr><td>Flow tokens</td><td>timestep embedding + noisy action chunk embedding</td></tr><tr><td>Objective</td><td>conditional flow matching, upper denoising segment</td></tr><tr><td>Action dim</td><td>62</td></tr><tr><td>Action chunk</td><td>16</td></tr><tr><td>Inference steps</td><td>6 Euler steps</td></tr><tr><td>Params</td><td>1.41B</td></tr></table><div class="io-strip output"><span>Output</span><strong>x_split + cached [latent | action] KV at tau_split</strong></div><small>Implementation concatenates fast_embeds, optional state_embeds, timestep, and noisy action before the action expert pass.</small></div>',
+    body: [
+      'Action expert는 Gaussian noise에서 intermediate timestep까지 action chunk를 denoise하는 low-frequency flow-matching expert다. Appendix A 기준 Qwen3VL-2B backbone, action dimension 62, action chunk 16, 6 inference timesteps, 1.41B parameters를 사용한다.',
+      '구현 코드의 `forward_flow_action_partial()`를 보면 action expert 입력은 `full_embeds = [slow_embeds, act_seq]`다. 여기서 `act_seq`는 `fast_embeds`, optional `state_embeds`, timestep embedding, noisy action embedding을 순서대로 concatenate한다.',
+      '`fast_embeds`는 Qwen processor가 처리한 전체 image/text token sequence에서 wrist camera 쪽 fast image suffix를 분리한 것이다. `state_embeds`는 `use_robot_state=1`이고 `state_fast`가 있을 때 normalized 62D robot state를 `state_embedder`에 넣어 만든 1-token embedding이다.',
+      '출력은 tactile expert가 이어받을 `x_split`과 tau_split 시점의 cached `[latent | action]` KV다. 실험 setup의 action output은 bimanual arms relative end-effector delta와 fingers absolute joint control을 합친 62D action chunk다.'
+    ],
+    bullets: [
+      'low-frequency visual action chunk generation',
+      'arm end-effector delta + hand joint command',
+      'tactile expert가 refinement할 boundary state를 만든다.'
+    ]
+  },
+  {
+    eyebrow: '6. Tactile Expert',
+    title: 'Tactile Expert: action을 빠르게 보정하는 module',
+    kicker: 'Tactile expert는 raw vision을 다시 보지 않고, cached context와 최신 tactile signal로 action chunk를 보정한다.',
+    visual: '<div class="expert-spec-card"><h3>Tactile Expert</h3><div class="io-strip"><span>Input</span><strong>cached KV + x_split + fresh tactile observations</strong></div><table class="micro-table"><tr><td>Cached context</td><td>cloned [latent | action] KV from slow tick</td></tr><tr><td>Boundary state</td><td>x_split at tau_split from action expert</td></tr><tr><td>Tactile F6</td><td>current normalized 10-finger 6D wrench frame</td></tr><tr><td>F6 history</td><td>rolling 16-frame raw history → embedded VQ-VAE codes</td></tr><tr><td>Deformation</td><td>10 fingertip deformation maps → DeformEncoder + projection</td></tr><tr><td>Raw vision</td><td>not reprocessed in fast tick</td></tr><tr><td>Inference steps</td><td>4 Euler steps</td></tr><tr><td>FFN intermediate</td><td>1536</td></tr><tr><td>Params</td><td>0.62B</td></tr></table><div class="io-strip output"><span>Output</span><strong>denormalized final action chunk returned to robot</strong></div><small>tactile_flow_continue() returns the clean action directly, not a residual delta.</small></div>',
+    body: [
+      '구현 코드의 `tactile_flow_continue()`는 slow tick에서 저장한 cached KV를 clone하고, `x_split`에서 tau=0까지 남은 flow를 tactile expert로 적분한다. fast tick에서는 visual tower, latent expert, action expert를 다시 실행하지 않는다.',
+      'tactile observation은 세 갈래다. current F6 frame은 `tacf6_embedder`로 들어가고, rolling F6 history는 embedded VQ-VAE가 discrete code로 바꾼 뒤 `tactile_code_embedder`로 들어가며, deformation map은 `DeformEncoder`와 projection을 거쳐 tactile token에 concat된다.',
+      'Appendix A 기준 tactile expert는 action dimension 62, action chunk 16, 4 inference timesteps, FFN intermediate size 1536, 0.62B parameters를 사용한다. 구현 주석상 출력은 residual이 아니라 최종 clean action chunk다.'
+    ],
+    bullets: [
+      'fast tactile refinement',
+      'cached KV와 boundary state 재사용',
+      'contact 변화가 action chunk 중간에 반영된다.'
+    ],
+    insight: '핵심 차이는 tactile을 input vector에 붙이는 것이 아니라, action denoising의 후반부 responsibility를 tactile expert에게 맡긴다는 점이다.'
+  },
+  {
+    eyebrow: '6. Tactile Expert',
+    title: 'Tactile Encoder: force와 deformation을 분리해서 표현한다',
+    kicker: 'Tactile expert가 잘 동작하려면 raw tactile signal을 policy가 쓰기 좋은 representation으로 바꿔야 한다.',
+    visual: '<div class="tactile-encoder-map"><h3>Spatial-Temporal Tactile Encoder</h3><div class="encoder-row"><b>Current F6 frame</b><span>10 fingers × 6D wrench</span><i>q01/q99 normalize → tacf6_embedder</i><strong>instant force / torque token</strong></div><div class="encoder-row"><b>F6 history</b><span>rolling 16 frames × 10 fingers × 6D</span><i>embedded VQ-VAE → codebook K=64 → tactile_code_embedder</i><strong>temporal contact token</strong></div><div class="encoder-row"><b>Deformation maps</b><span>10 fingertip deformation images</span><i>DeformEncoder → flatten → deform_proj</i><strong>spatial contact geometry token</strong></div><div class="encoder-merge">concat tactile code + current F6 + deformation feature → tactile token sequence</div><div class="encoder-output">tactile_flow_continue(): [tactile tokens, tau token, x_split action tokens] + cached KV → final action chunk</div></div>',
+    body: [
+      '논문은 tactile observation을 temporal force dynamics와 spatial deformation signal로 나누어 encoding한다. 구현의 `_embed_tactile_observations()`도 이 구조와 맞게 tactile code embedding, current F6 embedding, deformation feature를 만든 뒤 channel이 아니라 token sequence 방향으로 concatenate한다.',
+      'Current F6 frame은 10개 fingertip의 6D wrench를 현재 시점 contact signal로 사용한다. inference server는 tactile_f6를 q01/q99 statistics로 normalize하고, 모델은 `tacf6_embedder`로 hidden token을 만든다. 이 branch는 지금 누르는 힘과 torque를 바로 반영하기 위한 경로다.',
+      'F6 history는 rolling 16-frame raw wrench history를 embedded VQ-VAE에 넣어 discrete tactile code로 바꾼다. codebook size와 per-hand/per-finger granularity는 VQ-VAE checkpoint/config를 따른다. 이 branch는 slip trend, contact impulse, grip 변화처럼 한 프레임으로 보기 어려운 시간 패턴을 압축한다.',
+      'Deformation map branch는 10개 fingertip deformation image를 `DeformEncoder`로 encode하고, flatten된 feature를 `deform_proj`로 hidden token에 맞춘다. 이 branch는 접촉 위치, local edge, shear, object surface texture처럼 force vector만으로 보기 어려운 공간 정보를 제공한다.'
+    ],
+    bullets: [
+      'tactile token sequence = tactile code + current F6 + deformation feature',
+      'fast tick에서는 raw vision을 다시 보지 않고 tactile tokens와 cached KV로 lower flow를 적분한다.',
+      '출력은 residual이 아니라 final clean action chunk다.'
+    ],
+    insight: 'force와 deformation을 분리한 것은 센서 값을 많이 넣기 위한 설계라기보다, 시간적 접촉 변화와 공간적 접촉 형상을 서로 다른 inductive bias로 다루려는 설계로 볼 수 있다.'
+  },
+  {
+    eyebrow: '6. Tactile Encoder',
+    title: 'tacf6_embedder: 현재 힘/토크를 바로 token화한다',
+    kicker: '현재 frame의 6-axis wrench는 tactile expert가 가장 즉각적인 contact 상태를 읽는 경로다.',
+    layout: 'fill',
+    variant: 'visual-tight',
+    visual: '<div class="expert-spec-card compact-spec"><h3>Current F6 Embedder</h3><div class="io-strip"><span>Input</span><strong>tactile_f6: [B, 10 fingers, 6D wrench]</strong></div><table class="micro-table"><tr><td>Preprocess</td><td>q01/q99 statistics normalize in inference server</td></tr><tr><td>Module</td><td>tacf6_embedder = ActionEmbedder(tacf6_dim, hidden_size)</td></tr><tr><td>Role</td><td>current force / torque token</td></tr><tr><td>Training</td><td>VLA-specific module, initialized with Xavier and trained with tactile expert</td></tr><tr><td>Used in</td><td>_embed_tactile_observations() → tactile token sequence</td></tr></table><div class="io-strip output"><span>Output</span><strong>hidden tactile token for instantaneous contact</strong></div></div>',
+    body: [
+      '`tacf6_embedder`는 현재 시점의 force/torque vector를 Qwen hidden size에 맞는 tactile token으로 바꾸는 projection module이다. 코드에서는 `ActionEmbedder(tacf6_dim, H)`로 만들어지고, tactile_f6가 들어오면 tactile observation sequence의 한 부분으로 append된다.',
+      '입력 tactile_f6는 raw sensor 값을 그대로 쓰지 않는다. inference server 쪽에서 q01/q99 statistics를 사용해 normalize한 뒤 모델에 전달한다. 따라서 이 branch는 sensor scale을 맞춘 현재 contact magnitude와 torque direction을 빠르게 반영하는 역할을 한다.',
+      '학습 관점에서 `tacf6_embedder`는 frozen tactile tokenizer가 아니라 VLA-specific layer다. `initialize_vla_weights()`에서 Xavier 초기화되고, tactile expert의 flow-matching loss를 통해 downstream action refinement에 맞게 학습된다.'
+    ],
+    bullets: [
+      '현재 frame 정보라 latency가 작고 fast tick에 바로 쓸 수 있다.',
+      '한 프레임만 보기 때문에 slip trend 같은 시간 패턴은 VQ-VAE branch가 보완한다.',
+      '현재 힘/토크 token은 tactile expert의 lower flow denoising에 직접 들어간다.'
+    ]
+  },
+  {
+    eyebrow: '6. Tactile Encoder',
+    title: 'Force VQ-VAE: 16-frame F6 history를 discrete contact code로 만든다',
+    kicker: 'VQ-VAE branch는 순간 힘이 아니라 접촉의 시간 패턴을 압축한다.',
+    variant: 'visual-tight',
+    visual: '<div class="expert-spec-card"><h3>Embedded Tactile VQ-VAE</h3><div class="io-strip"><span>Input</span><strong>raw F6 history: [B, T=16, 10 fingers, 6D]</strong></div><table class="micro-table"><tr><td>Split</td><td>two hands; each hand has 5 fingers × 6D</td></tr><tr><td>Encoder</td><td>1D temporal CNN: Conv1d + GroupNorm + GELU, strided blocks</td></tr><tr><td>Latent</td><td>256-d continuous code per hand window by default</td></tr><tr><td>Quantizer</td><td>VQ-EMA codebook</td></tr><tr><td>Decoder</td><td>mirror 1D up-conv stack reconstructing F6 window</td></tr><tr><td>Pretraining</td><td>learn discrete vocabulary for F6 contact history</td></tr><tr><td>In VLA</td><td>loaded from checkpoint, frozen, encode_only() on the fly</td></tr></table><div class="io-strip output"><span>Output</span><strong>integer tactile code → tactile_code_embedder → hidden token</strong></div></div>',
+    body: [
+      'Standalone VQ-VAE는 F6 history window를 discrete code로 바꾸기 위해 별도로 학습된다. 기본 입력 단위는 한 손의 `[T=16, 5 fingers, 6 force/torque]` window이며, left/right hand는 independent samples로 취급해 데이터 효율을 높인다.',
+      'Encoder는 small 1D CNN이다. 5 fingers × 6D를 channel로 접고, Conv1d + GroupNorm + GELU stem과 strided temporal conv blocks를 지나 256-d continuous latent를 만든다. Quantizer는 EMA 방식의 vector quantization을 사용하고, unused code를 되살리는 dead-code revival을 지원한다.',
+      'VLA 안에서는 이 VQ-VAE를 다시 학습하지 않는다. `load_tactile_vqvae()`로 weights와 F6 normalization stats를 로드하고 `requires_grad=False`로 freeze한 뒤, fast tick에서 raw F6 history를 on-the-fly code로 encode한다.'
+    ],
+    bullets: [
+      'VQ-VAE 자체: 별도 pretraining 필요',
+      'VLA 내부: embedded VQ-VAE는 frozen tokenizer',
+      'tactile_code_embedder는 integer code를 VLA hidden token으로 매핑한다.'
+    ]
+  },
+  {
+    eyebrow: '6. Tactile Encoder',
+    title: 'VQ-VAE 학습 loss와 codebook 관리',
+    kicker: 'Force VQ-VAE는 reconstruction quality뿐 아니라 codebook collapse를 막는 학습 안정성이 중요하다.',
+    variant: 'visual-tight',
+    visual: '<div class="vqvae-loss-map"><h3>VQ-VAE Training Objective</h3><div class="loss-card"><b>1. Magnitude-weighted reconstruction MSE</b><span>decoder가 quantized code만 보고 원래 F6 history window를 복원한다.</span><strong>큰 force/torque가 있는 contact 구간에 더 높은 weight</strong></div><div class="loss-card"><b>2. Commitment loss</b><span>encoder latent가 선택된 code vector 근처에 머물도록 한다.</span><strong>nearest-code assignment를 안정화</strong></div><div class="loss-card"><b>Dead-code revival</b><span>거의 선택되지 않는 code를 active encoder sample 근처로 재초기화한다.</span><strong>unused code slot과 codebook collapse를 줄임</strong></div></div>',
+    body: [
+      'Reconstruction loss는 decoder가 quantized code만 보고 원래 F6 window를 복원하도록 학습한다. 여기서는 magnitude-weighted MSE를 사용해 force magnitude가 큰 접촉 구간에 더 높은 weight를 준다. free-air나 near-zero contact frame이 많은 데이터에서 codebook이 “아무 힘도 없음” 패턴에만 쏠리는 것을 줄이기 위한 설계다.',
+      'Commitment loss는 encoder output이 선택한 code vector 근처에 머물도록 압박한다. VQ는 nearest code를 고르는 비연속 연산이기 때문에, encoder가 codebook과 너무 멀리 떨어진 continuous latent를 만들면 code assignment가 불안정해진다. commitment term은 encoder가 discrete code vocabulary를 실제 latent space로 받아들이게 만든다.',
+      'Dead-code revival은 codebook collapse를 줄이기 위한 장치다. 일부 code가 거의 선택되지 않으면 EMA update를 충분히 받지 못해 계속 unused 상태로 남을 수 있다. 구현은 usage가 낮은 code를 active encoder sample 근처로 재초기화해 codebook capacity가 dead slot으로 낭비되는 것을 줄인다.'
+    ],
+    bullets: [
+      'reconstruction loss: contact dynamics를 복원 가능한 code로 압축',
+      'commitment loss: encoder latent와 discrete vocabulary를 정렬',
+      'dead-code revival: codebook usage를 넓혀 temporal contact pattern vocabulary를 유지'
+    ]
+  },
+  {
+    eyebrow: '6. Tactile Encoder',
+    title: 'DeformEncoder: fingertip deformation map에서 공간 접촉 feature를 뽑는다',
+    kicker: 'Deformation branch는 force vector가 놓치기 쉬운 접촉 위치, edge, shear, texture 정보를 담당한다.',
+    visual: '<div class="expert-spec-card"><h3>DeformEncoder</h3><div class="io-strip"><span>Input</span><strong>tactile_deform: [B, 10 fingers, 1, H, W]</strong></div><table class="micro-table"><tr><td>Stem</td><td>Conv2d 1→64, 7×7 stride 2 + BN/ReLU/MaxPool</td></tr><tr><td>Backbone</td><td>ResNet-18 layer1 → layer2 → layer3</td></tr><tr><td>Reshape</td><td>Conv2d 128→128 and 256→128 adapter blocks</td></tr><tr><td>Encoder output</td><td>[B×10, 128, H\', W\']; code comment shows 128×15×15</td></tr><tr><td>Projection</td><td>flatten → deform_proj = ActionEmbedder(28800, hidden_size)</td></tr><tr><td>Checkpoint</td><td>load_deform_encoder_weights() loads encoder.* weights if provided</td></tr></table><div class="io-strip output"><span>Output</span><strong>hidden deformation token for spatial contact geometry</strong></div></div>',
+    body: [
+      '`DeformEncoder`는 grayscale tactile deformation image를 CNN feature map으로 바꾸는 module이다. 구현은 ResNet-18을 변형해 1-channel input stem을 쓰고, layer1/layer2/layer3와 두 개의 reshape conv block을 거쳐 128-channel spatial feature map을 만든다.',
+      '모델 wrapper는 10개 fingertip deformation map을 `[B×nf, 1, H, W]`로 펼쳐 encoder에 넣고, 나온 feature를 다시 `[B, nf, -1]`로 reshape한다. 코드에서 `deform_proj = ActionEmbedder(28800, H)`로 projection하므로, 기본 feature 크기는 128×15×15를 가정한다.',
+      '학습 관점에서는 `DeformEncoder` checkpoint를 별도 로드하는 경로가 있다. `load_deform_encoder_weights()`는 checkpoint의 `encoder.*` weight를 DeformEncoder에 불러온다. 이후 VLA 안에서는 deformation feature를 Qwen hidden token으로 맞추는 `deform_proj`가 tactile expert 학습과 함께 맞춰진다.'
+    ],
+    bullets: [
+      'force branch가 magnitude/torque를 본다면, deformation branch는 contact geometry를 본다.',
+      'DeformEncoder는 spatial feature extractor이고, deform_proj가 tactile token dimension으로 맞춘다.',
+      'edge contact, local shear, surface texture처럼 이미지형 tactile sensor에서 중요한 정보를 보존한다.'
+    ]
+  },
+  {
+    eyebrow: '7. Core Method',
+    title: 'Asynchronous Tactile-Reactive Cascaded Flow Matching',
+    kicker: 'T-Rex는 하나의 denoising path를 slow action expert와 fast tactile expert가 나누어 처리한다.',
+    layout: 'stack',
+    visual: '<div class="cascade-diagram compact-diagram"><h3>Cascaded Flow Matching</h3><div class="flow-rail"><div class="rail-node start"><b>Noise</b><span>x<sub>1</sub></span></div><div class="flow-arrow">→</div><div class="rail-segment slow"><strong>Action Expert</strong><span>slow coarse plan</span><small>visual-language context<br/>6 Euler steps</small></div><div class="flow-arrow">→</div><div class="rail-node split"><b>Split</b><span>x<sub>τ</sub></span><small>boundary state</small></div><div class="flow-arrow">→</div><div class="rail-segment fast"><strong>Tactile Expert</strong><span>fast tactile correction</span><small>cached KV + fresh tactile<br/>4 Euler steps</small></div><div class="flow-arrow">→</div><div class="rail-node end"><b>Action</b><span>x<sub>0</sub></span></div></div></div>',
+    body: [
+      'Flow-matching trajectory를 x1(noise)에서 x0(action)으로 가는 denoising path로 보고, T-Rex는 fixed split xτ에서 denoising responsibility를 나눈다.',
+      'Action expert는 visual-language context로 upper segment를 처리하고, tactile expert는 cached KV와 최신 tactile tokens로 lower segment를 마무리한다.',
+      '중요한 점은 tactile expert가 완전히 새 action을 처음부터 생성하는 것이 아니라, action expert가 만든 partially denoised boundary state xτ를 이어받는다는 점이다. 그래서 slow expert의 coarse visuomotor prior와 fast tactile feedback이 같은 flow trajectory 안에서 연결된다.'
+    ],
+    bullets: [
+      'slow stream: visual-language 기반 coarse plan',
+      'fixed split xτ: 두 expert가 만나는 boundary state',
+      'fast stream: cached KV + fresh tactile로 lower flow correction'
+    ]
+  },
+  {
+    eyebrow: '7. Runtime',
+    title: 'Runtime 관점: visual은 느리고 tactile은 빠르다',
+    kicker: 'vision-language context는 조금 오래되어도 쓸 수 있지만, tactile signal은 지금 값을 봐야 한다.',
+    layout: 'stack',
+    visual: '<div class="runtime-diagram compact-diagram"><h3>Runtime: slow cache를 만들고 fast tactile tick이 재사용한다</h3><div class="runtime-sequence no-arrows"><div class="runtime-step slow-step"><b>Slow tick</b><span>visual-language encode + action expert</span><strong>commit cached KV + x<sub>τ</sub></strong><small>execution lock protects shared state</small></div><div class="runtime-step fast-step"><b>Fast tick 1</b><span>fresh tactile tokens</span><strong>x<sub>τ</sub> → action update</strong></div><div class="runtime-step fast-step"><b>Fast tick 2</b><span>new tactile frame</span><strong>reuse same cache</strong></div><div class="runtime-step fast-step"><b>Fast tick 3</b><span>new tactile frame</span><strong>latest action to 300Hz controller</strong></div></div></div>',
+    body: [
+      'Slow tick은 visual-language context와 xτ boundary state를 계산해 cache한다. Fast tick은 visual tower, latent expert, action expert를 다시 실행하지 않고 최신 tactile frame으로 cached state를 보정한다.',
+      'runtime에서는 slow stream이 무거운 vision-language computation을 담당하고, fast stream은 같은 cache를 여러 tactile frame에 재사용한다. 따라서 tactile feedback이 들어올 때마다 전체 VLA를 다시 돌리지 않아도 action chunk의 후반 denoising을 갱신할 수 있다.',
+      '논문은 이 비동기 구조에서 shared state가 꼬이지 않도록 execution lock을 사용하고, 학습 중 delay augmentation을 넣어 stale vision context와 fresh tactile frame 사이의 시간 차이에 견디도록 만든다.'
+    ],
+    bullets: [
+      'slow cache: visual-language context + xτ',
+      'fast tactile tick: 최신 force/deformation token으로 action update',
+      'execution lock + delay augmentation: 실제 deploy mismatch 대응'
+    ]
+  },
+  {
+    eyebrow: '8. Training',
+    title: '학습 방법 Overview',
+    kicker: 'T-Rex 학습은 human prior, robot tactile grounding, task adaptation을 세 단계로 나눈다.',
+    layout: 'stack',
+    visual: '<div class="training-stages compact-diagram no-arrows"><div><b>1</b><strong>Pre-training</strong><span>human egocentric data</span><small>broad visuomotor prior</small></div><div class="focus"><b>2</b><strong>Mid-training</strong><span>T-Rex tactile robot data</span><small>robot contact grounding</small></div><div><b>3</b><strong>Post-training</strong><span>target task demos</span><small>task adaptation</small></div></div>',
+    body: [
+      '논문은 T-Rex를 three-stage recipe로 학습한다. 첫 단계는 EgoScale을 따라 22,889 hours의 egocentric human video로 latent/action experts를 pre-train하는 것이다.',
+      '두 번째 단계는 100 hours tactile-grounded robot mid-training이다. 이 단계에서 robot multiview observations, executable actions, synchronized tactile signals로 action expert를 robot embodiment에 맞추고 tactile expert를 학습한다.',
+      '세 번째 단계는 skill-specific post-training이며, 논문은 complex/task-specific skill에 대해 약 100 task demonstrations로 fine-tuning한다고 설명한다.'
+    ],
+    bullets: [
+      'pre-training: broad visual-motor-language prior',
+      'mid-training: tactile-rich robot contact dynamics',
+      'post-training: target task adaptation'
+    ],
+    insight: 'T-Rex의 데이터 전략은 “처음부터 robot tactile data로 foundation model을 만들기”보다 “human prior를 가져오고, mid-training에서 robot contact grounding을 붙이는” 쪽이다.'
+  },
+  {
+    eyebrow: '8. Training',
+    title: '학습 loss와 augmentation',
+    kicker: '학습 objective는 action generation만 보지 않고 tactile refinement와 future visual prediction까지 함께 본다.',
+    layout: 'fill',
+    visual: '<table class="mini-table compact-table"><tr><th>Loss</th><th>역할</th></tr><tr><td>Action expert loss</td><td>coarse action denoising</td></tr><tr><td>Tactile expert loss</td><td>tactile-conditioned refinement</td></tr><tr><td>Future visual loss</td><td>visuomotor latent regularization</td></tr><tr><td>Delay augmentation</td><td>stale vision / real-time touch mismatch 대응</td></tr></table>',
+    body: [
+      'action expert와 tactile expert는 shared velocity target을 회귀하지만 conditioning이 다르다. action expert는 visual-language latent context에 의존하고, tactile expert는 tactile token과 intermediate action state에 의존한다.',
+      '논문은 deployment에서 visual context와 tactile frame이 완전히 같은 시점이 아닐 수 있다는 점을 고려해 delay augmentation을 넣는다. tactile frame index를 일부러 어긋나게 만들어, 실제 robot runtime에서 생기는 time mismatch에 robust하게 만든다.'
+    ],
+    bullets: [
+      'lambda_tac = 1.0, lambda_future = 0.5',
+      'delay는 {0, 4, 8, 12} frame 중 하나로 sampling된다.'
+    ]
+  },
+  {
+    eyebrow: '9. Experiment Setup',
+    title: 'Experiment Setup',
+    kicker: '평가는 contact-rich real-world task 12개에서 수행되며, task마다 object pose와 position을 randomize한다.',
+    layout: 'stack',
+    visual: '<div class="plot-frame setup-figure"><img src="/trex/trex-setup.png" alt="T-Rex real-world setup" /></div>',
+    body: [
+      '모든 real-world experiments는 fixed-base bimanual Dexmate Vega-1 robot과 두 개의 22-DoF Sharpa Wave dexterous hands에서 수행된다. Policy는 head RGB camera, two wrist RGB cameras, per-finger tactile force vectors, deformation maps를 관측한다.',
+      '평가는 Appendix F에 정의된 12개 tactile-reactive tasks에서 수행된다. 각 task는 16 trials로 평가하며, object position과 rotation은 trial마다 randomize한다. Multi-stage task는 partial completion을 반영하기 위해 progress-based rubric을 사용한다.',
+      '비교 baseline은 ViTacFormer, RDP, Tactile-VLA, EgoScale, pi_0.5, pi_0.5 + tactile이다. Appendix E는 모든 baseline이 같은 robot setup, action space, evaluation protocol을 사용하도록 adaptation되었다고 설명한다.'
+    ],
+    bullets: [
+      '12 tasks, 16 rollouts per task',
+      'object pose/position randomized',
+      'success rate + progress-based rubric'
+    ]
+  },
+  {
+    eyebrow: '9. Tasks',
+    title: 'Evaluation Tasks: force-reactive와 tactile-deformation 상황',
+    kicker: 'Appendix F는 12개 task가 force regulation, deformation sensing, insertion, bimanual coordination을 평가하도록 설계됐다고 설명한다.',
+    layout: 'stack',
+    visual: '<table class="mini-table task-table compact-table table-center"><tr><th>Task</th><th>논문 task 설명 요약</th><th>핵심 tactile difficulty</th></tr><tr><td>Flip Page</td><td>오른쪽 index finger로 책의 한 장을 들어 올려 왼쪽으로 넘기고 평평하게 편다.</td><td>thin sheet separation, single-finger contact</td></tr><tr><td>Transfer Egg</td><td>fragile egg를 green tray에서 들어 yellow tray로 옮기되 깨지지 않아야 한다.</td><td>fragile grasp, force regulation</td></tr><tr><td>Wipe Plate</td><td>오른손으로 cloth를 잡고 왼손으로 plate를 고정한 뒤 stain을 지운다.</td><td>surface contact, bimanual stabilization</td></tr><tr><td>Apply Toothpaste</td><td>toothbrush와 toothpaste tube를 잡고 bristles 위에 toothpaste bead를 짠다.</td><td>deformable object pressure control</td></tr><tr><td>Split Cup</td><td>nested cup stack에서 top cup 하나만 twist/rub으로 분리한다.</td><td>deformation/friction, exactly-one separation</td></tr><tr><td>Sort Mahjong</td><td>face-down Mahjong tile을 tactile sensing으로 식별해 matching box에 넣는다.</td><td>surface texture identification, bimanual box operation</td></tr></table>',
+    body: [
+      'Appendix F는 force-reactive task가 fragile object grasp, controlled pressure, slip resistance처럼 접촉 힘을 정밀하게 조절해야 하는 상황을 포함한다고 설명한다.',
+      '또한 tactile-deformation sensitive task는 stacked cups나 Mahjong tile처럼 vision alone으로 알기 어려운 tactile pad deformation과 surface texture를 활용해야 한다.'
+    ],
+    bullets: [
+      'Task I-VI: page, egg, plate, toothpaste, cup, Mahjong',
+      'rubric은 additive 또는 progress-based 방식으로 task stage를 평가한다.'
+    ]
+  },
+  {
+    eyebrow: '9. Tasks',
+    title: 'Evaluation Tasks: insertion, extraction, liquid handling, torque',
+    kicker: '나머지 task들은 small-object grasp, insertion alignment, sliding extraction, liquid manipulation, multi-turn rotation을 포함한다.',
+    layout: 'stack',
+    visual: '<table class="mini-table task-table compact-table table-center"><tr><th>Task</th><th>논문 task 설명 요약</th><th>핵심 tactile difficulty</th></tr><tr><td>Open Lock</td><td>key를 grasp하고 padlock을 잡은 뒤 keyhole에 align/insert하고 rotate해 연다.</td><td>small object grip, insertion, torque</td></tr><tr><td>Refill Tablet</td><td>compartment lid를 열고 작은 ball을 넣은 뒤 lid를 다시 닫는다.</td><td>button press, lid manipulation, small object placement</td></tr><tr><td>Acid-Base Neut.</td><td>dropper로 acid solution을 aspirate/dispense하고 beaker를 swirl해 색 변화를 만든다.</td><td>liquid handling, bimanual coordination, gentle force</td></tr><tr><td>Extract Card</td><td>card sleeve에서 두 장 중 한 장만 밀어내고 single top card를 extract한다.</td><td>sliding friction, exactly-one extraction</td></tr><tr><td>Deal Poker</td><td>card stack을 handover하고 top card 하나만 빼서 card holder에 insert한다.</td><td>thin object isolation, handover, slot insertion</td></tr><tr><td>Screw Bulb</td><td>lightbulb를 handover하고 base를 고정한 뒤 여러 번 회전시켜 불이 켜지게 한다.</td><td>thread alignment, torque feedback, long-horizon precision</td></tr></table>',
+    body: [
+      'Appendix F의 Task VII-XII는 단순 grasp success보다 더 긴 action sequence를 요구한다. key insertion, compartment opening, liquid transfer, card extraction, card dealing, lightbulb screwing은 모두 시각 정보만으로 contact 상태를 안정적으로 판단하기 어렵다.',
+      '논문은 각 task의 key stage figure와 grading rubric을 함께 제시해 Table 1 success rate가 단순 binary endpoint가 아니라 중간 진행도까지 반영할 수 있음을 명시한다.'
+    ],
+    bullets: [
+      'Task VII-XII: lock, tablet box, acid-base, card case, poker, lightbulb',
+      'thin object, insertion, torque, liquid, long-horizon contact sequence를 포함한다.'
+    ],
+    insight: '평가 task 구성 자체가 “tactile-reactive policy가 아니면 어디서 깨지는가”를 보여주는 stress test 역할을 한다.'
+  },
+  {
+    eyebrow: '10. Results',
+    title: 'Main Result: Table 1 전체 성공률',
+    kicker: 'T-Rex는 12개 task 평균에서 65%를 기록하며, 가장 강한 baseline인 EgoScale 평균 35%보다 30%p 높다.',
+    layout: 'stack',
+    visual: '<table class="mini-table result-table wide-table compact-table table-center"><tr><th>Method</th><th>Flip</th><th>Egg</th><th>Wipe</th><th>Paste</th><th>Cup</th><th>Mahjong</th><th>Lock</th><th>Tablet</th><th>Acid</th><th>Card</th><th>Poker</th><th>Bulb</th><th>Avg</th></tr><tr><td>ViTacFormer</td><td>9</td><td>0</td><td>4</td><td>1</td><td>4</td><td>7</td><td>0</td><td>0</td><td>0</td><td>2</td><td>2</td><td>1</td><td>3</td></tr><tr><td>RDP</td><td>12</td><td>8</td><td>18</td><td>2</td><td>6</td><td>9</td><td>2</td><td>0</td><td>0</td><td>1</td><td>2</td><td>7</td><td>6</td></tr><tr><td>Tactile-VLA</td><td>38</td><td>14</td><td>24</td><td>0</td><td>21</td><td>27</td><td>8</td><td>0</td><td>9</td><td>4</td><td>11</td><td>18</td><td>15</td></tr><tr><td>EgoScale</td><td>68</td><td>44</td><td>34</td><td>38</td><td>33</td><td>36</td><td>19</td><td>12</td><td>43</td><td>41</td><td>28</td><td>18</td><td>35</td></tr><tr><td>pi_0.5</td><td>36</td><td>17</td><td>28</td><td>13</td><td>18</td><td>32</td><td>5</td><td>1</td><td>24</td><td>8</td><td>9</td><td>11</td><td>17</td></tr><tr><td>pi_0.5 + tactile</td><td>8</td><td>9</td><td>27</td><td>2</td><td>4</td><td>14</td><td>2</td><td>0</td><td>7</td><td>3</td><td>0</td><td>0</td><td>6</td></tr><tr class="highlight-row"><td><strong>T-Rex</strong></td><td><strong>96</strong></td><td><strong>75</strong></td><td><strong>69</strong></td><td><strong>66</strong></td><td><strong>78</strong></td><td><strong>65</strong></td><td><strong>47</strong></td><td><strong>41</strong></td><td><strong>76</strong></td><td><strong>70</strong></td><td><strong>57</strong></td><td><strong>35</strong></td><td><strong>65</strong></td></tr></table>',
+    body: [
+      'Table 1은 12개 tactile-reactive manipulation tasks에서 success rate를 보고한다. 모든 task는 16 evaluation rollouts로 평가되고, multi-stage task는 progress-based rubric을 사용한다.',
+      'T-Rex는 Flip Page 96, Transfer Egg 75, Wipe Plate 69, Apply Paste 66, Split Cup 78, Sort Mahjong 65, Open Lock 47, Refill Tablet 41, Acid-Base Neutralization 76, Extract Card 70, Deal Poker 57, Screw Bulb 35, 평균 65를 기록한다.',
+      '결과 해석에서 중요한 점은 T-Rex가 쉬운 task만 잘한 것이 아니라, fragile grasp, deformable object pressure, sliding extraction처럼 tactile feedback이 action correction에 직접 필요한 task에서 baseline과 큰 차이를 만든다는 점이다. 반대로 Screw Bulb와 Open Lock은 여전히 낮아, tactile feedback만으로 long-horizon alignment와 torque control을 완전히 해결하지 못한다.'
+    ],
+    bullets: [
+      '가장 강한 baseline EgoScale 평균 35 대비 +30%p',
+      'pi_0.5 + tactile 평균 6은 visual-only pi_0.5 평균 17보다 낮다.',
+      '논문은 naive tactile conditioning이 성능을 저하시킬 수 있다고 해석한다.'
+    ],
+    insight: '실험 결과 슬라이드에서는 평균만 보지 말고, Screw Bulb/Open Lock처럼 여전히 어려운 task가 남아 있다는 점도 함께 짚어야 한다.'
+  },
+  {
+    eyebrow: '10. Ablation',
+    title: 'Ablation: Table 2 전체 결과',
+    kicker: 'Table 2는 tactile signal 자체, tactile representation, asynchronous architecture가 모두 성능에 기여한다는 것을 보여준다.',
+    layout: 'stack',
+    visual: '<table class="mini-table result-table compact-table table-center"><tr><th>Configuration</th><th>Flip</th><th>Paste</th><th>Cup</th><th>Lock</th><th>Card</th><th>Bulb</th><th>Avg</th></tr><tr class="highlight-row"><td>Full Model</td><td>96</td><td>66</td><td>78</td><td>47</td><td>70</td><td>35</td><td>65</td></tr><tr><td>w/o Tactile</td><td>76</td><td>39</td><td>58</td><td>23</td><td>34</td><td>20</td><td>42 (-23)</td></tr><tr><td>MLP Force + Deform</td><td>89</td><td>58</td><td>72</td><td>44</td><td>58</td><td>29</td><td>58 (-7)</td></tr><tr><td>Deform only</td><td>82</td><td>57</td><td>71</td><td>36</td><td>55</td><td>25</td><td>54 (-11)</td></tr><tr><td>MLP Force + VQ-VAE Force</td><td>92</td><td>63</td><td>65</td><td>38</td><td>67</td><td>28</td><td>59 (-6)</td></tr><tr><td>w/o Async</td><td>92</td><td>61</td><td>73</td><td>45</td><td>59</td><td>30</td><td>60 (-5)</td></tr></table>',
+    body: [
+      'Table 2는 6개 representative tactile-reactive tasks에서 tactile modality와 architecture design을 ablation한다. Full Model 평균은 65다.',
+      'Tactile을 제거하면 평균 42로 23 points 하락한다. 특히 Apply Toothpaste, Extract Card, Open Lock처럼 force regulation과 contact alignment가 중요한 task에서 drop이 크다.',
+      'MLP Force + Deform, Deform only, MLP Force + VQ-VAE Force가 모두 full model보다 낮은 것은 “force를 넣었다” 자체보다 temporal force token, deformation feature, fusion timing의 조합이 중요하다는 의미다. w/o Async도 평균 60으로 떨어져, fast tactile refinement 경로가 단순 architecture 장식이 아니라 실제 성능 기여를 한다.'
+    ],
+    bullets: [
+      'w/o tactile: contact-rich task에서 가장 큰 성능 하락',
+      'representation ablation: force temporal token과 deformation map 모두 중요',
+      'w/o async: fast tactile refinement 자체도 기여'
+    ],
+    insight: '가장 큰 drop은 w/o tactile이지만, representation과 async를 바꿔도 성능이 계속 떨어진다. 즉 성능은 “touch 유무” 하나가 아니라 touch representation과 timing까지 함께 만든 결과다.'
+  },
+  {
+    eyebrow: '10. Ablation',
+    title: 'Cascaded denoising split step',
+    kicker: 'tactile expert가 denoising path의 어느 시점부터 개입하는지가 성능에 영향을 준다.',
+    layout: 'stack',
+    visual: '<div class="plot-frame compact-plot"><img class="plot-figure" src="/trex/trex-split-step.png" alt="Cascaded denoising split step ablation" /></div>',
+    body: [
+      'Figure 4는 Apply Toothpaste, Split Cup, Extract Card에서 denoising split step을 바꾼 success rate curve를 보여준다.',
+      '논문은 split이 너무 작으면 action expert가 downstream tactile refinement에 충분한 visuomotor prior를 제공하지 못하고, split이 너무 크면 tactile expert가 tactile feedback을 반영할 capacity가 줄어든다고 설명한다.',
+      '결과 해석의 포인트는 tactile expert가 denoising path 전체를 맡는 것이 아니라 “어느 정도 action prior가 생긴 뒤” 개입해야 한다는 점이다. 즉 split step은 계산 효율 파라미터가 아니라 slow visual planning과 fast tactile correction 사이의 역할 분담을 정하는 파라미터다.'
+    ],
+    bullets: [
+      '너무 이른 tactile refinement: coarse action prior 부족',
+      '너무 늦은 tactile refinement: contact feedback 반영 부족',
+      '중간 split이 가장 안정적인 trade-off를 만든다.'
+    ]
+  },
+  {
+    eyebrow: '10. Data Efficiency',
+    title: 'Data efficiency와 mid-training 효과',
+    kicker: 'T-Rex Dataset mid-training은 downstream task demonstration 수를 줄이고, zero-shot transfer 가능성을 높이는 방향으로 작동한다.',
+    layout: 'stack',
+    visual: '<div class="plot-frame compact-plot"><img class="plot-figure" src="/trex/trex-data-efficiency.png" alt="T-Rex data efficiency" /></div>',
+    body: [
+      'Figure 5는 post-training demonstrations 수를 10에서 200까지 바꿨을 때 tactile-grounded T-Rex mid-training data가 low-data regime에서 성능을 높인다고 보고한다.',
+      'Figure 6은 제안한 100-hour tactile-grounded T-Rex Dataset과 11개 task에서 수집한 100-hour task-specific dataset을 비교한다. 논문은 T-Rex Dataset이 stronger generalization과 zero-shot transfer를 보인다고 설명한다.',
+      '결과적으로 mid-training corpus는 target task를 많이 외우게 하는 데이터라기보다, downstream fine-tuning이 적어도 쓸 수 있는 contact prior를 미리 형성하는 역할을 한다.'
+    ],
+    bullets: [
+      'mid-training 없는 조건보다 성능이 높다.',
+      '100h data budget을 맞춘 task-specific dataset과 비교한다.',
+      'zero-shot task에서도 배운 motor primitive가 도움이 된다.'
+    ],
+    insight: '데이터 효율 결과는 “더 많은 task-specific demo”보다 “primitive-rich mid-training corpus”가 generalization에 더 유리할 수 있다는 논문 주장을 뒷받침한다.'
+  },
+  {
+    eyebrow: '10. Training Recipe',
+    title: 'Training Recipe Ablation: Table 3 전체 결과',
+    kicker: 'Table 3는 human egocentric pre-training과 tactile-grounded mid-training이 각각 성능에 기여한다는 것을 6개 task로 검증한다.',
+    layout: 'stack',
+    visual: '<table class="mini-table result-table compact-table table-center"><tr><th>Pre-training</th><th>Mid-training</th><th>Flip</th><th>Paste</th><th>Cup</th><th>Lock</th><th>Card</th><th>Bulb</th><th>Avg</th></tr><tr><td>-</td><td>-</td><td>46</td><td>16</td><td>20</td><td>6</td><td>14</td><td>5</td><td>18</td></tr><tr><td>✓</td><td>-</td><td>75</td><td>34</td><td>45</td><td>10</td><td>32</td><td>9</td><td>34</td></tr><tr><td>-</td><td>✓</td><td>88</td><td>40</td><td>52</td><td>22</td><td>46</td><td>20</td><td>45</td></tr><tr class="highlight-row"><td>✓</td><td>✓</td><td>96</td><td>66</td><td>78</td><td>47</td><td>70</td><td>35</td><td>65</td></tr></table>',
+    body: [
+      'Table 3는 Flip Page, Apply Toothpaste, Split Cup, Open Lock, Extract Card, Screw Lightbulb 6개 task에서 training recipe를 ablation한다.',
+      'Pre-training과 mid-training이 모두 없는 경우 평균 18, pre-training만 있는 경우 평균 34, mid-training만 있는 경우 평균 45, 둘 다 사용하는 full recipe는 평균 65다.',
+      '흥미로운 점은 mid-training만 있는 조건이 pre-training만 있는 조건보다 평균이 높다는 것이다. 논문 관점에서는 tactile-grounded robot data가 embodiment와 contact dynamics를 맞추는 데 직접적인 이득을 주고, human egocentric pre-training은 그 위에 semantic/visuomotor prior를 더해 full recipe에서 가장 큰 성능을 만든다.'
+    ],
+    bullets: [
+      'human pre-training은 broad semantic grounding과 coarse visuomotor prior를 제공한다.',
+      'tactile-grounded mid-training은 robot-executable contact-rich control로 bridge한다.',
+      'full recipe가 모든 6개 task에서 가장 높은 성능을 보인다.'
+    ]
+  },
+  {
+    eyebrow: '11. Conclusion',
+    title: '결론: tactile-reactive policy의 설계 원칙',
+    kicker: 'T-Rex의 결론은 “tactile을 넣자”가 아니라 “tactile이 action을 바꾸는 경로를 따로 설계하자”에 가깝다.',
+    layout: 'fill',
+    visual: '<div class="principle-map compact-principle-map"><div><b>1</b><span>Dataset coverage</span><small>primitive-rich contact prior</small></div><div><b>2</b><span>Tactile representation</span><small>force token + deformation feature</small></div><div><b>3</b><span>Frequency-aware architecture</span><small>slow reasoning + fast correction</small></div><div><b>4</b><span>Failure-aware next steps</span><small>recovery, control, RL</small></div></div>',
+    body: [
+      'T-Rex는 contact-rich manipulation에서 tactile feedback이 왜 필요한지, 그리고 어떻게 policy architecture 안에 넣어야 하는지를 비교적 선명하게 보여준다.',
+      '특히 naive tactile concatenation이 실패한 결과는 중요한 메시지를 준다. tactile signal은 vision state 옆에 붙는 부가 정보가 아니라, action update를 빠르게 바꾸는 별도의 computational path가 필요하다.'
+    ],
+    bullets: [
+      'dataset은 reusable contact behavior 중심으로 설계한다.',
+      'tactile은 raw signal이 아니라 representation으로 다룬다.',
+      'slow reasoning과 fast correction을 분리한다.'
+    ]
+  },
+  {
+    eyebrow: '11. Limitation',
+    title: 'Limitation과 Future Work',
+    kicker: 'T-Rex는 강한 결과를 보이지만, 실패 사례를 보면 online recovery와 fine control은 여전히 남아 있다.',
+    layout: 'split',
+    visual: '<img src="/trex/trex-failure-case.png" alt="T-Rex failure case analysis" />',
+    body: [
+      'Appendix H는 object collision, slipping off, imprecise positioning, excessive force 같은 실패를 보여준다. 이 실패들은 tactile을 못 봐서만 생기는 문제가 아니다. alignment, force magnitude regulation, multi-finger coordination, recovery policy가 함께 필요하다.',
+      '따라서 future work는 tactile encoder를 더 좋게 만드는 것만으로 끝나지 않는다. online RL, model predictive control, impedance control, constraint-aware recovery policy를 어떻게 결합할지가 다음 질문이다.'
+    ],
+    bullets: [
+      'offline BC만으로 long-horizon precision task를 끝까지 안정화하기 어렵다.',
+      'sensor drift, calibration, device variation도 practical bottleneck이다.',
+      'failure recovery와 contact-aware controller가 후속 연구 방향이다.'
+    ]
+  },
+  {
+    eyebrow: '12. Appendix A',
+    title: 'Appendix A: Model and Training Details',
+    kicker: 'Appendix A는 T-Rex가 어느 정도 모델 크기와 compute 위에서 성립하는지 보여준다.',
+    layout: 'stack',
+    visual: '<table class="mini-table compact-table appendix-table table-center"><tr><th>Module</th><th>Detail</th></tr><tr><td>Latent expert</td><td>Qwen3VL-2B, 28 layers, 1.41B params</td></tr><tr><td>Action expert</td><td>action dim 62, chunk 16, 1.41B params</td></tr><tr><td>Tactile expert</td><td>action dim 62, chunk 16, 0.62B params</td></tr><tr><td>Training</td><td>AdamW, LR 1e-4, H100 x24, ZeRO-1, bf16</td></tr></table>',
+    body: [
+      '이 부록의 핵심은 tactile expert가 action/latent expert보다 작다는 점이다. fast loop에서 자주 실행하려면 module 크기를 줄여야 하고, T-Rex는 이를 architecture 수준에서 반영한다.',
+      '또한 24장의 H100을 사용하는 설정은 T-Rex가 작은 실험이 아니라 foundation-policy 규모의 학습 recipe에 가깝다는 점을 보여준다.'
+    ],
+    bullets: [
+      'fast tactile expert는 0.62B 규모로 설계된다.',
+      'compute requirement가 크므로 재현 시 모델 축소나 distillation이 필요할 수 있다.'
+    ]
+  },
+  {
+    eyebrow: '12. Appendix B',
+    title: 'Appendix B: Asynchronous Cascaded Denoising Details',
+    kicker: 'Appendix B는 T-Rex의 runtime 동작을 이해하는 핵심 부록이다.',
+    visual: '<div class="runtime-cache"><div class="cache-main"><strong>Slow stream output</strong><span>KV cache</span><span>partially denoised boundary state</span></div><div class="cache-arrow">↓ copied into fast stream</div><div class="cache-main accent"><strong>Fast stream update</strong><span>latest tactile token</span><span>terminal denoising</span><span>updated action</span></div></div>',
+    body: [
+      'slow stream은 visual-language context와 partially-denoised boundary state를 만든다. fast stream은 raw vision을 다시 처리하지 않고, 이 cache와 boundary state를 이용해 tactile-conditioned denoising을 수행한다.',
+      'delay augmentation은 실제 deployment에서 vision context와 tactile frame이 정확히 같은 시간에 오지 않는 문제를 학습 중에 미리 겪게 만든다. execution lock은 slow/fast stream이 shared state를 동시에 건드릴 때 생길 수 있는 race condition을 막는다.'
+    ],
+    bullets: [
+      'cache reuse가 계산량을 줄인다.',
+      'delay augmentation이 train/deploy mismatch를 줄인다.',
+      'execution lock이 runtime 안정성을 만든다.'
+    ]
+  },
+  {
+    eyebrow: '12. Appendix C',
+    title: 'Appendix C: Spatial-Temporal Tactile Encoder',
+    kicker: 'Appendix C는 tactile signal을 policy token으로 바꾸는 구현 디테일을 설명한다.',
+    visual: '<div class="two-column"><div><h4>Force VQ-VAE</h4><p>16-frame wrench history</p><p>codebook K=64</p><p>magnitude-weighted reconstruction</p></div><div><h4>Deformation Encoder</h4><p>single-channel depth map</p><p>ResNet-18 variant</p><p>pretrain then freeze</p></div></div>',
+    body: [
+      'force VQ-VAE는 최근 force history를 discrete code로 압축한다. sensor drift와 noise가 있는 raw force를 그대로 policy에 넣는 대신, contact pattern vocabulary로 묶는 역할을 한다.',
+      'deformation encoder는 tactile depth map의 spatial geometry를 보존한다. force token이 시간적 변화를 잡는다면, deformation feature는 접촉 위치와 국소 형상을 잡는다.'
+    ],
+    bullets: [
+      'temporal force는 contact dynamics를 압축한다.',
+      'spatial deformation은 local contact geometry를 보존한다.',
+      '둘을 함께 쓸 때 full model 성능이 나온다.'
+    ]
+  },
+  {
+    eyebrow: '12. Appendix D',
+    title: 'Appendix D: Real-World Setup and Teleoperation Stack',
+    kicker: 'Appendix D는 policy가 어떤 robot system 위에서 학습되고 평가됐는지 보여준다.',
+    layout: 'stack',
+    visual: '<div class="plot-frame small-figure"><img src="/trex/trex-setup.png" alt="T-Rex real-world setup" /></div>',
+    body: [
+      '실험은 고정형 bimanual Dexmate Vega-1과 양쪽 Sharpa Wave hand에서 수행된다. head camera는 workspace 전체를 보고, wrist camera는 손 주변의 occlusion을 보완한다.',
+      'teleoperation은 Manus gloves와 VIVE tracker를 사용한다. low-level control은 300Hz로 실행되고, high-level policy는 더 낮은 주기로 action target을 갱신한다. 이 stack 자체가 T-Rex의 slow/fast design과 연결된다.'
+    ],
+    bullets: [
+      'hardware와 sensor placement가 dataset distribution을 결정한다.',
+      'teleoperation stack은 demonstration quality에 직접 영향을 준다.'
+    ]
+  },
+  {
+    eyebrow: '12. Appendix E',
+    title: 'Appendix E: Baseline Implementation Details',
+    kicker: 'Appendix E는 Table 1을 공정하게 해석하기 위해 꼭 봐야 하는 부록이다.',
+    visual: '<table class="mini-table"><tr><th>Baseline</th><th>Adaptation point</th></tr><tr><td>ViTacFormer</td><td>task-specific ACT + force conditioning</td></tr><tr><td>RDP</td><td>task-specific slow-fast diffusion policy</td></tr><tr><td>Tactile-VLA</td><td>GelSight assumption을 force/torque input으로 변경</td></tr><tr><td>EgoScale</td><td>GR00T N1.7 기반 task finetuning</td></tr><tr><td>pi_0.5</td><td>OpenPI checkpoint task finetuning</td></tr></table>',
+    body: [
+      'baseline들은 원 논문 그대로 가져온 것이 아니라 T-Rex robot setup에 맞게 adaptation된다. 이 점은 결과 해석에서 중요하다. embodiment와 action space가 바뀌면 policy 성능이 크게 달라질 수 있기 때문이다.',
+      '특히 pi_0.5 + tactile은 tactile을 state input에 단순 concatenate한 variant다. 이 baseline은 tactile integration 방식이 잘못되면 tactile signal이 오히려 성능을 해칠 수 있음을 보여준다.'
+    ],
+    bullets: [
+      'baseline fairness는 Appendix E를 봐야 판단할 수 있다.',
+      'naive tactile baseline은 T-Rex 주장의 중요한 반례 역할을 한다.'
+    ]
+  },
+  {
+    eyebrow: '12. Appendix F',
+    title: 'Appendix F: Evaluation Tasks',
+    kicker: 'Appendix F는 각 task의 세부 조건과 rubric을 설명한다.',
+    layout: 'stack',
+    visual: '<img src="/trex/trex-apply-toothpaste.png" alt="Apply Toothpaste task stages" />',
+    body: [
+      'task별 figure는 단순한 예시 이미지가 아니라, 어떤 stage를 성공으로 보는지 이해하는 기준이다. 예를 들어 Apply Toothpaste는 tube를 잡는 것만으로 끝나지 않고, 적절한 압력으로 toothpaste를 짜고 위치를 맞추는 과정까지 포함한다.',
+      '이 부록을 보면 Table 1의 숫자가 단순 binary success만은 아니라는 점을 이해할 수 있다. 여러 task는 progress-based rubric을 포함하므로, 세부 행동 단계가 점수에 반영된다.'
+    ],
+    bullets: [
+      'Figure 8-19는 task별 key stage를 보여준다.',
+      'thin object, deformable object, insertion, liquid handling 등 다양한 contact mode를 포함한다.'
+    ]
+  },
+  {
+    eyebrow: '12. Appendix G',
+    title: 'Appendix G: T-Rex Dataset',
+    kicker: 'Appendix G는 100시간 데이터셋이 어떻게 만들어졌는지 가장 자세히 설명한다.',
+    layout: 'stack',
+    visual: '<img src="/trex/trex-dataset-analysis.png" alt="T-Rex dataset statistics" />',
+    body: [
+      'Appendix G는 object category, motor primitive, feasible pair selection, scene diversity, annotation, cleaning, release plan을 다룬다.',
+      '중요한 점은 dataset이 evaluation task의 rehearsal이 아니라는 것이다. object-primitive taxonomy를 통해 reusable contact behavior를 학습하고, 6개 tabletop backdrop과 distractor object를 사용해 visual diversity를 확보한다.'
+    ],
+    bullets: [
+      'raw sensor stream과 derived tactile representation을 함께 공개할 계획이라고 설명한다.',
+      'data cleaning은 tactile instability, corrupted stream, teleoperation failure를 제거한다.'
+    ]
+  },
+  {
+    eyebrow: '12. Appendix H',
+    title: 'Appendix H: Failure Case Analysis',
+    kicker: 'Appendix H는 T-Rex의 한계를 다음 연구 질문으로 바꾸는 부록이다.',
+    layout: 'split',
+    visual: '<img src="/trex/trex-failure-case.png" alt="T-Rex failure case analysis" />',
+    body: [
+      '실패 사례에는 object collision, slipping off, imprecise position, excessive force, sliding misalignment가 포함된다. 이 실패들은 tactile을 못 봐서만 생기는 문제가 아니다.',
+      'Figure 20은 T-Rex가 tactile-reactive 구조를 갖고 있어도, contact-rich manipulation에서 geometric alignment와 force control이 동시에 틀어지면 실패할 수 있음을 보여준다. 예를 들어 물체와 충돌하거나, 잡은 물체가 미끄러지거나, insertion 위치가 조금 어긋나는 경우는 tactile signal만 추가한다고 자동으로 해결되지 않는다.',
+      '특히 slipping off와 excessive force는 tactile feedback으로 징후를 볼 수 있지만, policy가 그 신호를 recovery action으로 바꾸는 closed-loop behavior를 충분히 학습하지 못하면 실패로 이어진다. imprecise positioning이나 sliding misalignment는 perception, kinematic control, contact constraint가 함께 맞아야 한다.',
+      '따라서 T-Rex 이후의 연구는 tactile encoder 개선뿐 아니라 online adaptation, impedance control, constraint-aware recovery policy, RL/MPC 기반 fine control을 함께 고려해야 한다.'
+    ],
+    bullets: [
+      'object collision: coarse trajectory나 object pose alignment가 틀어진 경우',
+      'slipping / excessive force: force magnitude regulation과 grip recovery 필요',
+      'imprecise positioning: insertion, sliding, torque task에서 contact constraint가 중요',
+      'future work: tactile-reactive policy와 control/RL의 결합'
+    ]
+  }
+];
+---
+ 
+<section class="seminar-deck" data-seminar-deck>
+  <div class="deck-shell">
+    <div class="deck-toolbar" aria-label="Seminar deck controls">
+      <button class="icon-button" type="button" data-prev aria-label="Previous slide" title="Previous slide">‹</button>
+      <div class="slide-status">
+        <span data-current>1</span>
+        <span>/</span>
+        <span>{slides.length}</span>
+      </div>
+      <button class="icon-button" type="button" data-next aria-label="Next slide" title="Next slide">›</button>
+      <button class="deck-button" type="button" data-fullscreen aria-pressed="false">Fullscreen</button>
+    </div>
+    <div class="progress-track" aria-hidden="true">
+      <span data-progress></span>
+    </div>
+
+    <div class="slides">
+      {slides.map((slide, index) => (
+        <article class:list={['slide', slide.layout && `slide-${slide.layout}`, slide.variant && `slide-${slide.variant}`, index === 0 && 'is-active']} data-slide={index + 1}>
+          <div class="slide-copy">
+            <p class="eyebrow">{slide.eyebrow}</p>
+            <h2>{slide.title}</h2>
+            <p class="kicker">{slide.kicker}</p>
+            {slide.body && (
+              <div class="slide-body">
+                {slide.body.map((paragraph) => <p>{paragraph}</p>)}
+              </div>
+            )}
+            <ul>
+              {slide.bullets.map((bullet) => <li>{bullet}</li>)}
+            </ul>
+            {slide.insight && (
+              <div class="slide-insight">
+                <p>{slide.insight}</p>
+              </div>
+            )}
+          </div>
+          <div class="slide-visual" set:html={slide.visual} />
+        </article>
+      ))}
+    </div>
+    <div class="image-lightbox" data-image-lightbox hidden>
+      <button class="lightbox-backdrop" type="button" data-lightbox-close aria-label="Close expanded image"></button>
+      <div class="lightbox-panel" role="dialog" aria-modal="true" aria-label="Expanded figure">
+        <button class="lightbox-close" type="button" data-lightbox-close aria-label="Close expanded image">×</button>
+        <img data-lightbox-image alt="" />
+        <p data-lightbox-caption></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script is:inline>
+  (() => {
+    const root = document.querySelector('[data-seminar-deck]');
+    if (!root) return;
+
+    const slides = Array.from(root.querySelectorAll('[data-slide]'));
+    const current = root.querySelector('[data-current]');
+    const progress = root.querySelector('[data-progress]');
+    const prev = root.querySelector('[data-prev]');
+    const next = root.querySelector('[data-next]');
+    const fullscreen = root.querySelector('[data-fullscreen]');
+    const lightbox = root.querySelector('[data-image-lightbox]');
+    const lightboxImage = root.querySelector('[data-lightbox-image]');
+    const lightboxCaption = root.querySelector('[data-lightbox-caption]');
+    let index = 0;
+
+    root.querySelectorAll('.slide-visual img').forEach((image) => {
+      image.tabIndex = 0;
+      image.setAttribute('role', 'button');
+      image.setAttribute('aria-label', `${image.alt || 'Figure'} 크게 보기`);
+    });
+
+    const render = () => {
+      slides.forEach((slide, slideIndex) => {
+        slide.classList.toggle('is-active', slideIndex === index);
+      });
+      current.textContent = String(index + 1);
+      progress.style.width = `${((index + 1) / slides.length) * 100}%`;
+      prev.disabled = index === 0;
+      next.disabled = index === slides.length - 1;
+    };
+
+    const go = (step) => {
+      index = Math.max(0, Math.min(slides.length - 1, index + step));
+      render();
+    };
+
+    const isLightboxOpen = () => lightbox && !lightbox.hidden;
+
+    const openLightbox = (image) => {
+      if (!lightbox || !lightboxImage || !lightboxCaption) return;
+      lightboxImage.src = image.currentSrc || image.src;
+      lightboxImage.alt = image.alt || '';
+      lightboxCaption.textContent = image.alt || '';
+      lightbox.hidden = false;
+      root.classList.add('has-lightbox');
+    };
+
+    const closeLightbox = () => {
+      if (!lightbox || !lightboxImage) return;
+      lightbox.hidden = true;
+      lightboxImage.removeAttribute('src');
+      root.classList.remove('has-lightbox');
+    };
+
+    prev.addEventListener('click', () => go(-1));
+    next.addEventListener('click', () => go(1));
+    const setFullscreenState = (enabled) => {
+      root.classList.toggle('is-fullscreen', enabled);
+      fullscreen.setAttribute('aria-pressed', String(enabled));
+      fullscreen.textContent = enabled ? 'Exit' : 'Fullscreen';
+    };
+
+    fullscreen.addEventListener('click', async () => {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+      if (root.classList.contains('is-fullscreen')) {
+        setFullscreenState(false);
+        return;
+      }
+
+      try {
+        await root.requestFullscreen();
+      } catch {
+        setFullscreenState(true);
+      }
+      if (!document.fullscreenElement) {
+        setFullscreenState(true);
+      }
+    });
+    document.addEventListener('fullscreenchange', () => {
+      const enabled = document.fullscreenElement === root;
+      setFullscreenState(enabled);
+    });
+
+    root.addEventListener('click', (event) => {
+      const closeTarget = event.target.closest('[data-lightbox-close]');
+      if (closeTarget) {
+        closeLightbox();
+        return;
+      }
+
+      const image = event.target.closest('.slide-visual img');
+      if (image) openLightbox(image);
+    });
+
+    window.addEventListener('keydown', (event) => {
+      if (isLightboxOpen()) {
+        if (event.key === 'Escape') closeLightbox();
+        return;
+      }
+      if (event.key === 'ArrowRight') go(1);
+      if (event.key === 'ArrowLeft') go(-1);
+      if (event.key.toLowerCase() === 'f') fullscreen.click();
+    });
+
+    root.addEventListener('keydown', (event) => {
+      const image = event.target.closest?.('.slide-visual img');
+      if (!image) return;
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        openLightbox(image);
+      }
+    });
+
+    render();
+  })();
+</script>
+
+<style>
+  .seminar-deck {
+    margin: 2rem 0 3rem;
+  }
+
+  .deck-shell {
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    overflow: hidden;
+  }
+
+  .deck-toolbar {
+    display: grid;
+    grid-template-columns: 2.75rem minmax(4rem, 1fr) 2.75rem auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--sl-color-gray-5);
+    background: var(--sl-color-bg-nav);
+  }
+
+  .image-lightbox[hidden] {
+    display: none;
+  }
+
+  .image-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: grid;
+    place-items: center;
+    padding: clamp(1rem, 2vw, 2rem);
+  }
+
+  .lightbox-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    background: color-mix(in srgb, var(--sl-color-black) 84%, transparent);
+    cursor: zoom-out;
+  }
+
+  .lightbox-panel {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 0.6rem;
+    width: min(96vw, 1600px);
+    height: min(92vh, 960px);
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    padding: 0.8rem;
+    box-shadow: 0 24px 70px color-mix(in srgb, var(--sl-color-black) 60%, transparent);
+  }
+
+  .lightbox-panel img {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    object-fit: contain;
+    background: white;
+    border-radius: 6px;
+  }
+
+  .lightbox-panel p {
+    margin: 0;
+    color: var(--sl-color-gray-2);
+    font-size: 0.9rem;
+    text-align: center;
+  }
+
+  .lightbox-close {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    z-index: 2;
+    width: 2.25rem;
+    height: 2.25rem;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 999px;
+    background: var(--sl-color-bg-nav);
+    color: var(--sl-color-white);
+    cursor: pointer;
+    font-size: 1.3rem;
+    line-height: 1;
+  }
+
+  .icon-button,
+  .deck-button {
+    height: 2.25rem;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    color: var(--sl-color-white);
+    cursor: pointer;
+  }
+
+  .icon-button {
+    width: 2.25rem;
+    font-size: 1.6rem;
+    line-height: 1;
+  }
+
+  .deck-button {
+    padding: 0 0.85rem;
+    font-size: 0.85rem;
+  }
+
+  .icon-button:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+
+  .slide-status {
+    justify-self: center;
+    display: inline-flex;
+    gap: 0.25rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--sl-color-gray-2);
+  }
+
+  .progress-track {
+    height: 0.3rem;
+    background: var(--sl-color-gray-6);
+  }
+
+  .progress-track span {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--sl-color-accent);
+    transition: width 180ms ease;
+  }
+
+  .slides {
+    position: relative;
+    min-height: 760px;
+  }
+
+  .slide {
+    display: none;
+    margin: 0;
+    min-height: 760px;
+    grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.95fr);
+    gap: 1.5rem;
+    align-items: center;
+    padding: clamp(1rem, 3vw, 2rem);
+  }
+
+  .slide.is-active {
+    display: grid;
+  }
+
+  .slide-wide {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 0.8rem;
+    min-height: 0;
+    padding: 0.8rem;
+  }
+
+  .slide-stack {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(280px, 1fr);
+    align-items: stretch;
+  }
+
+  .slide-split {
+    grid-template-columns: minmax(0, 0.85fr) minmax(520px, 1.15fr);
+    align-items: center;
+  }
+
+  .slide-fill {
+    grid-template-columns: minmax(0, 0.9fr) minmax(420px, 1.1fr);
+    align-items: center;
+  }
+
+  .slide-visual-tight {
+    grid-template-columns: minmax(0, 1.22fr) minmax(560px, 0.78fr);
+  }
+
+  .slide-visual-tight .slide-visual {
+    place-items: center end;
+  }
+
+  .slide-wide .kicker {
+    margin: 0.55rem 0 0.6rem;
+    line-height: 1.42;
+  }
+
+  .slide-wide .slide-body {
+    gap: 0.45rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .slide-wide ul {
+    gap: 0.35rem;
+  }
+
+  .slide-copy {
+    min-width: 0;
+  }
+
+  .eyebrow {
+    margin: 0 0 0.5rem;
+    color: var(--sl-color-accent-high);
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .slide h2 {
+    margin: 0;
+    font-size: clamp(1.85rem, 3vw, 2.75rem);
+    line-height: 1.08;
+    letter-spacing: 0;
+  }
+
+  .kicker {
+    margin: 1rem 0 1rem;
+    color: var(--sl-color-gray-2);
+    font-size: 1.08rem;
+    line-height: 1.55;
+  }
+
+  .slide-body {
+    display: grid;
+    gap: 0.75rem;
+    margin: 0 0 1rem;
+  }
+
+  .slide-body p {
+    margin: 0;
+    line-height: 1.65;
+    color: var(--sl-color-gray-1);
+  }
+
+  .slide ul {
+    display: grid;
+    gap: 0.65rem;
+    margin: 0;
+    padding-left: 1.2rem;
+  }
+
+  .slide li {
+    line-height: 1.5;
+  }
+
+  .slide-insight {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--sl-color-gray-5);
+  }
+
+  .slide-insight p {
+    margin: 0;
+    color: var(--sl-color-gray-2);
+    line-height: 1.55;
+  }
+
+  .slide-visual {
+    min-height: 360px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 8px;
+    padding: 1rem;
+    background: var(--sl-color-gray-6);
+    overflow: auto;
+  }
+
+  .slide-wide .slide-visual {
+    min-height: 0;
+    place-items: stretch;
+    padding: 0.7rem;
+  }
+
+  .slide-stack .slide-visual {
+    min-height: 320px;
+    place-items: center;
+  }
+
+  .slide-visual img {
+    display: block;
+    max-width: 100%;
+    max-height: 520px;
+    object-fit: contain;
+    border-radius: 6px;
+  }
+
+  .three-problems,
+  .recipe,
+  .takeaway-stack {
+    display: grid;
+    gap: 0.8rem;
+    width: 100%;
+  }
+
+  .three-problems span,
+  .recipe span,
+  .takeaway-stack span,
+  .appendix-grid span,
+  .taxonomy span {
+    display: grid;
+    place-items: center;
+    min-height: 4rem;
+    border: 1px solid var(--sl-color-gray-4);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .taxonomy,
+  .flow,
+  .timeline {
+    display: grid;
+    gap: 0.75rem;
+    width: 100%;
+    align-items: center;
+  }
+
+  .taxonomy {
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+  }
+
+  .flow {
+    grid-template-columns: 0.8fr 1fr 0.9fr 1fr 0.8fr;
+  }
+
+  .flow span,
+  .flow i,
+  .timeline span,
+  .module-card,
+  .questions p {
+    border: 1px solid var(--sl-color-gray-4);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    padding: 1rem;
+    text-align: center;
+  }
+
+  .module-card {
+    width: 100%;
+    min-height: 18rem;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 0.7rem;
+  }
+
+  .module-card h3 {
+    margin: 0;
+    font-size: 1.8rem;
+  }
+
+  .module-card p {
+    margin: 0;
+  }
+
+  .flow i {
+    color: var(--sl-color-accent-high);
+    font-style: normal;
+    font-weight: 700;
+  }
+
+  .timeline {
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  .two-column {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    width: 100%;
+  }
+
+  .two-column > div {
+    min-height: 14rem;
+    border: 1px solid var(--sl-color-gray-4);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    padding: 1rem;
+  }
+
+  .appendix-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+    width: 100%;
+  }
+
+  .mini-table {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    justify-self: stretch;
+    box-sizing: border-box;
+    table-layout: fixed;
+    border-collapse: collapse;
+    background: var(--sl-color-bg);
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 0.9rem;
+  }
+
+  .mini-table th,
+  .mini-table td {
+    border: 1px solid var(--sl-color-gray-5);
+    padding: 0.65rem;
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+  }
+
+  .mini-table th {
+    background: var(--sl-color-gray-6);
+    color: var(--sl-color-white);
+  }
+
+  .result-table td:nth-child(2),
+  .result-table th:nth-child(2) {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dataset-funnel,
+  .expert-card,
+  .denoise-card,
+  .fast-refine-card,
+  .cascaded-flow,
+  .async-clock,
+  .training-stages,
+  .principle-map,
+  .runtime-cache {
+    width: 100%;
+  }
+
+  .dataset-funnel,
+  .expert-card,
+  .denoise-card,
+  .fast-refine-card,
+  .async-clock,
+  .runtime-cache {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .funnel-row,
+  .expert-flow,
+  .refine-grid,
+  .training-stages,
+  .principle-map {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .funnel-row {
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+  }
+
+  .funnel-row span,
+  .funnel-step,
+  .pair-examples span,
+  .expert-flow span,
+  .refine-grid span,
+  .denoise-lane span,
+  .cascaded-flow div,
+  .clock-row span,
+  .training-stages div,
+  .principle-map div,
+  .cache-main {
+    border: 1px solid var(--sl-color-gray-4);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    padding: 0.8rem;
+  }
+
+  .funnel-row span,
+  .funnel-step {
+    text-align: center;
+    font-weight: 700;
+  }
+
+  .funnel-arrow,
+  .cache-arrow {
+    color: var(--sl-color-accent-high);
+    font-weight: 800;
+    text-align: center;
+  }
+
+  .funnel-step.emphasis,
+  .training-stages .focus,
+  .cache-main.accent {
+    border-color: var(--sl-color-accent);
+    background: var(--sl-color-accent-low);
+  }
+
+  .pair-examples {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .pair-examples span {
+    text-align: center;
+    font-size: 0.86rem;
+    color: var(--sl-color-gray-1);
+  }
+
+  .expert-card,
+  .denoise-card,
+  .fast-refine-card {
+    min-height: 20rem;
+    align-content: center;
+  }
+
+  .expert-card h3,
+  .denoise-card h3,
+  .fast-refine-card h3 {
+    margin: 0;
+    font-size: 1.65rem;
+  }
+
+  .expert-card p,
+  .fast-refine-card p,
+  .expert-card small,
+  .fast-refine-card small {
+    margin: 0;
+    color: var(--sl-color-gray-2);
+  }
+
+  .expert-flow,
+  .refine-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .expert-flow span,
+  .refine-grid span {
+    text-align: center;
+    font-weight: 700;
+  }
+
+  .denoise-lane,
+  .cascaded-flow {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    gap: 0.65rem;
+    align-items: stretch;
+  }
+
+  .denoise-lane i,
+  .cascaded-flow i {
+    align-self: center;
+    color: var(--sl-color-accent-high);
+    font-style: normal;
+    font-weight: 800;
+    text-align: center;
+  }
+
+  .cascaded-flow div {
+    display: grid;
+    gap: 0.35rem;
+    min-height: 8rem;
+    align-content: center;
+    text-align: center;
+  }
+
+  .cascaded-flow b,
+  .training-stages b,
+  .principle-map b {
+    justify-self: center;
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    background: var(--sl-color-accent);
+    color: var(--sl-color-black);
+  }
+
+  .cascaded-flow small,
+  .training-stages small,
+  .principle-map small {
+    color: var(--sl-color-gray-2);
+  }
+
+  .micro-table {
+    width: 100%;
+    border-collapse: collapse;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+  }
+
+  .micro-table td {
+    border: 1px solid var(--sl-color-gray-5);
+    padding: 0.55rem 0.65rem;
+  }
+
+  .micro-table td:first-child {
+    width: 40%;
+    color: var(--sl-color-gray-2);
+  }
+
+  .clock-row {
+    display: grid;
+    grid-template-columns: 7rem repeat(3, minmax(0, 1fr));
+    gap: 0.55rem;
+    align-items: stretch;
+  }
+
+  .clock-row strong {
+    display: grid;
+    place-items: center;
+    color: var(--sl-color-accent-high);
+  }
+
+  .clock-row span {
+    display: grid;
+    place-items: center;
+    min-height: 4.25rem;
+    text-align: center;
+  }
+
+  .clock-row.control {
+    grid-template-columns: 7rem 1fr 1fr;
+  }
+
+  .training-stages {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .training-stages div,
+  .principle-map div {
+    display: grid;
+    gap: 0.5rem;
+    align-content: start;
+    min-height: 11rem;
+  }
+
+  .training-stages strong,
+  .principle-map span {
+    font-weight: 800;
+  }
+
+  .principle-map {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .runtime-cache {
+    align-content: center;
+  }
+
+  .cache-main {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .cache-main span {
+    display: block;
+    padding: 0.55rem 0.65rem;
+    border-radius: 6px;
+    background: var(--sl-color-gray-6);
+  }
+
+  .questions {
+    display: grid;
+    gap: 0.75rem;
+    width: 100%;
+  }
+
+  .questions p {
+    margin: 0;
+    text-align: left;
+  }
+
+  .seminar-deck:fullscreen,
+  .seminar-deck.is-fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    padding: 0;
+    background: var(--sl-color-bg);
+    isolation: isolate;
+  }
+
+  .seminar-deck:fullscreen .deck-shell,
+  .seminar-deck.is-fullscreen .deck-shell {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .seminar-deck:fullscreen .slides,
+  .seminar-deck.is-fullscreen .slides {
+    min-height: 0;
+    height: auto;
+    overflow: hidden;
+  }
+
+  .seminar-deck:fullscreen .slide,
+  .seminar-deck.is-fullscreen .slide {
+    box-sizing: border-box;
+    min-height: 0;
+    height: 100%;
+    padding: clamp(0.75rem, 1.6vw, 1.25rem);
+    gap: clamp(0.6rem, 1.2vw, 1rem);
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .seminar-deck:fullscreen .slide-copy,
+  .seminar-deck.is-fullscreen .slide-copy,
+  .seminar-deck:fullscreen .slide-visual,
+  .seminar-deck.is-fullscreen .slide-visual {
+    box-sizing: border-box;
+    min-height: 0;
+    height: auto;
+    max-height: calc(100vh - 6rem);
+    overflow: auto;
+  }
+
+  .seminar-deck:fullscreen .eyebrow,
+  .seminar-deck.is-fullscreen .eyebrow {
+    margin-bottom: 0.3rem;
+    font-size: clamp(0.98rem, 0.84vw, 1.15rem);
+  }
+
+  .seminar-deck:fullscreen .slide h2,
+  .seminar-deck.is-fullscreen .slide h2 {
+    font-size: clamp(2.38rem, 2.72vw, 3.55rem);
+    line-height: 1.05;
+  }
+
+  .seminar-deck:fullscreen .kicker,
+  .seminar-deck.is-fullscreen .kicker {
+    margin: 0.65rem 0 0.75rem;
+    font-size: clamp(1.32rem, 1.2vw, 1.62rem);
+    line-height: 1.34;
+  }
+
+  .seminar-deck:fullscreen .slide-body,
+  .seminar-deck.is-fullscreen .slide-body {
+    gap: 0.55rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .seminar-deck:fullscreen .slide-body p,
+  .seminar-deck:fullscreen .slide li,
+  .seminar-deck.is-fullscreen .slide-body p,
+  .seminar-deck.is-fullscreen .slide li {
+    font-size: clamp(1.26rem, 1.18vw, 1.52rem);
+    line-height: 1.32;
+  }
+
+  .seminar-deck:fullscreen .slide ul,
+  .seminar-deck.is-fullscreen .slide ul {
+    gap: 0.42rem;
+  }
+
+  .seminar-deck:fullscreen .slide-insight,
+  .seminar-deck.is-fullscreen .slide-insight {
+    margin-top: 0.55rem;
+    padding-top: 0.55rem;
+  }
+
+  .seminar-deck:fullscreen .slide-insight p,
+  .seminar-deck.is-fullscreen .slide-insight p {
+    font-size: clamp(1.1rem, 1vw, 1.25rem);
+    line-height: 1.28;
+  }
+
+  .seminar-deck:fullscreen .slide-visual,
+  .seminar-deck.is-fullscreen .slide-visual {
+    min-height: 0;
+    padding: 0.65rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual img,
+  .seminar-deck.is-fullscreen .slide-visual img {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    object-fit: contain;
+  }
+
+  .seminar-deck:fullscreen .slide-wide,
+  .seminar-deck.is-fullscreen .slide-wide {
+    grid-template-rows: auto minmax(0, 1fr);
+    align-items: stretch;
+    gap: 0.8rem;
+  }
+
+  .seminar-deck:fullscreen .slide-wide .slide-copy,
+  .seminar-deck.is-fullscreen .slide-wide .slide-copy {
+    height: auto;
+    max-height: 46vh;
+  }
+
+  .seminar-deck:fullscreen .slide-wide .slide-visual,
+  .seminar-deck.is-fullscreen .slide-wide .slide-visual {
+    height: 100%;
+    max-height: none;
+  }
+
+  .seminar-deck:fullscreen .slide-stack,
+  .seminar-deck.is-fullscreen .slide-stack {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    align-items: stretch;
+    gap: clamp(0.75rem, 1vw, 1.15rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-copy,
+  .seminar-deck.is-fullscreen .slide-stack .slide-copy {
+    display: grid;
+    grid-template-columns: minmax(22rem, 0.9fr) minmax(24rem, 1.1fr);
+    grid-auto-rows: min-content;
+    column-gap: clamp(1rem, 1.6vw, 2rem);
+    row-gap: 0.45rem;
+    align-content: start;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .eyebrow,
+  .seminar-deck:fullscreen .slide-stack h2,
+  .seminar-deck:fullscreen .slide-stack .kicker,
+  .seminar-deck.is-fullscreen .slide-stack .eyebrow,
+  .seminar-deck.is-fullscreen .slide-stack h2,
+  .seminar-deck.is-fullscreen .slide-stack .kicker {
+    grid-column: 1;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-body,
+  .seminar-deck:fullscreen .slide-stack ul,
+  .seminar-deck:fullscreen .slide-stack .slide-insight,
+  .seminar-deck.is-fullscreen .slide-stack .slide-body,
+  .seminar-deck.is-fullscreen .slide-stack ul,
+  .seminar-deck.is-fullscreen .slide-stack .slide-insight {
+    grid-column: 2;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-body,
+  .seminar-deck.is-fullscreen .slide-stack .slide-body {
+    margin-bottom: 0.35rem;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual {
+    position: relative;
+    height: 100%;
+    max-height: none;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .seminar-deck:fullscreen .slide-fill,
+  .seminar-deck.is-fullscreen .slide-fill {
+    grid-template-columns: minmax(0, 0.9fr) minmax(520px, 1.1fr);
+    align-items: center;
+  }
+
+  .seminar-deck:fullscreen .slide-fill .slide-visual,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual {
+    height: clamp(22rem, 62vh, 42rem);
+    max-height: calc(100vh - 6rem);
+    overflow: hidden;
+  }
+
+  .seminar-deck:fullscreen .slide-split,
+  .seminar-deck.is-fullscreen .slide-split {
+    grid-template-columns: minmax(0, 0.92fr) minmax(760px, 1.08fr);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+    gap: clamp(1rem, 1.4vw, 1.6rem);
+  }
+
+  .seminar-deck:fullscreen .slide-split .slide-copy,
+  .seminar-deck.is-fullscreen .slide-split .slide-copy {
+    height: 100%;
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .seminar-deck:fullscreen .slide-split .slide-body p,
+  .seminar-deck:fullscreen .slide-split li,
+  .seminar-deck.is-fullscreen .slide-split .slide-body p,
+  .seminar-deck.is-fullscreen .slide-split li {
+    font-size: clamp(1.3rem, 1.22vw, 1.58rem);
+    line-height: 1.34;
+  }
+
+  .seminar-deck:fullscreen .slide-split .slide-visual,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual {
+    height: 100%;
+    max-height: none;
+    overflow: hidden;
+  }
+
+  .seminar-deck:fullscreen .slide-visual-tight,
+  .seminar-deck.is-fullscreen .slide-visual-tight {
+    grid-template-columns: minmax(0, 1.22fr) minmax(660px, 0.78fr);
+  }
+
+  .seminar-deck:fullscreen .slide-visual-tight .slide-visual,
+  .seminar-deck.is-fullscreen .slide-visual-tight .slide-visual {
+    place-items: center end;
+  }
+
+  .seminar-deck:fullscreen .slide-visual-tight .slide-visual .expert-spec-card,
+  .seminar-deck:fullscreen .slide-visual-tight .slide-visual .vqvae-loss-map,
+  .seminar-deck.is-fullscreen .slide-visual-tight .slide-visual .expert-spec-card,
+  .seminar-deck.is-fullscreen .slide-visual-tight .slide-visual .vqvae-loss-map {
+    width: 100%;
+    max-width: none;
+  }
+
+  .seminar-deck:fullscreen .slide-split .cascade-diagram,
+  .seminar-deck:fullscreen .slide-split .runtime-diagram,
+  .seminar-deck.is-fullscreen .slide-split .cascade-diagram,
+  .seminar-deck.is-fullscreen .slide-split .runtime-diagram {
+    align-self: center;
+  }
+
+  @media (max-height: 800px) and (min-width: 900px) {
+    .seminar-deck:fullscreen .slide,
+    .seminar-deck.is-fullscreen .slide {
+      padding: 0 0.45rem;
+      gap: 0;
+    }
+
+    .seminar-deck:fullscreen .slide-stack,
+    .seminar-deck.is-fullscreen .slide-stack {
+      gap: 0;
+    }
+
+    .seminar-deck:fullscreen .slide-stack .slide-copy,
+    .seminar-deck.is-fullscreen .slide-stack .slide-copy {
+      column-gap: 0.8rem;
+      row-gap: 0.16rem;
+    }
+
+    .seminar-deck:fullscreen .slide-fill .slide-visual,
+    .seminar-deck.is-fullscreen .slide-fill .slide-visual {
+      height: clamp(16rem, 54vh, 24rem);
+    }
+
+    .seminar-deck:fullscreen .eyebrow,
+    .seminar-deck.is-fullscreen .eyebrow {
+      margin-bottom: 0.18rem;
+      font-size: clamp(0.86rem, 0.8vw, 0.98rem);
+    }
+
+    .seminar-deck:fullscreen .slide h2,
+    .seminar-deck.is-fullscreen .slide h2 {
+      font-size: clamp(1.82rem, 2.1vw, 2.35rem);
+      line-height: 1.03;
+    }
+
+    .seminar-deck:fullscreen .kicker,
+    .seminar-deck.is-fullscreen .kicker {
+      margin: 0.28rem 0 0.36rem;
+      font-size: clamp(1rem, 0.98vw, 1.14rem);
+      line-height: 1.24;
+    }
+
+    .seminar-deck:fullscreen .slide-body,
+    .seminar-deck.is-fullscreen .slide-body {
+      gap: 0.2rem;
+      margin-bottom: 0.28rem;
+    }
+
+    .seminar-deck:fullscreen .slide-body p,
+    .seminar-deck:fullscreen .slide li,
+    .seminar-deck.is-fullscreen .slide-body p,
+    .seminar-deck.is-fullscreen .slide li {
+      font-size: clamp(0.96rem, 0.94vw, 1.08rem);
+      line-height: 1.2;
+    }
+
+    .seminar-deck:fullscreen .slide ul,
+    .seminar-deck.is-fullscreen .slide ul {
+      gap: 0.16rem;
+    }
+
+    .seminar-deck:fullscreen .slide-insight,
+    .seminar-deck.is-fullscreen .slide-insight {
+      margin-top: 0.26rem;
+      padding-top: 0.26rem;
+    }
+
+    .seminar-deck:fullscreen .slide-insight p,
+    .seminar-deck.is-fullscreen .slide-insight p {
+      font-size: clamp(0.86rem, 0.8vw, 0.96rem);
+      line-height: 1.18;
+    }
+  }
+
+  @media (max-width: 760px) {
+    .deck-toolbar {
+      grid-template-columns: 2.5rem 1fr 2.5rem;
+    }
+
+    .deck-button {
+      grid-column: span 3;
+    }
+
+    .slides,
+    .slide {
+      min-height: 0;
+    }
+
+    .slide.is-active {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+
+    .slide-visual {
+      min-height: 240px;
+    }
+
+    .taxonomy,
+    .flow,
+    .timeline,
+    .two-column,
+    .appendix-grid,
+    .funnel-row,
+    .pair-examples,
+    .expert-flow,
+    .refine-grid,
+    .denoise-lane,
+    .cascaded-flow,
+    .clock-row,
+    .clock-row.control,
+    .training-stages,
+    .principle-map {
+      grid-template-columns: 1fr;
+    }
+
+    .slide-split {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<style is:global>
+  body:has(.seminar-deck.is-fullscreen) {
+    overflow: hidden;
+  }
+
+  body:has(.seminar-deck.is-fullscreen) .right-sidebar-container,
+  body:has(.seminar-deck.is-fullscreen) .right-sidebar,
+  body:has(.seminar-deck.is-fullscreen) .sidebar-pane,
+  body:has(.seminar-deck.is-fullscreen) .site-title,
+  body:has(.seminar-deck.is-fullscreen) header.header {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .seminar-deck .slide-visual img {
+    display: block;
+    max-width: 100%;
+    max-height: 520px;
+    object-fit: contain;
+    border-radius: 6px;
+    cursor: zoom-in;
+  }
+
+  .seminar-deck .slide-visual img:focus-visible {
+    outline: 3px solid var(--sl-color-accent);
+    outline-offset: 4px;
+  }
+
+  .seminar-deck:fullscreen .slide-visual img,
+  .seminar-deck.is-fullscreen .slide-visual img {
+    width: 100%;
+    height: auto;
+    max-height: min(70vh, 760px);
+    object-fit: contain;
+  }
+
+  .seminar-deck:fullscreen .slide-split .slide-visual img,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual img {
+    width: 100%;
+    height: auto;
+    max-height: min(68vh, 720px);
+    margin: auto;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual img,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    object-fit: contain;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .plot-frame img,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .plot-frame img {
+    position: static;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual:has(.plot-frame),
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual:has(.plot-frame) {
+    display: grid;
+    place-items: center;
+    align-self: center;
+    height: clamp(15rem, 38vh, 27rem);
+    max-height: none;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual:has(.compact-plot),
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual:has(.compact-plot) {
+    height: clamp(13.5rem, 34vh, 23rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual:has(.compact-table),
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual:has(.compact-table) {
+    display: grid;
+    place-items: center;
+    align-self: center;
+    height: clamp(13.5rem, 34vh, 23rem);
+    max-height: none;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual:has(.wide-table.compact-table),
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual:has(.wide-table.compact-table) {
+    height: clamp(14rem, 34vh, 22.5rem);
+  }
+
+  .seminar-deck .slide-visual .plot-frame {
+    display: grid;
+    place-items: center;
+    width: min(100%, 80rem);
+    height: 100%;
+  }
+
+  .seminar-deck .slide-visual .compact-plot {
+    width: min(100%, 76rem);
+  }
+
+  .seminar-deck .slide-visual .compact-table {
+    height: auto;
+    max-width: min(100%, 70rem);
+    justify-self: center;
+    align-self: center;
+  }
+
+  .seminar-deck .slide-visual .wide-table.compact-table {
+    max-width: min(100%, 86rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .mini-table,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .mini-table {
+    height: 100%;
+    font-size: clamp(0.95rem, 0.9vw, 1.15rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .wide-table,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .wide-table {
+    font-size: clamp(0.72rem, 0.62vw, 0.9rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .mini-table th,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .mini-table td,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .mini-table th,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .mini-table td {
+    padding: clamp(0.45rem, 0.55vw, 0.8rem);
+    line-height: 1.35;
+    vertical-align: middle;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .wide-table th,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .wide-table td,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .wide-table th,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .wide-table td {
+    padding: clamp(0.3rem, 0.38vw, 0.55rem);
+  }
+
+  .seminar-deck:fullscreen .slide-fill .slide-visual .mini-table,
+  .seminar-deck:fullscreen .slide-fill .slide-visual .expert-spec-card,
+  .seminar-deck:fullscreen .slide-fill .slide-visual .principle-map,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .mini-table,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .expert-spec-card,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .principle-map {
+    height: 100%;
+  }
+
+  .seminar-deck:fullscreen .slide-fill .slide-visual .mini-table,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .mini-table {
+    font-size: clamp(0.95rem, 0.9vw, 1.15rem);
+  }
+
+  .seminar-deck:fullscreen .slide-fill .slide-visual .mini-table th,
+  .seminar-deck:fullscreen .slide-fill .slide-visual .mini-table td,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .mini-table th,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .mini-table td {
+    padding: clamp(0.45rem, 0.55vw, 0.8rem);
+    line-height: 1.35;
+    vertical-align: middle;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .compact-table,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .compact-table {
+    height: auto;
+    max-height: 100%;
+    font-size: clamp(0.96rem, 0.86vw, 1.12rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .wide-table.compact-table,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .wide-table.compact-table {
+    font-size: clamp(0.76rem, 0.72vw, 0.96rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .compact-table th,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .compact-table td,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .compact-table th,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .compact-table td {
+    padding: clamp(0.34rem, 0.42vw, 0.58rem);
+    line-height: 1.24;
+  }
+
+  .seminar-deck:fullscreen .slide-fill .slide-visual .expert-spec-card,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .expert-spec-card {
+    align-content: stretch;
+  }
+
+  .seminar-deck:fullscreen .slide-fill .slide-visual .principle-map div,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .principle-map div {
+    justify-content: center;
+  }
+
+  .seminar-deck .slide-visual .mini-table {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    justify-self: stretch;
+    box-sizing: border-box;
+    table-layout: fixed;
+    border-collapse: collapse;
+    background: var(--sl-color-bg);
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 0.9rem;
+  }
+
+  .seminar-deck .slide-visual .mini-table.table-center {
+    width: min(100%, 70rem);
+    justify-self: center;
+    margin-inline: auto;
+  }
+
+  .seminar-deck .slide-visual .wide-table.table-center {
+    width: min(100%, 86rem);
+  }
+
+  .seminar-deck .slide-visual .mini-table th,
+  .seminar-deck .slide-visual .mini-table td {
+    border: 1px solid var(--sl-color-gray-5);
+    padding: 0.65rem;
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+  }
+
+  .seminar-deck .slide-visual .mini-table th {
+    background: var(--sl-color-gray-6);
+    color: var(--sl-color-white);
+  }
+
+  .seminar-deck .slide-visual .result-table td:nth-child(2),
+  .seminar-deck .slide-visual .result-table th:nth-child(2) {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .seminar-deck .slide-visual .result-table th,
+  .seminar-deck .slide-visual .result-table td {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .seminar-deck .slide-visual .result-table th:first-child,
+  .seminar-deck .slide-visual .result-table td:first-child,
+  .seminar-deck .slide-visual .task-table th,
+  .seminar-deck .slide-visual .task-table td {
+    text-align: left;
+  }
+
+  .seminar-deck .slide-visual .wide-table {
+    font-size: 0.72rem;
+  }
+
+  .seminar-deck .slide-visual .wide-table th,
+  .seminar-deck .slide-visual .wide-table td {
+    padding: 0.45rem 0.35rem;
+  }
+
+  .seminar-deck .slide-visual .highlight-row td {
+    background: var(--sl-color-accent-low);
+  }
+
+  .seminar-deck .slide-visual .task-table {
+    font-size: 0.82rem;
+  }
+
+  .seminar-deck .slide-visual .task-table th:first-child,
+  .seminar-deck .slide-visual .task-table td:first-child {
+    width: 16%;
+    font-weight: 700;
+  }
+
+  .seminar-deck .slide-visual .two-column {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    width: 100%;
+  }
+
+  .seminar-deck .slide-visual .two-column > div {
+    min-height: 14rem;
+    border: 1px solid var(--sl-color-gray-4);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    padding: 1rem;
+  }
+
+  .seminar-deck .slide-visual .dataset-funnel,
+  .seminar-deck .slide-visual .expert-card,
+  .seminar-deck .slide-visual .expert-spec-card,
+  .seminar-deck .slide-visual .denoise-card,
+  .seminar-deck .slide-visual .fast-refine-card,
+  .seminar-deck .slide-visual .cascaded-flow,
+  .seminar-deck .slide-visual .async-clock,
+  .seminar-deck .slide-visual .training-stages,
+  .seminar-deck .slide-visual .principle-map,
+  .seminar-deck .slide-visual .runtime-cache {
+    width: 100%;
+  }
+
+  .seminar-deck .slide-visual .dataset-funnel,
+  .seminar-deck .slide-visual .expert-card,
+  .seminar-deck .slide-visual .expert-spec-card,
+  .seminar-deck .slide-visual .denoise-card,
+  .seminar-deck .slide-visual .fast-refine-card,
+  .seminar-deck .slide-visual .async-clock,
+  .seminar-deck .slide-visual .runtime-cache {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .seminar-deck .slide-visual .funnel-row,
+  .seminar-deck .slide-visual .expert-flow,
+  .seminar-deck .slide-visual .refine-grid,
+  .seminar-deck .slide-visual .training-stages,
+  .seminar-deck .slide-visual .principle-map {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .seminar-deck .slide-visual .funnel-row {
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+  }
+
+  .seminar-deck .slide-visual .funnel-row span,
+  .seminar-deck .slide-visual .funnel-step,
+  .seminar-deck .slide-visual .pair-examples span,
+  .seminar-deck .slide-visual .expert-flow span,
+  .seminar-deck .slide-visual .refine-grid span,
+  .seminar-deck .slide-visual .denoise-lane span,
+  .seminar-deck .slide-visual .cascaded-flow div,
+  .seminar-deck .slide-visual .clock-row span,
+  .seminar-deck .slide-visual .training-stages div,
+  .seminar-deck .slide-visual .principle-map div,
+  .seminar-deck .slide-visual .cache-main {
+    border: 1px solid var(--sl-color-gray-4);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    padding: 0.8rem;
+  }
+
+  .seminar-deck .slide-visual .funnel-row span,
+  .seminar-deck .slide-visual .funnel-step,
+  .seminar-deck .slide-visual .expert-flow span,
+  .seminar-deck .slide-visual .refine-grid span {
+    text-align: center;
+    font-weight: 700;
+  }
+
+  .seminar-deck .slide-visual .funnel-arrow,
+  .seminar-deck .slide-visual .cache-arrow {
+    color: var(--sl-color-accent-high);
+    font-weight: 800;
+    text-align: center;
+  }
+
+  .seminar-deck .slide-visual .funnel-step.emphasis,
+  .seminar-deck .slide-visual .training-stages .focus,
+  .seminar-deck .slide-visual .cache-main.accent {
+    border-color: var(--sl-color-accent);
+    background: var(--sl-color-accent-low);
+  }
+
+  .seminar-deck .slide-visual .pair-examples {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .seminar-deck .slide-visual .invalid-pairs {
+    display: grid;
+    gap: 0.45rem;
+    border: 1px dashed var(--sl-color-gray-4);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    padding: 0.75rem;
+  }
+
+  .seminar-deck .slide-visual .invalid-pairs strong {
+    color: var(--sl-color-gray-2);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+  }
+
+  .seminar-deck .slide-visual .invalid-pairs span {
+    display: block;
+    padding: 0.45rem 0.55rem;
+    border-radius: 6px;
+    background: var(--sl-color-gray-6);
+    color: var(--sl-color-gray-1);
+    font-size: 0.84rem;
+  }
+
+  .seminar-deck .slide-visual .pair-examples span {
+    text-align: center;
+    font-size: 0.86rem;
+    color: var(--sl-color-gray-1);
+  }
+
+  .seminar-deck .slide-visual .expert-card,
+  .seminar-deck .slide-visual .expert-spec-card,
+  .seminar-deck .slide-visual .denoise-card,
+  .seminar-deck .slide-visual .fast-refine-card {
+    min-height: 20rem;
+    align-content: center;
+  }
+
+  .seminar-deck .slide-visual .expert-card h3,
+  .seminar-deck .slide-visual .expert-spec-card h3,
+  .seminar-deck .slide-visual .denoise-card h3,
+  .seminar-deck .slide-visual .fast-refine-card h3 {
+    margin: 0;
+    font-size: 1.65rem;
+  }
+
+  .seminar-deck .slide-visual .expert-spec-card {
+    align-content: start;
+  }
+
+  .seminar-deck .slide-visual .expert-spec-card small {
+    color: var(--sl-color-gray-2);
+    line-height: 1.45;
+  }
+
+  .seminar-deck .slide-visual .io-strip {
+    display: grid;
+    gap: 0.35rem;
+    border: 1px solid var(--sl-color-gray-4);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    padding: 0.75rem;
+  }
+
+  .seminar-deck .slide-visual .io-strip span {
+    color: var(--sl-color-accent-high);
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .seminar-deck .slide-visual .io-strip strong {
+    line-height: 1.35;
+  }
+
+  .seminar-deck .slide-visual .io-strip.output {
+    border-color: var(--sl-color-accent);
+    background: var(--sl-color-accent-low);
+  }
+
+  .seminar-deck .slide-visual .expert-card p,
+  .seminar-deck .slide-visual .fast-refine-card p,
+  .seminar-deck .slide-visual .expert-card small,
+  .seminar-deck .slide-visual .fast-refine-card small {
+    margin: 0;
+    color: var(--sl-color-gray-2);
+  }
+
+  .seminar-deck .slide-visual .expert-flow,
+  .seminar-deck .slide-visual .refine-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .seminar-deck .slide-visual .denoise-lane,
+  .seminar-deck .slide-visual .cascaded-flow {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    gap: 0.65rem;
+    align-items: stretch;
+  }
+
+  .seminar-deck .slide-visual .denoise-lane i,
+  .seminar-deck .slide-visual .cascaded-flow i {
+    align-self: center;
+    color: var(--sl-color-accent-high);
+    font-style: normal;
+    font-weight: 800;
+    text-align: center;
+  }
+
+  .seminar-deck .slide-visual .cascaded-flow div {
+    display: grid;
+    gap: 0.35rem;
+    min-height: 8rem;
+    align-content: center;
+    text-align: center;
+  }
+
+  .seminar-deck .slide-visual .cascaded-flow b,
+  .seminar-deck .slide-visual .training-stages b,
+  .seminar-deck .slide-visual .principle-map b {
+    justify-self: center;
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    background: var(--sl-color-accent);
+    color: var(--sl-color-black);
+  }
+
+  .seminar-deck .slide-visual .cascaded-flow small,
+  .seminar-deck .slide-visual .training-stages small,
+  .seminar-deck .slide-visual .principle-map small {
+    color: var(--sl-color-gray-2);
+  }
+
+  .seminar-deck .slide-visual .micro-table {
+    width: 100%;
+    border-collapse: collapse;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+  }
+
+  .seminar-deck .slide-visual .micro-table td {
+    border: 1px solid var(--sl-color-gray-5);
+    padding: 0.55rem 0.65rem;
+  }
+
+  .seminar-deck .slide-visual .micro-table td:first-child {
+    width: 40%;
+    color: var(--sl-color-gray-2);
+  }
+
+  .seminar-deck .slide-visual .clock-row {
+    display: grid;
+    grid-template-columns: 7rem repeat(3, minmax(0, 1fr));
+    gap: 0.55rem;
+    align-items: stretch;
+  }
+
+  .seminar-deck .slide-visual .clock-row strong {
+    display: grid;
+    place-items: center;
+    color: var(--sl-color-accent-high);
+  }
+
+  .seminar-deck .slide-visual .clock-row span {
+    display: grid;
+    place-items: center;
+    min-height: 4.25rem;
+    text-align: center;
+  }
+
+  .seminar-deck .slide-visual .clock-row.control {
+    grid-template-columns: 7rem 1fr 1fr;
+  }
+
+  .seminar-deck .slide-visual .training-stages {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .seminar-deck .slide-visual .training-stages.compact-diagram {
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    align-items: stretch;
+  }
+
+  .seminar-deck .slide-visual .training-stages.compact-diagram .flow-arrow {
+    align-self: center;
+    min-height: 0;
+    border: 0;
+    background: transparent;
+    padding: 0;
+  }
+
+  .seminar-deck .slide-visual .training-stages div,
+  .seminar-deck .slide-visual .principle-map div {
+    display: grid;
+    gap: 0.5rem;
+    align-content: start;
+    min-height: 8.5rem;
+  }
+
+  .seminar-deck .slide-visual .training-stages strong,
+  .seminar-deck .slide-visual .principle-map span {
+    font-weight: 800;
+  }
+
+  .seminar-deck .slide-visual .principle-map {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .seminar-deck .slide-visual .runtime-cache {
+    align-content: center;
+  }
+
+  .seminar-deck .slide-visual .cache-main {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .seminar-deck .slide-visual .cache-main span {
+    display: block;
+    padding: 0.55rem 0.65rem;
+    border-radius: 6px;
+    background: var(--sl-color-gray-6);
+  }
+
+  .seminar-deck .slide-visual .tactile-encoder-map {
+    display: grid;
+    gap: 0.7rem;
+    width: 100%;
+  }
+
+  .seminar-deck .slide-visual .tactile-encoder-map h3 {
+    margin: 0;
+    font-size: 1.35rem;
+  }
+
+  .seminar-deck .slide-visual .encoder-row {
+    display: grid;
+    gap: 0.4rem;
+    border: 1px solid var(--sl-color-gray-4);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    padding: 0.75rem;
+  }
+
+  .seminar-deck .slide-visual .encoder-row b {
+    color: var(--sl-color-white);
+  }
+
+  .seminar-deck .slide-visual .encoder-row span {
+    color: var(--sl-color-gray-2);
+    font-size: 0.86rem;
+  }
+
+  .seminar-deck .slide-visual .encoder-row i {
+    color: var(--sl-color-accent-high);
+    font-size: 0.84rem;
+    font-style: normal;
+    font-weight: 700;
+  }
+
+  .seminar-deck .slide-visual .encoder-row strong {
+    display: block;
+    border-radius: 6px;
+    background: var(--sl-color-gray-6);
+    padding: 0.45rem 0.55rem;
+    font-size: 0.84rem;
+  }
+
+  .seminar-deck .slide-visual .encoder-merge,
+  .seminar-deck .slide-visual .encoder-output {
+    border-radius: 8px;
+    padding: 0.75rem;
+    line-height: 1.45;
+    font-weight: 700;
+  }
+
+  .seminar-deck .slide-visual .encoder-merge {
+    border: 1px dashed var(--sl-color-accent);
+    background: var(--sl-color-bg);
+  }
+
+  .seminar-deck .slide-visual .encoder-output {
+    border: 1px solid var(--sl-color-accent);
+    background: var(--sl-color-accent-low);
+  }
+
+  .seminar-deck .slide-visual .vqvae-loss-map {
+    display: grid;
+    gap: 0.8rem;
+    width: 100%;
+  }
+
+  .seminar-deck .slide-visual .vqvae-loss-map h3 {
+    margin: 0;
+    font-size: 1.35rem;
+  }
+
+  .seminar-deck .slide-visual .loss-card {
+    display: grid;
+    gap: 0.45rem;
+    border: 1px solid var(--sl-color-gray-4);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    padding: 0.85rem;
+  }
+
+  .seminar-deck .slide-visual .loss-card b {
+    color: var(--sl-color-white);
+  }
+
+  .seminar-deck .slide-visual .loss-card span {
+    color: var(--sl-color-gray-2);
+    line-height: 1.45;
+  }
+
+  .seminar-deck .slide-visual .loss-card strong {
+    display: block;
+    border-radius: 6px;
+    background: var(--sl-color-gray-6);
+    padding: 0.45rem 0.55rem;
+    font-size: 0.86rem;
+  }
+
+  .seminar-deck .slide-visual .cascade-diagram {
+    display: grid;
+    gap: 0.7rem;
+    width: 100%;
+  }
+
+  .seminar-deck .slide-visual .cascade-diagram h3 {
+    margin: 0;
+    font-size: 1.35rem;
+  }
+
+  .seminar-deck .slide-visual .flow-rail {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 0.35rem;
+    align-items: stretch;
+    grid-auto-rows: 1fr;
+  }
+
+  .seminar-deck .slide-visual .flow-rail > *,
+  .seminar-deck .slide-visual .cascade-diagram > *,
+  .seminar-deck .slide-visual .runtime-diagram > *,
+  .seminar-deck .slide-visual .runtime-sequence > *,
+  .seminar-deck .slide-visual .training-stages > *,
+  .seminar-deck .slide-visual .principle-map > * {
+    margin-top: 0;
+  }
+
+  .seminar-deck .slide-visual .flow-arrow,
+  .seminar-deck .slide-visual .runtime-arrow {
+    display: grid;
+    place-items: center;
+    color: var(--sl-color-accent-high);
+    font-size: 1.45rem;
+    font-weight: 900;
+  }
+
+  .seminar-deck .slide-visual .rail-node,
+  .seminar-deck .slide-visual .rail-segment {
+    display: grid;
+    gap: 0.35rem;
+    align-content: center;
+    height: 100%;
+    min-height: 5.7rem;
+    border-radius: 8px;
+    padding: 0.55rem;
+    text-align: center;
+  }
+
+  .seminar-deck .slide-visual .rail-node {
+    border: 2px solid var(--sl-color-gray-4);
+    background: var(--sl-color-bg);
+  }
+
+  .seminar-deck .slide-visual .rail-node span {
+    color: var(--sl-color-accent-high);
+    font-size: 1.2rem;
+    font-weight: 800;
+  }
+
+  .seminar-deck .slide-visual .rail-node small,
+  .seminar-deck .slide-visual .rail-segment small {
+    color: var(--sl-color-gray-2);
+    line-height: 1.35;
+  }
+
+  .seminar-deck .slide-visual .rail-segment {
+    position: relative;
+    border: 2px solid var(--sl-color-gray-4);
+    background: var(--sl-color-bg);
+  }
+
+  .seminar-deck .slide-visual .rail-segment strong {
+    font-size: 1.05rem;
+  }
+
+  .seminar-deck .slide-visual .rail-segment span {
+    justify-self: center;
+    border-radius: 999px;
+    padding: 0.25rem 0.55rem;
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .seminar-deck .slide-visual .rail-segment.slow {
+    border-color: var(--sl-color-accent);
+  }
+
+  .seminar-deck .slide-visual .rail-segment.slow span {
+    background: var(--sl-color-accent-low);
+    color: var(--sl-color-accent-high);
+  }
+
+  .seminar-deck .slide-visual .rail-segment.fast {
+    border-color: var(--sl-color-white);
+  }
+
+  .seminar-deck .slide-visual .rail-segment.fast span {
+    background: var(--sl-color-gray-6);
+    color: var(--sl-color-white);
+  }
+
+  .seminar-deck .slide-visual .flow-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+  }
+
+  .seminar-deck .slide-visual .flow-legend span,
+  .seminar-deck .slide-visual .flow-note {
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    padding: 0.55rem 0.7rem;
+    font-size: 0.88rem;
+  }
+
+  .seminar-deck .slide-visual .flow-legend span {
+    border: 1px solid var(--sl-color-gray-4);
+    font-weight: 700;
+  }
+
+  .seminar-deck .slide-visual .slow-dot {
+    color: var(--sl-color-accent-high);
+  }
+
+  .seminar-deck .slide-visual .flow-note {
+    border: 1px dashed var(--sl-color-gray-4);
+    line-height: 1.45;
+  }
+
+  .seminar-deck .slide-wide .slide-visual .flow-rail {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+
+  .seminar-deck .slide-visual .runtime-diagram {
+    display: grid;
+    gap: 0.7rem;
+    width: 100%;
+  }
+
+  .seminar-deck .slide-visual .runtime-diagram h3 {
+    margin: 0;
+    font-size: 1.35rem;
+  }
+
+  .seminar-deck .slide-visual .runtime-sequence {
+    display: grid;
+    grid-template-columns: 1.18fr auto 1fr auto 1fr auto 1fr;
+    gap: 0.4rem;
+    align-items: stretch;
+  }
+
+  .seminar-deck .slide-visual .runtime-step {
+    display: grid;
+    gap: 0.32rem;
+    align-content: start;
+    min-height: 5.9rem;
+    border: 1px solid var(--sl-color-gray-4);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    padding: 0.55rem;
+  }
+
+  .seminar-deck .slide-visual .runtime-step b {
+    color: var(--sl-color-white);
+  }
+
+  .seminar-deck .slide-visual .runtime-step span {
+    color: var(--sl-color-gray-2);
+    line-height: 1.45;
+  }
+
+  .seminar-deck .slide-visual .runtime-step strong {
+    border-radius: 6px;
+    padding: 0.45rem 0.55rem;
+    font-size: 0.86rem;
+    line-height: 1.35;
+  }
+
+  .seminar-deck .slide-visual .runtime-step small {
+    color: var(--sl-color-gray-2);
+    line-height: 1.35;
+  }
+
+  .seminar-deck .slide-visual .slow-step {
+    border-width: 2px;
+    border-color: var(--sl-color-accent);
+  }
+
+  .seminar-deck .slide-visual .slow-step strong {
+    background: var(--sl-color-accent-low);
+    color: var(--sl-color-accent-high);
+  }
+
+  .seminar-deck .slide-visual .fast-step strong {
+    background: var(--sl-color-gray-6);
+  }
+
+  .seminar-deck .slide-visual .runtime-bottom {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.65rem;
+  }
+
+  .seminar-deck .slide-visual .runtime-bottom span {
+    border: 1px dashed var(--sl-color-gray-4);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    padding: 0.7rem;
+    line-height: 1.45;
+  }
+
+  .seminar-deck:fullscreen .slide-split .slide-visual .cascade-diagram,
+  .seminar-deck:fullscreen .slide-split .slide-visual .runtime-diagram,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .cascade-diagram,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .runtime-diagram {
+    height: 100%;
+    align-content: center;
+    gap: clamp(1rem, 1.2vw, 1.4rem);
+  }
+
+  .seminar-deck:fullscreen .slide-split .slide-visual .cascade-diagram h3,
+  .seminar-deck:fullscreen .slide-split .slide-visual .runtime-diagram h3,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .cascade-diagram h3,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .runtime-diagram h3 {
+    font-size: clamp(1.35rem, 1.25vw, 1.7rem);
+  }
+
+  .seminar-deck:fullscreen .slide-split .slide-visual .rail-node,
+  .seminar-deck:fullscreen .slide-split .slide-visual .rail-segment,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .rail-node,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .rail-segment {
+    min-height: clamp(18rem, 42vh, 26rem);
+    padding: clamp(0.8rem, 1vw, 1.1rem);
+  }
+
+  .seminar-deck:fullscreen .slide-split .slide-visual .rail-segment strong,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .rail-segment strong {
+    font-size: clamp(1.15rem, 1vw, 1.35rem);
+  }
+
+  .seminar-deck:fullscreen .slide-split .slide-visual .rail-segment span,
+  .seminar-deck:fullscreen .slide-split .slide-visual .rail-node small,
+  .seminar-deck:fullscreen .slide-split .slide-visual .rail-segment small,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .rail-segment span,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .rail-node small,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .rail-segment small {
+    font-size: clamp(0.86rem, 0.78vw, 1rem);
+    line-height: 1.35;
+  }
+
+  .seminar-deck:fullscreen .slide-split .slide-visual .rail-node span,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .rail-node span {
+    font-size: clamp(1.5rem, 1.35vw, 2rem);
+  }
+
+  .seminar-deck:fullscreen .slide-split .slide-visual .runtime-step,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .runtime-step {
+    min-height: clamp(18rem, 42vh, 26rem);
+    padding: clamp(0.8rem, 1vw, 1.1rem);
+    align-content: center;
+  }
+
+  .seminar-deck:fullscreen .slide-split .slide-visual .runtime-step b,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .runtime-step b {
+    font-size: clamp(1.05rem, 0.95vw, 1.25rem);
+  }
+
+  .seminar-deck:fullscreen .slide-split .slide-visual .runtime-step span,
+  .seminar-deck:fullscreen .slide-split .slide-visual .runtime-step strong,
+  .seminar-deck:fullscreen .slide-split .slide-visual .runtime-step small,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .runtime-step span,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .runtime-step strong,
+  .seminar-deck.is-fullscreen .slide-split .slide-visual .runtime-step small {
+    font-size: clamp(0.86rem, 0.76vw, 1rem);
+    line-height: 1.35;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .cascade-diagram,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .runtime-diagram,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .training-stages,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .principle-map,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .cascade-diagram,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .runtime-diagram,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .training-stages,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .principle-map {
+    height: 100%;
+    align-content: center;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .cascade-diagram,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .runtime-diagram,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .cascade-diagram,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .runtime-diagram {
+    gap: clamp(0.85rem, 1vw, 1.3rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .cascade-diagram h3,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .runtime-diagram h3,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .cascade-diagram h3,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .runtime-diagram h3 {
+    font-size: clamp(1.25rem, 1.15vw, 1.65rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .rail-node,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .rail-segment,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .rail-node,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .rail-segment {
+    min-height: clamp(11rem, 24vh, 18rem);
+    padding: clamp(0.7rem, 0.8vw, 1rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .runtime-step,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .runtime-step {
+    min-height: clamp(11rem, 24vh, 18rem);
+    padding: clamp(0.7rem, 0.8vw, 1rem);
+    align-content: center;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .training-stages div,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .principle-map div,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .training-stages div,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .principle-map div {
+    min-height: clamp(12rem, 30vh, 20rem);
+    justify-content: center;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual:has(.compact-diagram),
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual:has(.compact-diagram) {
+    display: grid;
+    place-items: center;
+    align-self: center;
+    height: clamp(12rem, 32vh, 21rem);
+    max-height: none;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .compact-diagram,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .compact-diagram {
+    height: auto;
+    align-content: center;
+    gap: clamp(0.4rem, 0.7vw, 0.8rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .compact-diagram .rail-node,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .compact-diagram .rail-segment,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .compact-diagram .rail-node,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .compact-diagram .rail-segment {
+    min-height: clamp(5.5rem, 12vh, 7.8rem);
+    padding: clamp(0.42rem, 0.55vw, 0.68rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .compact-diagram .runtime-step,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .compact-diagram .runtime-step {
+    min-height: clamp(5.6rem, 12vh, 8rem);
+    padding: clamp(0.42rem, 0.55vw, 0.68rem);
+    align-content: center;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .training-stages.compact-diagram div,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .training-stages.compact-diagram div {
+    min-height: clamp(5.8rem, 13vh, 8.2rem);
+    padding: clamp(0.42rem, 0.55vw, 0.68rem);
+    justify-content: center;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .training-stages.compact-diagram .flow-arrow,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .training-stages.compact-diagram .flow-arrow {
+    min-height: 0;
+    padding: 0;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .compact-diagram .flow-arrow,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .compact-diagram .runtime-arrow,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .compact-diagram .flow-arrow,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .compact-diagram .runtime-arrow {
+    font-size: clamp(1.25rem, 1.25vw, 1.75rem);
+  }
+
+  @media (max-height: 800px) and (min-width: 900px) {
+    .seminar-deck:fullscreen .slide-stack .slide-visual .mini-table,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .mini-table {
+      font-size: clamp(0.66rem, 0.72vw, 0.82rem);
+    }
+
+    .seminar-deck:fullscreen .slide-fill .slide-visual .mini-table,
+    .seminar-deck.is-fullscreen .slide-fill .slide-visual .mini-table {
+      font-size: clamp(0.66rem, 0.72vw, 0.82rem);
+    }
+
+    .seminar-deck:fullscreen .slide-stack .slide-visual .wide-table,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .wide-table {
+      font-size: clamp(0.52rem, 0.52vw, 0.7rem);
+    }
+
+    .seminar-deck:fullscreen .slide-stack .slide-visual .mini-table th,
+    .seminar-deck:fullscreen .slide-stack .slide-visual .mini-table td,
+    .seminar-deck:fullscreen .slide-fill .slide-visual .mini-table th,
+    .seminar-deck:fullscreen .slide-fill .slide-visual .mini-table td,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .mini-table th,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .mini-table td {
+      padding: clamp(0.24rem, 0.32vw, 0.45rem);
+      line-height: 1.2;
+    }
+
+    .seminar-deck:fullscreen .slide-stack .slide-visual .cascade-diagram,
+    .seminar-deck:fullscreen .slide-stack .slide-visual .runtime-diagram,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .cascade-diagram,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .runtime-diagram {
+      gap: 0.45rem;
+    }
+
+    .seminar-deck:fullscreen .slide-stack .slide-visual .cascade-diagram h3,
+    .seminar-deck:fullscreen .slide-stack .slide-visual .runtime-diagram h3,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .cascade-diagram h3,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .runtime-diagram h3 {
+      font-size: clamp(0.9rem, 0.9vw, 1.15rem);
+    }
+
+    .seminar-deck:fullscreen .slide-stack .slide-visual .rail-node,
+    .seminar-deck:fullscreen .slide-stack .slide-visual .rail-segment,
+    .seminar-deck:fullscreen .slide-stack .slide-visual .runtime-step,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .rail-node,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .rail-segment,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .runtime-step {
+      min-height: clamp(6.5rem, 16vh, 9rem);
+      padding: 0.45rem;
+    }
+
+    .seminar-deck:fullscreen .slide-stack .slide-visual .rail-segment strong,
+    .seminar-deck:fullscreen .slide-stack .slide-visual .runtime-step b,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .rail-segment strong,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .runtime-step b {
+      font-size: clamp(0.78rem, 0.78vw, 0.95rem);
+    }
+
+    .seminar-deck:fullscreen .slide-stack .slide-visual .rail-segment span,
+    .seminar-deck:fullscreen .slide-stack .slide-visual .rail-node small,
+    .seminar-deck:fullscreen .slide-stack .slide-visual .rail-segment small,
+    .seminar-deck:fullscreen .slide-stack .slide-visual .runtime-step span,
+    .seminar-deck:fullscreen .slide-stack .slide-visual .runtime-step strong,
+    .seminar-deck:fullscreen .slide-stack .slide-visual .runtime-step small,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .rail-segment span,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .rail-node small,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .rail-segment small,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .runtime-step span,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .runtime-step strong,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .runtime-step small {
+      font-size: clamp(0.58rem, 0.58vw, 0.72rem);
+      line-height: 1.18;
+    }
+
+    .seminar-deck:fullscreen .slide-stack .slide-visual .training-stages div,
+    .seminar-deck:fullscreen .slide-stack .slide-visual .principle-map div,
+    .seminar-deck:fullscreen .slide-fill .slide-visual .principle-map div,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .training-stages div,
+    .seminar-deck.is-fullscreen .slide-stack .slide-visual .principle-map div,
+    .seminar-deck.is-fullscreen .slide-fill .slide-visual .principle-map div {
+      min-height: clamp(6rem, 18vh, 9rem);
+      padding: 0.5rem;
+    }
+
+    .seminar-deck:fullscreen .slide-fill .slide-visual .principle-map,
+    .seminar-deck.is-fullscreen .slide-fill .slide-visual .principle-map {
+      gap: 0.4rem;
+    }
+
+    .seminar-deck:fullscreen .slide-visual .dataset-funnel,
+    .seminar-deck.is-fullscreen .slide-visual .dataset-funnel {
+      gap: 0.24rem;
+    }
+
+    .seminar-deck:fullscreen .slide-visual .funnel-row,
+    .seminar-deck:fullscreen .slide-visual .pair-examples,
+    .seminar-deck.is-fullscreen .slide-visual .funnel-row,
+    .seminar-deck.is-fullscreen .slide-visual .pair-examples {
+      gap: 0.24rem;
+    }
+
+    .seminar-deck:fullscreen .slide-visual .funnel-row span,
+    .seminar-deck:fullscreen .slide-visual .funnel-step,
+    .seminar-deck:fullscreen .slide-visual .pair-examples span,
+    .seminar-deck:fullscreen .slide-visual .invalid-pairs,
+    .seminar-deck.is-fullscreen .slide-visual .funnel-row span,
+    .seminar-deck.is-fullscreen .slide-visual .funnel-step,
+    .seminar-deck.is-fullscreen .slide-visual .pair-examples span,
+    .seminar-deck.is-fullscreen .slide-visual .invalid-pairs {
+      padding: 0.28rem;
+    }
+
+    .seminar-deck:fullscreen .slide-visual .invalid-pairs,
+    .seminar-deck.is-fullscreen .slide-visual .invalid-pairs {
+      gap: 0.2rem;
+    }
+
+    .seminar-deck:fullscreen .slide-visual .invalid-pairs span,
+    .seminar-deck.is-fullscreen .slide-visual .invalid-pairs span {
+      padding: 0.18rem 0.28rem;
+      font-size: 0.66rem;
+    }
+
+    .seminar-deck:fullscreen .slide-visual .pair-examples span,
+    .seminar-deck.is-fullscreen .slide-visual .pair-examples span {
+      font-size: 0.68rem;
+    }
+  }
+
+  .seminar-deck:fullscreen .slide-visual .dataset-funnel,
+  .seminar-deck:fullscreen .slide-visual .expert-spec-card,
+  .seminar-deck:fullscreen .slide-visual .tactile-encoder-map,
+  .seminar-deck:fullscreen .slide-visual .vqvae-loss-map,
+  .seminar-deck.is-fullscreen .slide-visual .dataset-funnel,
+  .seminar-deck.is-fullscreen .slide-visual .expert-spec-card,
+  .seminar-deck.is-fullscreen .slide-visual .tactile-encoder-map,
+  .seminar-deck.is-fullscreen .slide-visual .vqvae-loss-map {
+    gap: 0.45rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .expert-spec-card,
+  .seminar-deck.is-fullscreen .slide-visual .expert-spec-card {
+    min-height: 0;
+    align-content: stretch;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .expert-spec-card h3,
+  .seminar-deck:fullscreen .slide-visual .tactile-encoder-map h3,
+  .seminar-deck:fullscreen .slide-visual .vqvae-loss-map h3,
+  .seminar-deck.is-fullscreen .slide-visual .expert-spec-card h3,
+  .seminar-deck.is-fullscreen .slide-visual .tactile-encoder-map h3,
+  .seminar-deck.is-fullscreen .slide-visual .vqvae-loss-map h3 {
+    font-size: 1.12rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .io-strip,
+  .seminar-deck.is-fullscreen .slide-visual .io-strip {
+    gap: 0.2rem;
+    padding: 0.45rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .io-strip span,
+  .seminar-deck.is-fullscreen .slide-visual .io-strip span {
+    font-size: 0.68rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .io-strip strong,
+  .seminar-deck:fullscreen .slide-visual .expert-spec-card small,
+  .seminar-deck.is-fullscreen .slide-visual .io-strip strong,
+  .seminar-deck.is-fullscreen .slide-visual .expert-spec-card small {
+    font-size: 0.78rem;
+    line-height: 1.25;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .micro-table,
+  .seminar-deck.is-fullscreen .slide-visual .micro-table {
+    font-size: 0.72rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .micro-table td,
+  .seminar-deck.is-fullscreen .slide-visual .micro-table td {
+    padding: 0.3rem 0.4rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .funnel-row span,
+  .seminar-deck:fullscreen .slide-visual .funnel-step,
+  .seminar-deck:fullscreen .slide-visual .pair-examples span,
+  .seminar-deck:fullscreen .slide-visual .invalid-pairs,
+  .seminar-deck.is-fullscreen .slide-visual .funnel-row span,
+  .seminar-deck.is-fullscreen .slide-visual .funnel-step,
+  .seminar-deck.is-fullscreen .slide-visual .pair-examples span,
+  .seminar-deck.is-fullscreen .slide-visual .invalid-pairs {
+    padding: 0.45rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .invalid-pairs,
+  .seminar-deck:fullscreen .slide-visual .pair-examples,
+  .seminar-deck.is-fullscreen .slide-visual .invalid-pairs,
+  .seminar-deck.is-fullscreen .slide-visual .pair-examples {
+    gap: 0.32rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .invalid-pairs strong,
+  .seminar-deck.is-fullscreen .slide-visual .invalid-pairs strong {
+    font-size: 0.68rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .invalid-pairs span,
+  .seminar-deck.is-fullscreen .slide-visual .invalid-pairs span {
+    padding: 0.3rem 0.42rem;
+    font-size: 0.74rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .pair-examples span,
+  .seminar-deck.is-fullscreen .slide-visual .pair-examples span {
+    font-size: 0.76rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .encoder-row,
+  .seminar-deck.is-fullscreen .slide-visual .encoder-row {
+    gap: 0.22rem;
+    padding: 0.45rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .encoder-row span,
+  .seminar-deck:fullscreen .slide-visual .encoder-row i,
+  .seminar-deck:fullscreen .slide-visual .encoder-row strong,
+  .seminar-deck.is-fullscreen .slide-visual .encoder-row span,
+  .seminar-deck.is-fullscreen .slide-visual .encoder-row i,
+  .seminar-deck.is-fullscreen .slide-visual .encoder-row strong {
+    font-size: 0.74rem;
+    line-height: 1.25;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .encoder-row strong,
+  .seminar-deck:fullscreen .slide-visual .encoder-merge,
+  .seminar-deck:fullscreen .slide-visual .encoder-output,
+  .seminar-deck.is-fullscreen .slide-visual .encoder-row strong,
+  .seminar-deck.is-fullscreen .slide-visual .encoder-merge,
+  .seminar-deck.is-fullscreen .slide-visual .encoder-output {
+    padding: 0.36rem 0.45rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .encoder-merge,
+  .seminar-deck:fullscreen .slide-visual .encoder-output,
+  .seminar-deck.is-fullscreen .slide-visual .encoder-merge,
+  .seminar-deck.is-fullscreen .slide-visual .encoder-output {
+    font-size: 0.78rem;
+    line-height: 1.25;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .loss-card,
+  .seminar-deck.is-fullscreen .slide-visual .loss-card {
+    gap: 0.28rem;
+    padding: 0.55rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .loss-card span,
+  .seminar-deck:fullscreen .slide-visual .loss-card strong,
+  .seminar-deck.is-fullscreen .slide-visual .loss-card span,
+  .seminar-deck.is-fullscreen .slide-visual .loss-card strong {
+    font-size: 0.78rem;
+    line-height: 1.25;
+  }
+
+  .seminar-deck .slide-visual .two-column,
+  .seminar-deck .slide-visual .funnel-row,
+  .seminar-deck .slide-visual .pair-examples,
+  .seminar-deck .slide-visual .expert-flow,
+  .seminar-deck .slide-visual .refine-grid,
+  .seminar-deck .slide-visual .denoise-lane,
+  .seminar-deck .slide-visual .cascaded-flow,
+  .seminar-deck .slide-visual .clock-row,
+  .seminar-deck .slide-visual .clock-row.control,
+  .seminar-deck .slide-visual .training-stages,
+  .seminar-deck .slide-visual .principle-map {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  }
+
+  .seminar-deck .slide-visual .runtime-sequence.no-arrows {
+    grid-template-columns: 1.18fr repeat(3, minmax(0, 1fr));
+  }
+
+  .seminar-deck .slide-visual .training-stages.compact-diagram.no-arrows {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .seminar-deck:fullscreen .slide-stack:has(.runtime-sequence.no-arrows),
+  .seminar-deck:fullscreen .slide-stack:has(.training-stages.compact-diagram.no-arrows),
+  .seminar-deck.is-fullscreen .slide-stack:has(.runtime-sequence.no-arrows),
+  .seminar-deck.is-fullscreen .slide-stack:has(.training-stages.compact-diagram.no-arrows) {
+    grid-template-rows: minmax(0, 1fr) clamp(12rem, 32vh, 21rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual:has(.runtime-sequence.no-arrows),
+  .seminar-deck:fullscreen .slide-stack .slide-visual:has(.training-stages.compact-diagram.no-arrows),
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual:has(.runtime-sequence.no-arrows),
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual:has(.training-stages.compact-diagram.no-arrows) {
+    align-self: end;
+    height: clamp(12rem, 32vh, 21rem);
+  }
+
+  .seminar-deck:fullscreen .slide-visual .runtime-diagram:has(.runtime-sequence.no-arrows) h3,
+  .seminar-deck.is-fullscreen .slide-visual .runtime-diagram:has(.runtime-sequence.no-arrows) h3 {
+    display: none;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .runtime-sequence.no-arrows,
+  .seminar-deck:fullscreen .slide-visual .training-stages.compact-diagram.no-arrows,
+  .seminar-deck.is-fullscreen .slide-visual .runtime-sequence.no-arrows,
+  .seminar-deck.is-fullscreen .slide-visual .training-stages.compact-diagram.no-arrows {
+    align-items: stretch;
+    height: clamp(9.5rem, 17vh, 11.5rem);
+  }
+
+  .seminar-deck:fullscreen .slide-visual .runtime-sequence.no-arrows .runtime-step,
+  .seminar-deck:fullscreen .slide-visual .training-stages.compact-diagram.no-arrows > div,
+  .seminar-deck.is-fullscreen .slide-visual .runtime-sequence.no-arrows .runtime-step,
+  .seminar-deck.is-fullscreen .slide-visual .training-stages.compact-diagram.no-arrows > div {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .runtime-diagram:has(.runtime-sequence.no-arrows),
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .runtime-diagram:has(.runtime-sequence.no-arrows) {
+    height: clamp(9.5rem, 17vh, 11.5rem);
+    gap: 0;
+    align-content: stretch;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .runtime-sequence.no-arrows,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .training-stages.compact-diagram.no-arrows,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .runtime-sequence.no-arrows,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .training-stages.compact-diagram.no-arrows {
+    align-content: stretch;
+    grid-auto-rows: 1fr;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .runtime-sequence.no-arrows .runtime-step,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .training-stages.compact-diagram.no-arrows > div,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .runtime-sequence.no-arrows .runtime-step,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .training-stages.compact-diagram.no-arrows > div {
+    box-sizing: border-box;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .seminar-deck .slide-visual .setup-figure {
+    width: min(100%, 88rem);
+  }
+
+  .seminar-deck .slide-visual .small-figure {
+    width: min(100%, 70rem);
+  }
+
+  .seminar-deck:fullscreen .slide-fill .slide-visual:has(.compact-spec),
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual:has(.compact-spec),
+  .seminar-deck:fullscreen .slide-fill .slide-visual:has(.compact-table),
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual:has(.compact-table),
+  .seminar-deck:fullscreen .slide-fill .slide-visual:has(.compact-principle-map),
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual:has(.compact-principle-map) {
+    align-self: center;
+    height: auto;
+    max-height: calc(100vh - 8rem);
+    overflow: hidden;
+  }
+
+  .seminar-deck:fullscreen .slide-fill .slide-visual .compact-spec,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .compact-spec,
+  .seminar-deck:fullscreen .slide-fill .slide-visual .compact-table,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .compact-table {
+    height: auto;
+    max-height: 100%;
+  }
+
+  .seminar-deck:fullscreen .slide-fill .slide-visual .compact-spec,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .compact-spec {
+    align-content: start;
+    max-width: min(100%, 48rem);
+  }
+
+  .seminar-deck:fullscreen .slide-fill .slide-visual:has(.compact-table),
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual:has(.compact-table) {
+    display: grid;
+    place-items: center;
+    padding: clamp(0.55rem, 0.75vw, 0.9rem);
+  }
+
+  .seminar-deck:fullscreen .slide-fill .slide-visual .compact-table,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .compact-table {
+    width: min(100%, 46rem);
+    font-size: clamp(1rem, 0.95vw, 1.18rem);
+  }
+
+  .seminar-deck:fullscreen .slide-fill .slide-visual .compact-table th,
+  .seminar-deck:fullscreen .slide-fill .slide-visual .compact-table td,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .compact-table th,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .compact-table td {
+    padding: clamp(0.48rem, 0.55vw, 0.72rem);
+    line-height: 1.28;
+  }
+
+  .seminar-deck:fullscreen .slide-fill .slide-visual .compact-principle-map,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .compact-principle-map {
+    height: auto;
+    gap: clamp(0.55rem, 0.75vw, 0.85rem);
+  }
+
+  .seminar-deck:fullscreen .slide-fill .slide-visual .compact-principle-map div,
+  .seminar-deck.is-fullscreen .slide-fill .slide-visual .compact-principle-map div {
+    min-height: clamp(5.4rem, 12vh, 8rem);
+    padding: clamp(0.55rem, 0.7vw, 0.85rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual:has(.setup-figure),
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual:has(.setup-figure) {
+    height: clamp(14rem, 34vh, 23rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual:has(.small-figure),
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual:has(.small-figure) {
+    height: clamp(10rem, 25vh, 17rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .setup-figure,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .small-figure,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .setup-figure,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .small-figure {
+    position: relative;
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .plot-frame.setup-figure img,
+  .seminar-deck:fullscreen .slide-stack .slide-visual .plot-frame.small-figure img,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .plot-frame.setup-figure img,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .plot-frame.small-figure img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual:has(.appendix-table),
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual:has(.appendix-table) {
+    height: clamp(11rem, 27vh, 18rem);
+  }
+
+  @media (max-width: 760px) {
+    .seminar-deck .slide-visual .two-column,
+    .seminar-deck .slide-visual .funnel-row,
+    .seminar-deck .slide-visual .pair-examples,
+    .seminar-deck .slide-visual .expert-flow,
+    .seminar-deck .slide-visual .refine-grid,
+    .seminar-deck .slide-visual .denoise-lane,
+    .seminar-deck .slide-visual .cascaded-flow,
+    .seminar-deck .slide-visual .flow-rail,
+    .seminar-deck .slide-visual .runtime-sequence,
+    .seminar-deck .slide-visual .runtime-bottom,
+    .seminar-deck .slide-visual .clock-row,
+    .seminar-deck .slide-visual .clock-row.control,
+    .seminar-deck .slide-visual .training-stages,
+    .seminar-deck .slide-visual .principle-map {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
