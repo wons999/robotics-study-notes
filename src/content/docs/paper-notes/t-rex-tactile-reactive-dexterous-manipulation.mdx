@@ -479,6 +479,163 @@ Figure 6은 100시간 T-Rex dataset mid-training과 100시간 task-specific data
 - 100시간 tactile dataset은 task demo 모음이 아니라 reusable motor primitive와 contact behavior를 배우기 위한 mid-training corpus다.
 - force history와 deformation map을 함께 쓰는 tactile representation이 중요하다.
 
+## Appendix A-H 상세 정리
+
+<SectionFeedback page="T-Rex" section="Appendix A-H 상세 정리" />
+
+논문 Appendix는 main text에서 압축된 구현, 평가, 데이터셋, 실패 사례를 보강한다. T-Rex를 “좋은 결과가 나온 논문”으로만 보지 않고 실제로 재현하거나 변형하려면 Appendix를 같이 읽어야 한다.
+
+| Appendix | 원문 제목 | 핵심 역할 | 이 노트에서 볼 관점 |
+| --- | --- | --- | --- |
+| A | Model and Training Details | expert별 모델 크기와 학습 hyperparameter | 어느 정도 compute와 모델 크기가 필요한가 |
+| B | Additional Details for Asynchronous Cascaded Denoising | slow/fast denoising의 objective와 runtime 동기화 | tactile loop를 architecture로 어떻게 분리했는가 |
+| C | Implementation Details for Spatial-Temporal Tactile Encoder | force VQ-VAE와 deformation encoder 구현 | tactile을 raw state가 아니라 representation으로 다루는 법 |
+| D | Real-World Setup and Teleoperation Stack | hardware, camera, teleoperation, controller stack | 데이터와 rollout이 어떤 시스템 위에서 만들어졌는가 |
+| E | Implementation Details of Baselines | baseline 재현 조건 | Table 1 비교가 얼마나 공정한가 |
+| F | Evaluation Tasks | 12개 task와 rubric | 성공률 숫자가 어떤 행동 기준에서 나온 것인가 |
+| G | T-Rex Dataset | dataset schema, taxonomy, cleaning, annotation | mid-training data가 왜 task demo 모음 이상인가 |
+| H | Failure Case Analysis | 실패 유형 분석 | 다음 연구가 어디를 보완해야 하는가 |
+
+### Appendix 이미지 인덱스
+
+| Appendix | 이미지 | 노트에서의 의미 |
+| --- | --- | --- |
+| D | ![Real-world setup](https://arxiv.org/html/2606.17055v1/x7.png) | robot, cameras, tactile sensors, teleoperation 장비를 한 장으로 보여준다. |
+| F | Figures 8-19 | 12개 evaluation task의 key stage 이미지다. 이 노트의 [task별 figure](#task별-figure)에 모두 정리해두었다. |
+| G | ![T-Rex Dataset](https://arxiv.org/html/2606.17055v1/x2.png) | object category, motor primitive, object distribution을 보여주는 dataset 통계 그림이다. |
+| H | ![Failure Case Analysis](https://arxiv.org/html/2606.17055v1/x20.png) | 실패가 어느 실행 단계에서 발생하는지와 contact issue가 어디에 있었는지 보여준다. |
+
+### Appendix A. Model and Training Details
+
+Appendix A는 T-Rex가 어느 정도 크기의 모델과 학습 자원 위에서 성립하는지 보여준다. 이 노트의 [모델 configuration](#모델-configuration)에 들어간 Table 4 정보가 이 부록에서 온다.
+
+| 구성 | 핵심 설정 | 해석 |
+| --- | --- | --- |
+| latent expert | Qwen3VL-2B 기반, hidden dimension 2048, 28 layers, 1.41B params | vision-language context와 future visual prediction을 담당하는 무거운 slow expert다. |
+| action expert | action dimension 62, chunk 16, inference step 6, 1.41B params | low-frequency coarse action을 생성한다. arm delta와 finger command를 한 action vector 안에 담는다. |
+| tactile expert | action dimension 62, chunk 16, FFN intermediate 1536, inference step 4, 0.62B params | fast loop에서 돌기 위해 action expert보다 작게 만든다. 이 크기 차이가 variable-rate 구조의 실용성을 만든다. |
+| training | AdamW, peak LR `1e-4`, cosine schedule, H100 24장, ZeRO-1, bf16 | 단순 finetuning 실험이라기보다 foundation-policy 규모의 mid/post-training recipe다. |
+
+**해석:** T-Rex의 핵심은 tactile expert 하나를 추가한 것이 아니라, 느린 reasoning expert와 빠른 tactile expert의 계산량을 의도적으로 다르게 설계한 점이다. Appendix A를 보면 fast tactile expert가 0.62B로 작아져 있는데, 이것이 실제 robot loop에서 다시 실행 가능한 크기라는 주장을 뒷받침한다.
+
+### Appendix B. Additional Details for Asynchronous Cascaded Denoising
+
+Appendix B는 T-Rex의 가장 중요한 알고리즘 디테일을 보강한다. main text에서는 cascaded flow matching을 큰 그림으로 설명하지만, Appendix B는 objective, conditioning, KV cache, delay augmentation, runtime synchronization을 더 구체적으로 푼다.
+
+| 요소 | 내용 | 왜 중요한가 |
+| --- | --- | --- |
+| action expert objective | visual-language latent context에 condition된 shared velocity target 회귀 | coarse action은 RGB/language 기반의 느린 reasoning에 맡긴다. |
+| tactile expert objective | raw vision 없이 tactile token, detached intermediate state, KV cache에 condition | fast expert가 매번 vision backbone을 다시 돌리지 않아도 된다. |
+| KV cache re-use | slow stream이 만든 visual-language cache와 partially-denoised boundary state를 fast stream이 복사해서 사용 | 계산량을 amortize하면서 tactile feedback을 action chunk 중간에 반영한다. |
+| delay augmentation | visual context와 tactile frame index를 일부러 어긋나게 sampling | deployment에서 생기는 stale visual context와 real-time tactile mismatch를 학습 중에 미리 겪게 한다. |
+| execution lock | slow tick이 cache를 commit하기 전 fast tick이 시작하지 않도록 lock 사용 | 실제 robot runtime에서 shared memory race condition을 막는다. |
+
+**해석:** 이 부록은 “tactile을 input에 붙였다”와 “tactile-reactive policy를 만들었다”의 차이를 잘 보여준다. T-Rex는 tactile을 static observation으로 쓰지 않고, slow stream이 만든 action을 fast stream이 다시 denoise하는 control-frequency 문제로 재정의한다.
+
+### Appendix C. Implementation Details for Spatial-Temporal Tactile Encoder
+
+Appendix C는 tactile encoder가 왜 두 갈래인지 설명한다. T-Rex는 tactile을 6D force vector 하나로 끝내지 않고, temporal force dynamics와 spatial deformation geometry를 분리해서 표현한다.
+
+| encoder | 입력 | 처리 방식 | 얻는 정보 |
+| --- | --- | --- | --- |
+| temporal force VQ-VAE | fingertip별 최근 force window | 1D temporal conv, strided downsampling, mean pooling, VQ codebook, EMA update | slip, grip force 변화, contact impulse 같은 시간 패턴 |
+| instantaneous force projection | 현재 6D force | 직접 projection | 지금 당장의 contact magnitude |
+| deformation encoder | single-channel deformation depth map | ResNet-18 변형, 앞 3개 residual stage, policy token projection | edge, shear, local contact geometry |
+
+세부적으로 force VQ-VAE는 codebook collapse를 막기 위해 underutilized code를 current batch activation으로 reseeding하고, high-force contact frame에 더 큰 penalty를 주는 magnitude-weighted MSE를 사용한다. deformation encoder는 self-supervised convolutional autoencoder로 pretrain한 뒤 policy 학습 중 freeze한다.
+
+**해석:** force vector는 compact하지만 contact geometry를 잃기 쉽고, deformation map은 geometry가 풍부하지만 계산량과 sensor-specific bias가 있다. T-Rex는 둘 중 하나를 고르지 않고, force는 temporal token으로 압축하고 deformation은 spatial embedding으로 보존한다. Table 2에서 `Deform only`, `MLP Force + VQ-VAE Force`, `MLP Force + Deform`이 모두 full model보다 낮은 이유를 이 부록이 설명해준다.
+
+### Appendix D. Real-World Setup and Teleoperation Stack
+
+Appendix D는 데이터 수집과 rollout이 어떤 real robot stack에서 이루어졌는지 보여준다.
+
+![Appendix D real-world setup](https://arxiv.org/html/2606.17055v1/x7.png)
+
+그림 출처: [T-Rex Figure 7](https://arxiv.org/html/2606.17055v1)
+
+| 항목 | 내용 | 해석 |
+| --- | --- | --- |
+| robot | Dexmate Vega-1 bimanual robot | mobile/torso/head는 고정하고 양팔 14개 joint만 actuate한다. |
+| hand | 양쪽 Sharpa Wave dexterous hand | 22-DoF hand를 직접 예측 대상으로 둔다. |
+| visual sensing | head ZED X Mini, wrist ZED X One S 2개 | head는 workspace 전체, wrist는 finger 주변 occlusion 보완을 담당한다. |
+| tactile sensing | 각 손 5개 fingertip sensor, deformation depth와 6-axis net wrench | local geometry와 global-ish force 정보를 동시에 기록한다. |
+| teleoperation | Manus gloves, VIVE trackers | wrist pose와 hand gesture를 분리해서 retargeting한다. |
+| control | high-level 30Hz, low-level 300Hz | dataset 기록 cadence와 controller cadence가 다르다. T-Rex의 slow/fast 구조와 맞닿아 있다. |
+
+**해석:** 이 부록은 성능을 hardware-independent하게 해석하면 안 된다는 점을 상기시킨다. wrist camera 위치, tactile sensor 종류, hand actuation, differential IK, low-pass filtering, low-level PID가 모두 policy가 보는 data distribution과 action feasibility를 결정한다.
+
+### Appendix E. Implementation Details of Baselines
+
+Appendix E는 Table 1의 비교 모델들이 어떻게 재현/적응됐는지 설명한다. 이 부분은 결과 해석에서 중요하다. 같은 이름의 baseline이라도 embodiment, action space, tactile input 형태가 바뀌면 성능이 크게 달라질 수 있기 때문이다.
+
+| baseline | Appendix E의 구현 포인트 | 해석 |
+| --- | --- | --- |
+| ViTacFormer | task별 ACT policy, 100 demos/task, 100 epochs, 6D per-finger force conditioning | tactile representation은 쓰지만 task-specific imitation 쪽에 가깝다. |
+| RDP | task별 Asymmetric Tokenizer와 Latent Diffusion Policy를 따로 학습 | slow-fast tactile idea는 공유하지만 foundation-style pre/mid-training은 약하다. |
+| Tactile-VLA | GelSight 대신 10 finger의 6D force/torque로 tactile encoder를 맞춤 | 원 논문 sensor assumption을 T-Rex platform에 맞게 바꾼 adaptation이다. |
+| EgoScale | GR00T N1.7 기반, 12개 task별 finetune, state dropout과 image augmentation | human egocentric pretraining의 강한 baseline 역할을 한다. |
+| pi_0.5 | OpenPI checkpoint에서 task별 finetune, bimanual joint-space setup | flow-matching VLA 계열의 대표 비교군이다. |
+| pi_0.5 + tactile | state input에 single-step tactile force를 concatenate | tactile을 단순 state로 붙이면 오히려 성능이 떨어질 수 있음을 보여준다. |
+
+**해석:** Appendix E를 보면 T-Rex의 장점은 baseline을 약하게 만든 데서만 나오지 않는다. 강한 human-pretrained baseline인 EgoScale도 포함하고, pi_0.5에 tactile을 붙인 naive variant도 비교한다. 다만 모든 baseline이 원 논문 그대로가 아니라 T-Rex hardware에 맞춰 adaptation된 결과라는 점은 기억해야 한다.
+
+### Appendix F. Evaluation Tasks
+
+Appendix F는 12개 evaluation task를 자세히 설명한다. 각 task는 force-reactive, tactile-deformation sensitive, bimanual coordination, long-horizon sequencing 중 하나 이상을 요구한다. 논문은 additive rubric과 progress-based rubric을 함께 사용한다.
+
+| task 그룹 | task | tactile이 필요한 이유 |
+| --- | --- | --- |
+| 얇고 미끄러운 물체 | Flip Page, Extract Card, Deal Poker | 한 장만 분리하거나 friction을 일정하게 유지해야 한다. |
+| fragile/deformable object | Transfer Egg, Apply Toothpaste | 너무 약하면 놓치고 너무 세면 깨지거나 과도하게 변형된다. |
+| surface/contact state | Wipe Plate, Sort Mahjong | RGB만으로 압력, 표면 texture, 접촉 상태를 충분히 알기 어렵다. |
+| insertion/torque | Open Lock, Screw Lightbulb | 정렬, 삽입, 회전 torque feedback이 중요하다. |
+| small mechanism/liquid | Refill Tablet, Acid-Base Neutralization | 작은 버튼/뚜껑/액체 조작처럼 multi-stage precision이 필요하다. |
+| nested/friction object | Split Cup | cup stack friction과 twist/rub force를 조절해야 한다. |
+
+Appendix F의 key-stage 이미지들은 이 노트의 [task별 figure](#task별-figure)에 Figure 8부터 Figure 19까지 정리해두었다. 이 이미지들은 단순 illustration이 아니라 rubric을 이해하는 데 중요하다. 예를 들어 Extract Card는 “카드를 빼기”가 아니라 bottom card를 다시 밀어 넣고 top card만 빼야 하며, Screw Lightbulb는 잡기 성공이 아니라 thread engagement와 light-on까지 봐야 한다.
+
+**해석:** Table 1의 평균 성공률을 읽을 때는 task별 rubric을 같이 봐야 한다. 여러 task가 partial credit을 포함하므로, 65%는 “완전 성공률만”의 의미라기보다 contact-rich multi-stage progress를 반영한 점수에 가깝다.
+
+### Appendix G. T-Rex Dataset
+
+Appendix G는 T-Rex Dataset이 어떻게 구성됐는지 자세히 설명한다.
+
+![Appendix G dataset statistics](https://arxiv.org/html/2606.17055v1/x2.png)
+
+그림 출처: [T-Rex Figure 2](https://arxiv.org/html/2606.17055v1)
+
+| 항목 | 내용 | 해석 |
+| --- | --- | --- |
+| episode schema | RGB 3개, proprioception, wrist pose, tactile deformation/wrench, language instruction | policy가 vision, state, touch, language를 같은 timestamp 기준으로 배운다. |
+| taxonomy | 207 objects x 22 motor primitives 후보에서 feasible pair만 유지 | dataset을 task list가 아니라 reusable primitive coverage로 설계한다. |
+| 최종 규모 | 502 object-motor pair, 7,755 episodes, 100 hours | downstream task demo보다 넓은 contact behavior prior를 만든다. |
+| scene diversity | 6개 tabletop backdrop, 210개 이상 distractor pool, 0-5개 distractor | language-conditioned target selection과 visual robustness를 압박한다. |
+| cleaning | unstable tactile, corrupted stream, teleop failure, extreme joint velocity 제거 | tactile dataset은 sensor 품질 관리가 성능에 직접 연결된다. |
+| language annotation | head camera 4-6 frame과 최소 label을 VLM에 넣고 사람이 검수 | task id가 아니라 episode motion을 설명하는 instruction을 만든다. |
+| release/ethics | raw stream, derived tactile representation, annotation, loader/preprocess script 공개 계획 | 재현성을 dataset artifact 수준에서 제공하려는 방향이다. |
+
+**해석:** Appendix G의 핵심은 100시간이라는 숫자보다 “무엇을 100시간 모았는가”다. T-Rex는 downstream task 12개만 반복 수집한 것이 아니라, object-primitive 조합을 통해 reusable contact behavior를 넓게 모았다. 그래서 Figure 6의 mid-training ablation에서 task-specific 100시간보다 T-Rex dataset mid-training이 generalization에 유리하다는 해석이 가능하다.
+
+### Appendix H. Failure Case Analysis
+
+Appendix H는 T-Rex가 어디서 실패하는지 보여준다.
+
+![Appendix H failure case analysis](https://arxiv.org/html/2606.17055v1/x20.png)
+
+그림 출처: [T-Rex Figure 20](https://arxiv.org/html/2606.17055v1)
+
+| 실패 유형 | 예시 task | 원인 해석 | 다음 연구 질문 |
+| --- | --- | --- | --- |
+| Object collision | Screw Lightbulb | grasp 후 socket insertion alignment가 틀어져 base와 충돌 | visual alignment와 force-aware insertion controller를 어떻게 결합할까 |
+| Slipping off | Open Lock | 작은 key를 안정적으로 유지하지 못하고 drop | grip maintenance와 in-hand stabilization을 어떻게 학습할까 |
+| Imprecise position | Transfer Egg | egg를 깨지지 않게 잡지만 tray 안에 정확히 놓지 못함 | BC distribution shift를 줄이기 위해 online correction/RL이 필요한가 |
+| Multi-finger friction | Sort Mahjong | thumb 위치가 낮아 다른 tile compartment까지 건드림 | finger-level collision/contact awareness를 어떻게 넣을까 |
+| Excessive force | Apply Toothpaste | tube를 너무 세게 눌러 toothpaste가 과도하게 나옴 | deformable object의 force magnitude를 closed-loop로 제한할 수 있는가 |
+| Sliding misalignment | Extract Card | card sleeve에서 균일한 sliding force를 못 만듦 | temporal tactile conditioning을 더 강하게 만들 방법은 무엇인가 |
+
+**해석:** Appendix H는 T-Rex가 tactile-reactive 구조를 갖고도 여전히 offline BC 한계를 가진다는 점을 보여준다. 실패는 대부분 “touch를 못 봐서”만 생기지 않는다. alignment, fine positioning, multi-finger coordination, force magnitude regulation, recovery policy가 함께 필요하다. 그래서 후속 방향은 tactile encoder 개선만이 아니라, online adaptation, constraint-aware controller, task-level recovery policy까지 포함해야 한다.
+
 ## Citation Trail
 
 <SectionFeedback page="T-Rex" section="Citation Trail" />
