@@ -1,0 +1,23 @@
+---
+interface Props {
+  class?: string;
+  label?: string;
+  seminarPath?: string;
+  slidePath?: string;
+}
+
+const {
+  class: className = 'seminar-button',
+  label = '발표 슬라이드 보기',
+  seminarPath = 'seminars/t-rex/',
+  slidePath = 'seminars/t-rex/slides/'
+} = Astro.props;
+
+const basePath = import.meta.env.BASE_URL.endsWith('/')
+  ? import.meta.env.BASE_URL
+  : `${import.meta.env.BASE_URL}/`;
+const returnTo = `${basePath}${seminarPath}`;
+const href = `${basePath}${slidePath}?fullscreen=1&returnTo=${encodeURIComponent(returnTo)}`;
+---
+
+<a class={className} href={href}>{label}</a>
