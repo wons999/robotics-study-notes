@@ -37,3 +37,31 @@
 main strong {
   color: var(--sl-color-white);
 }
+
+.seminar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1rem 0 1.5rem;
+}
+
+.seminar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.95rem;
+  border: 1px solid var(--sl-color-accent);
+  border-radius: 8px;
+  background: var(--sl-color-accent);
+  color: var(--sl-color-black);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.seminar-button:hover,
+.seminar-button:focus-visible {
+  color: var(--sl-color-black);
+  filter: brightness(1.08);
+  text-decoration: none;
+}
