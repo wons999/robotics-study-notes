@@ -28,7 +28,7 @@ When checking user/site feedback, check issues in `wons999/robotics-study-notes-
 
 ## Local Repo Notes
 
-- This repo was moved to `~/workspace/robotics-study-notes`.
+- This repo was moved to `/home/wh/study/robotics-study-notes`.
 - Use this directory as the working copy for code and content changes.
 - The site is built with Astro/Starlight.
 - Run `npm run build` before committing meaningful site changes.
@@ -36,3 +36,12 @@ When checking user/site feedback, check issues in `wons999/robotics-study-notes-
   `docker run --rm --user 1000:1000 -p 4322:4321 -v /home/wh/study/robotics-study-notes:/app -w /app node:24-alpine npm run dev -- --host 0.0.0.0`
 - If port 4321 is already allocated, expose the container on 4322 and open `http://127.0.0.1:4322/seminars/t-rex/`.
 - For seminar deck visual QA, use Playwright with the cached Chromium binary at `/home/wh/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome` and launch with `args: ['--no-sandbox']`. Check fullscreen-like viewports such as 1920x1080, 2560x1440, and 3840x2160 when changing slide layout, tables, figures, or typography.
+
+## T-Rex Seminar Notes
+
+- The T-Rex seminar landing page should stay lightweight: title, `발표 슬라이드 보기` button, and presentation materials only.
+- Do not reintroduce the small embedded deck preview on `src/content/docs/seminars/t-rex.mdx` unless the user explicitly asks for it.
+- The slide-only route is `src/content/docs/seminars/t-rex/slides.mdx`; keep it hidden from sidebar/search/pagination and preserve the `?fullscreen=1&returnTo=../` entry flow.
+- The deck `Exit` behavior from the slide-only fullscreen view should return to `/seminars/t-rex/`.
+- For seminar tables and diagrams, keep projector readability in mind: visual boxes need clear contrast against the page background, table lines should be white, and table cell backgrounds should remain the base deck background rather than the visual box color.
+- When changing seminar slide layout, validate the actual slide route `/seminars/t-rex/slides/?fullscreen=1&returnTo=../`, not only the landing page.

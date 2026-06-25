@@ -6,7 +6,7 @@ This document is a handoff note for continuing the robotics-study-notes site, es
 
 ## Current Workspace
 
-- Local repo: `~/workspace/robotics-study-notes`
+- Local repo: `/home/wh/study/robotics-study-notes`
 - Main public repo: `wons999/robotics-study-notes`
 - Public site target: `https://wons999.github.io/robotics-study-notes/`
 - Admin feedback repo: `wons999/robotics-study-notes-feedback`
@@ -16,22 +16,27 @@ This document is a handoff note for continuing the robotics-study-notes site, es
 Useful commands:
 
 ```bash
-cd ~/workspace/robotics-study-notes
-npm run dev
-npm run build
+cd /home/wh/study/robotics-study-notes
+docker run --rm --user 1000:1000 -p 4322:4321 -v /home/wh/study/robotics-study-notes:/app -w /app node:24-alpine npm run dev -- --host 0.0.0.0
+docker run --rm --user 1000:1000 -v /home/wh/study/robotics-study-notes:/app -w /app node:24-alpine npm run build
 git status --short
 ```
 
-`npm run build` runs `astro check` and `astro build`. Run it before commits or deployment updates.
+The host Node version may be older than Astro's supported range. Use Docker Node 24 for local serving and builds unless the host environment has been updated. The build runs `astro check` and `astro build`; run it before commits or deployment updates.
 
 ## Important Files
 
 - `src/components/TRexSeminarDeck.astro`
   - Main interactive web slide deck.
-  - Contains slide data, deck controls, fullscreen behavior, image lightbox, and most CSS for seminar layout.
+  - Contains slide data, deck controls, fallback fullscreen behavior, `returnTo` exit behavior, image lightbox, and most CSS for seminar layout.
 - `src/content/docs/seminars/t-rex.mdx`
-  - Seminar page that imports `<TRexSeminarDeck />`.
-  - Contains high-level seminar flow, takeaways, and discussion questions.
+  - Lightweight seminar landing page.
+  - Keep only the title, presentation slide button, and presentation materials unless the user asks for more.
+  - The slide button points to `./slides/?fullscreen=1&returnTo=../`.
+- `src/content/docs/seminars/t-rex/slides.mdx`
+  - Slide-only page that imports `<TRexSeminarDeck />`.
+  - Hidden from sidebar/search/pagination with frontmatter.
+  - Used for fullscreen deck viewing without an embedded preview on the landing page.
 - `src/content/docs/seminars/index.mdx`
   - Seminar index page.
 - `public/trex/`
@@ -43,25 +48,25 @@ git status --short
 
 ## Current Git State Notes
 
-At the time this file was written, the seminar work had not yet been committed in this session. Always check:
+Always check the current state before editing or committing:
 
 ```bash
 git status --short
 ```
 
-Known changed/untracked paths in this workstream have included:
+Recent seminar work was committed and pushed to `origin/main`:
 
-- `astro.config.mjs`
-- `public/`
-- `src/components/TRexSeminarDeck.astro`
-- `src/content/docs/seminars/`
-- `WORKING.md`
+- `9eb0027 docs: record seminar deck local workflow`
+- `f603769 feat: refine T-Rex seminar deck`
+- `d54ac5c feat: simplify seminar slide entry`
 
-Do not assume these are already committed unless `git status` confirms it.
+Do not assume future work is committed unless `git status` confirms it.
 
 ## User Preferences For This Deck
 
 - Primary viewing mode is deck fullscreen in a 16:9 screen, often around 1920x1080.
+- The seminar landing page should open the deck through a button, not show a small embedded deck preview.
+- When exiting the slide-only fullscreen deck, return to the T-Rex seminar landing page.
 - Slides should feel full and dense enough for a seminar, not sparse.
 - Text should be large enough for attendees to read in fullscreen.
 - The user prefers more explanatory text than very minimal presentation slides.
@@ -71,6 +76,19 @@ Do not assume these are already committed unless `git status` confirms it.
 - Avoid awkward presenter-specific phrasing like "발표에서는". Use more public-facing wording such as "핵심 관점", "정리하면", or direct content.
 - Public content must not include private workplace details, private project details, or personal identifying details.
 - Paper content should come first. Optional interpretation/insight can be added below, separated visually, but not every page needs an opinion section.
+
+## Current Seminar Page Structure
+
+- `/seminars/t-rex/`
+  - Landing page only.
+  - Shows the title, a `발표 슬라이드 보기` button, and presentation materials.
+  - Should not embed the deck preview unless the user explicitly asks for it.
+- `/seminars/t-rex/slides/?fullscreen=1&returnTo=../`
+  - Slide-only page.
+  - Opens the deck in fullscreen-like mode by default.
+  - Exit should return to `/seminars/t-rex/`.
+- `src/content/docs/seminars/t-rex/slides.mdx`
+  - Keep this route hidden from sidebar/search/pagination.
 
 ## T-Rex Seminar Content Direction
 
@@ -122,6 +140,12 @@ Implemented behavior:
   - Added `table-center` class to relevant bottom tables.
   - Verified in fullscreen that left/right gaps are equal inside the visual box.
 - Several slides were switched between split/stack/fill depending on figure/table aspect ratio.
+- Normal embedded deck rendering, when used, should preserve the same 16:9-ish visual ratio as fullscreen instead of reflowing into a different layout.
+- Visual boxes use a brighter contrast color than the default deck background for projector readability.
+- Tables use white lines, rounded outer borders, and `display: table` with `border-collapse: separate` so inner lines remain continuous.
+- Table cell backgrounds should remain `var(--sl-color-bg)`; do not make table cells the same color as the visual box.
+- Appendix/result table visual boxes, especially around slides 30, 34-37, and 41-44, should shrink to table width and auto height when there is no need for a large empty box.
+- Slide 3 should look consistent before and after fullscreen, with the same presentation ratio.
 
 ## CSS Patterns To Preserve
 
@@ -150,20 +174,28 @@ For any visual/layout change:
 1. Run:
 
 ```bash
-npm run build
+docker run --rm --user 1000:1000 -v /home/wh/study/robotics-study-notes:/app -w /app node:24-alpine npm run build
 ```
 
 2. Open or refresh:
 
 ```text
-http://localhost:4321/seminars/t-rex/
+http://localhost:4322/seminars/t-rex/
 ```
 
-3. Enter `Fullscreen` in the deck.
+3. Confirm the landing page has no embedded `[data-seminar-deck]` preview and has the `발표 슬라이드 보기` button.
 
-4. Check the target slides in a 16:9 viewport. The user often checks around 1920x1080.
+4. Open the slide-only route:
 
-5. Confirm:
+```text
+http://localhost:4322/seminars/t-rex/slides/?fullscreen=1&returnTo=../
+```
+
+5. Confirm the deck enters `.is-fullscreen` and `Exit` returns to `/seminars/t-rex/`.
+
+6. Check the target slides in 16:9 viewports. The user has checked 1920x1080, 2560x1440, and 3840x2160.
+
+7. Confirm:
 
 - no content overflows below the fullscreen viewport;
 - text is readable;
@@ -177,7 +209,11 @@ For table-centering checks, compare the table's left and right gaps against `.sl
 
 - Starlight applies default spacing to adjacent elements. Inside CSS grid diagrams, reset direct-child `margin-top` when needed.
 - A table can look left-aligned even if the visual box is centered if `.mini-table` is still `width: 100%` and `justify-self: stretch`.
+- Setting seminar tables to `display: block` can break fixed table layout and make right-side lines disappear. Keep table elements as `display: table`.
+- Table cell backgrounds should stay on the deck background color. The visual box should provide contrast around the table; table lines should remain white.
 - Fullscreen layout may differ from normal embedded page layout. The user is usually judging fullscreen.
+- The T-Rex landing page intentionally does not show an embedded deck preview.
+- Preserve the `returnTo=../` slide link and exit behavior when changing the slide-only route.
 - Changing a common selector can unexpectedly alter many slides because all slide CSS lives in `TRexSeminarDeck.astro`.
 - Do not remove explanatory text just to make a slide look cleaner. The user prefers a detailed seminar style.
 - Do not add private/personal details to public pages.
@@ -196,7 +232,7 @@ For table-centering checks, compare the table's left and right gaps against `.sl
 - After meaningful changes:
 
 ```bash
-npm run build
+docker run --rm --user 1000:1000 -v /home/wh/study/robotics-study-notes:/app -w /app node:24-alpine npm run build
 git status --short
 git add <changed files>
 git commit -m "<clear message>"
