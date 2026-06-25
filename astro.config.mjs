@@ -12,6 +12,13 @@ export default defineConfig({
       title: 'Robotics Study Notes',
       description: 'A working notebook for robotics foundations, control, RL, and VLA research.',
       customCss: ['./src/styles/custom.css'],
+      head: [
+        {
+          tag: 'script',
+          content:
+            "try { if (!localStorage.getItem('starlight-theme')) localStorage.setItem('starlight-theme', 'dark'); } catch {}"
+        }
+      ],
       social: [
         {
           icon: 'github',
