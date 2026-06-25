@@ -69,7 +69,7 @@ const rawSlides = [
     eyebrow: '2. Dataset',
     title: '왜 task demo가 아니라 mid-training corpus인가?',
     kicker: 'T-Rex Dataset은 특정 평가 task를 외우게 하기보다, 다양한 object-primitive 조합에서 reusable contact prior를 만들도록 설계됐다.',
-    visual: '<div class="dataset-funnel"><div class="funnel-row"><span>207 objects</span><strong>×</strong><span>22 motor primitives</span></div><div class="funnel-arrow">↓</div><div class="funnel-step">Per-primitive feasibility checklist</div><div class="invalid-pairs"><strong>Filtered examples</strong><span>solid block × pour</span><span>non-articulated object × twist</span><span>flat cloth × insert</span></div><div class="funnel-arrow">↓</div><div class="funnel-step emphasis">502 feasible object-primitive pairs</div><div class="pair-examples"><span>cup × twist</span><span>cloth × wipe</span><span>card × slide</span><span>tube × press</span><span>key × insert</span></div><div class="funnel-step">Reusable contact behavior prior</div></div>',
+    visual: '<div class="dataset-funnel"><div class="funnel-row"><span>207 objects</span><strong aria-label="times">×</strong><span>22 motor primitives</span></div><div class="funnel-arrow">↓</div><div class="funnel-step">Per-primitive feasibility checklist</div><div class="invalid-pairs"><strong>Filtered examples</strong><span>solid block × pour</span><span>non-articulated object × twist</span><span>flat cloth × insert</span></div><div class="funnel-arrow">↓</div><div class="funnel-step emphasis">502 feasible object-primitive pairs</div><div class="pair-examples"><span>cup × twist</span><span>cloth × wipe</span><span>card × slide</span><span>tube × press</span><span>key × insert</span></div><div class="funnel-step">Reusable contact behavior prior</div></div>',
     body: [
       '논문은 기존 robot manipulation dataset이 parallel gripper나 grasp-centric dexterous hand에 치우쳐 tactile-rich dexterous interaction coverage가 제한적이라고 지적한다.',
       'T-Rex Dataset은 narrow task-specific demonstrations 대신 verb-noun combination, motor primitive, object interaction을 중심으로 구성된다. infeasible pair는 per-primitive feasibility checklist로 수동 제거한다.',
@@ -101,7 +101,7 @@ const rawSlides = [
     eyebrow: '4. Latent Expert',
     title: 'Latent Expert: visual-language context를 만드는 slow reasoning module',
     kicker: 'Latent expert는 현재 이미지와 instruction을 바탕으로 task context와 future visual representation을 만든다.',
-    visual: '<div class="expert-spec-card"><h3>Latent Expert</h3><div class="io-strip"><span>Input</span><strong>slow visual-language token prefix</strong></div><table class="micro-table"><tr><td>Code path</td><td>slow images + language prompt → Qwen processor → slow_embeds</td></tr><tr><td>Typical slow image</td><td>head camera image</td></tr><tr><td>Optional tokens</td><td>flare future-prediction query tokens</td></tr><tr><td>Backbone</td><td>Qwen3VL-2B</td></tr><tr><td>Hidden feature dim</td><td>2048</td></tr><tr><td>Layers</td><td>28 transformer layers</td></tr><tr><td>Max sequence</td><td>2048 tokens</td></tr><tr><td>Params</td><td>1.41B</td></tr><tr><td>Attention</td><td>Flash Attention 2</td></tr></table><div class="io-strip output"><span>Output</span><strong>latent KV/context, optionally extended with future visual tokens</strong></div><small>The server splits the processed VL embedding into slow_embeds and fast_embeds before flow inference.</small></div>',
+    visual: '<div class="expert-spec-card"><h3>Latent Expert</h3><div class="io-strip"><span>Input</span><strong>slow visual-language token prefix: [B, L_slow, 2048]</strong></div><table class="micro-table"><tr><td>Code path</td><td>slow images + language prompt → Qwen processor → slow_embeds</td></tr><tr><td>Typical slow image</td><td>head camera image; wrist tokens are split into fast_embeds</td></tr><tr><td>Optional tokens</td><td>future-prediction query tokens: [B, Q_future, 2048]</td></tr><tr><td>Backbone</td><td>Qwen3VL-2B</td></tr><tr><td>Hidden feature dim</td><td>2048</td></tr><tr><td>Layers / sequence</td><td>28 transformer layers, max 2048 tokens</td></tr><tr><td>Params</td><td>1.41B</td></tr><tr><td>Attention</td><td>Flash Attention 2</td></tr></table><div class="io-strip output"><span>Output</span><strong>latent hidden/KV context: [B, L_slow(+Q), 2048]</strong></div><small>The server splits the processed VL embedding into slow_embeds and fast_embeds before flow inference.</small></div>',
     body: [
       'Appendix A에 따르면 latent expert는 Qwen3VL-2B 기반이며 hidden feature dimension 2048, 28 transformer layers, max sequence length 2048, 1.41B parameters, Flash Attention 2를 사용한다.',
       '코드에서는 slow images와 language prompt를 Qwen processor에 넣어 `inputs_embeds`를 만든 뒤, `split_slow_fast_embeds()`로 slow prefix를 `slow_embeds`로 분리한다. 일반 JSON pipeline에서는 head camera가 `input_image_slow`로 들어간다.',
@@ -117,15 +117,14 @@ const rawSlides = [
     eyebrow: '5. Action Expert',
     title: 'Action Expert: coarse action chunk를 만드는 module',
     kicker: 'Action expert는 visual-language context를 바탕으로 먼저 그럴듯한 action trajectory를 만든다.',
-    visual: '<div class="expert-spec-card"><h3>Action Expert</h3><div class="io-strip"><span>Input</span><strong>slow_embeds + action-sequence tokens</strong></div><table class="micro-table"><tr><td>Latent context</td><td>slow_embeds from head/image-language prefix</td></tr><tr><td>Fast visual tokens</td><td>fast_embeds from wrist images, prepended to action sequence</td></tr><tr><td>Robot state</td><td>optional state_embeds from normalized state_fast when use_robot_state=1</td></tr><tr><td>Flow tokens</td><td>timestep embedding + noisy action chunk embedding</td></tr><tr><td>Objective</td><td>conditional flow matching, upper denoising segment</td></tr><tr><td>Action dim</td><td>62</td></tr><tr><td>Action chunk</td><td>16</td></tr><tr><td>Inference steps</td><td>6 Euler steps</td></tr><tr><td>Params</td><td>1.41B</td></tr></table><div class="io-strip output"><span>Output</span><strong>x_split + cached [latent | action] KV at tau_split</strong></div><small>Implementation concatenates fast_embeds, optional state_embeds, timestep, and noisy action before the action expert pass.</small></div>',
+    visual: '<div class="expert-spec-card"><h3>Action Expert</h3><div class="io-strip"><span>Input</span><strong>slow VL context/KV + action-sequence tokens, hidden dim 2048</strong></div><table class="micro-table"><tr><td>Slow VL embedding</td><td>slow_embeds: [B, L_slow, 2048], input to Latent Expert</td></tr><tr><td>Latent context / KV</td><td>contextual hidden states + KV from slow VL tokens</td></tr><tr><td>Pre-training role</td><td>tactile expert 없이 full-range flow tau=1→0을 학습해 final action chunk까지 생성 가능</td></tr><tr><td>Future latent role</td><td>not a direct action input; L_future regularizes slow context, future-query tokens may remain in context/KV</td></tr><tr><td>Fast visual tokens</td><td>fast_embeds: [B, L_fast, 2048], prepended to action sequence</td></tr><tr><td>Robot state</td><td>optional state_embeds: [B, 1, 2048] from normalized 62D state</td></tr><tr><td>Flow tokens</td><td>tau token [B, 1, 2048] + noisy action tokens [B, 16, 2048]</td></tr><tr><td>Action dim / chunk</td><td>62D actions, Ta=16</td></tr><tr><td>Inference steps</td><td>6 Euler steps from tau=1 to tau_split=0.4</td></tr><tr><td>Params</td><td>1.41B</td></tr></table><div class="io-strip output"><span>Output</span><strong>x_split: [B, 16, 62] + refreshed KV_tau_split = [KV_lat | KV_act_tau_split]</strong></div><small>slow_embeds are input embeddings; the Action Expert is conditioned on contextualized slow VL states/KV.</small></div>',
     body: [
-      'Action expert는 Gaussian noise에서 intermediate timestep까지 action chunk를 denoise하는 low-frequency flow-matching expert다. Appendix A 기준 Qwen3VL-2B backbone, action dimension 62, action chunk 16, 6 inference timesteps, 1.41B parameters를 사용한다.',
-      '구현 코드의 `forward_flow_action_partial()`를 보면 action expert 입력은 `full_embeds = [slow_embeds, act_seq]`다. 여기서 `act_seq`는 `fast_embeds`, optional `state_embeds`, timestep embedding, noisy action embedding을 순서대로 concatenate한다.',
-      '`fast_embeds`는 Qwen processor가 처리한 전체 image/text token sequence에서 wrist camera 쪽 fast image suffix를 분리한 것이다. `state_embeds`는 `use_robot_state=1`이고 `state_fast`가 있을 때 normalized 62D robot state를 `state_embedder`에 넣어 만든 1-token embedding이다.',
-      '출력은 tactile expert가 이어받을 `x_split`과 tau_split 시점의 cached `[latent | action]` KV다. 실험 setup의 action output은 bimanual arms relative end-effector delta와 fingers absolute joint control을 합친 62D action chunk다.'
+      'Pre-training에서는 tactile expert 없이 latent/action experts만 학습하므로 Action Expert가 full-range flow tau=1→0을 맡아 final action chunk까지 생성할 수 있도록 L_act를 학습한다. T-Rex runtime에서는 이 역할이 upper segment tau=1→tau_split의 coarse denoising으로 나뉜다.',
+      '`slow_embeds`는 Qwen processor가 만든 입력 embedding이고, Latent Expert가 이를 처리해 contextual hidden states와 KV cache를 만든다. future latent prediction은 직접 action input이 아니라 L_future regularization과 future-query token context를 통해 Action Expert conditioning에 간접 기여한다.'
     ],
     bullets: [
-      'low-frequency visual action chunk generation',
+      'pre-training: full-range flow로 final action까지 학습',
+      'runtime: low-frequency visual action chunk generation',
       'arm end-effector delta + hand joint command',
       'tactile expert가 refinement할 boundary state를 만든다.'
     ]
@@ -134,7 +133,7 @@ const rawSlides = [
     eyebrow: '6. Tactile Expert',
     title: 'Tactile Expert: action을 빠르게 보정하는 module',
     kicker: 'Tactile expert는 raw vision을 다시 보지 않고, cached context와 최신 tactile signal로 action chunk를 보정한다.',
-    visual: '<div class="expert-spec-card"><h3>Tactile Expert</h3><div class="io-strip"><span>Input</span><strong>cached KV + x_split + fresh tactile observations</strong></div><table class="micro-table"><tr><td>Cached context</td><td>cloned [latent | action] KV from slow tick</td></tr><tr><td>Boundary state</td><td>x_split at tau_split from action expert</td></tr><tr><td>Tactile F6</td><td>current normalized 10-finger 6D wrench frame</td></tr><tr><td>F6 history</td><td>rolling 16-frame raw history → embedded VQ-VAE codes</td></tr><tr><td>Deformation</td><td>10 fingertip deformation maps → DeformEncoder + projection</td></tr><tr><td>Raw vision</td><td>not reprocessed in fast tick</td></tr><tr><td>Inference steps</td><td>4 Euler steps</td></tr><tr><td>FFN intermediate</td><td>1536</td></tr><tr><td>Params</td><td>0.62B</td></tr></table><div class="io-strip output"><span>Output</span><strong>denormalized final action chunk returned to robot</strong></div><small>tactile_flow_continue() returns the clean action directly, not a residual delta.</small></div>',
+    visual: '<div class="expert-spec-card"><h3>Tactile Expert</h3><div class="io-strip"><span>Input</span><strong>KV_tau_split + tactile tokens + tau token + x_tau action tokens</strong></div><table class="micro-table"><tr><td>Cached context</td><td>cloned [KV_lat | KV_act_tau_split] from slow tick</td></tr><tr><td>Boundary state</td><td>x_split: [B, 16, 62] from action expert</td></tr><tr><td>Tactile F6</td><td>current normalized wrench: [B, 10, 6] → [B, 10, 2048]</td></tr><tr><td>F6 history</td><td>[B, 16, 10, 6] → VQ codes [B, 10] → [B, 10, 2048]</td></tr><tr><td>Deformation</td><td>[B, 10, 1, H, W] → [B, 10, 28800] → [B, 10, 2048]</td></tr><tr><td>Tactile token seq</td><td>per-finger concat 기준 약 [B, 30, 2048]</td></tr><tr><td>Raw vision</td><td>not reprocessed in fast tick</td></tr><tr><td>Inference steps</td><td>4 Euler steps from tau_split=0.4 to 0</td></tr><tr><td>FFN / params</td><td>1536 intermediate, 0.62B params</td></tr></table><div class="io-strip output"><span>Output</span><strong>final action chunk: [B, 16, 62]</strong></div><small>tactile_flow_continue() returns the clean action directly, not a residual delta.</small></div>',
     body: [
       '구현 코드의 `tactile_flow_continue()`는 slow tick에서 저장한 cached KV를 clone하고, `x_split`에서 tau=0까지 남은 flow를 tactile expert로 적분한다. fast tick에서는 visual tower, latent expert, action expert를 다시 실행하지 않는다.',
       'tactile observation은 세 갈래다. current F6 frame은 `tacf6_embedder`로 들어가고, rolling F6 history는 embedded VQ-VAE가 discrete code로 바꾼 뒤 `tactile_code_embedder`로 들어가며, deformation map은 `DeformEncoder`와 projection을 거쳐 tactile token에 concat된다.',
@@ -151,7 +150,7 @@ const rawSlides = [
     eyebrow: '6. Tactile Expert',
     title: 'Tactile Encoder: force와 deformation을 분리해서 표현한다',
     kicker: 'Tactile expert가 잘 동작하려면 raw tactile signal을 policy가 쓰기 좋은 representation으로 바꿔야 한다.',
-    visual: '<div class="tactile-encoder-map"><h3>Spatial-Temporal Tactile Encoder</h3><div class="encoder-row"><b>Current F6 frame</b><span>10 fingers × 6D wrench</span><i>q01/q99 normalize → tacf6_embedder</i><strong>instant force / torque token</strong></div><div class="encoder-row"><b>F6 history</b><span>rolling 16 frames × 10 fingers × 6D</span><i>embedded VQ-VAE → codebook K=64 → tactile_code_embedder</i><strong>temporal contact token</strong></div><div class="encoder-row"><b>Deformation maps</b><span>10 fingertip deformation images</span><i>DeformEncoder → flatten → deform_proj</i><strong>spatial contact geometry token</strong></div><div class="encoder-merge">concat tactile code + current F6 + deformation feature → tactile token sequence</div><div class="encoder-output">tactile_flow_continue(): [tactile tokens, tau token, x_split action tokens] + cached KV → final action chunk</div></div>',
+    visual: '<div class="tactile-encoder-map"><h3>Spatial-Temporal Tactile Encoder</h3><div class="encoder-row"><b>Current F6 frame</b><span>Input [B, 10, 6]</span><i>q01/q99 normalize → tacf6_embedder</i><strong>Output [B, 10, 2048] instant force / torque tokens</strong></div><div class="encoder-row"><b>F6 history</b><span>Input [B, T=16, 10, 6]</span><i>embedded VQ-VAE → codebook K=64 → tactile_code_embedder</i><strong>codes [B, 10] → tokens [B, 10, 2048]</strong></div><div class="encoder-row"><b>Deformation maps</b><span>Input [B, 10, 1, H, W]</span><i>DeformEncoder → flatten [B, 10, 28800] → deform_proj</i><strong>Output [B, 10, 2048] spatial contact tokens</strong></div><div class="encoder-merge">concat along token axis: [B, 10, 2048] + [B, 10, 2048] + [B, 10, 2048] ≈ [B, 30, 2048]</div><div class="encoder-output">tactile_flow_continue(): tactile tokens + tau token [B,1,2048] + x action tokens [B,16,2048] + cached KV → [B,16,62]</div></div>',
     body: [
       '논문은 tactile observation을 temporal force dynamics와 spatial deformation signal로 나누어 encoding한다. 구현의 `_embed_tactile_observations()`도 이 구조와 맞게 tactile code embedding, current F6 embedding, deformation feature를 만든 뒤 channel이 아니라 token sequence 방향으로 concatenate한다.',
       'Current F6 frame은 10개 fingertip의 6D wrench를 현재 시점 contact signal로 사용한다. inference server는 tactile_f6를 q01/q99 statistics로 normalize하고, 모델은 `tacf6_embedder`로 hidden token을 만든다. 이 branch는 지금 누르는 힘과 torque를 바로 반영하기 위한 경로다.',
@@ -171,7 +170,7 @@ const rawSlides = [
     kicker: '현재 frame의 6-axis wrench는 tactile expert가 가장 즉각적인 contact 상태를 읽는 경로다.',
     layout: 'fill',
     variant: 'visual-tight',
-    visual: '<div class="expert-spec-card compact-spec"><h3>Current F6 Embedder</h3><div class="io-strip"><span>Input</span><strong>tactile_f6: [B, 10 fingers, 6D wrench]</strong></div><table class="micro-table"><tr><td>Preprocess</td><td>q01/q99 statistics normalize in inference server</td></tr><tr><td>Module</td><td>tacf6_embedder = ActionEmbedder(tacf6_dim, hidden_size)</td></tr><tr><td>Role</td><td>current force / torque token</td></tr><tr><td>Training</td><td>VLA-specific module, initialized with Xavier and trained with tactile expert</td></tr><tr><td>Used in</td><td>_embed_tactile_observations() → tactile token sequence</td></tr></table><div class="io-strip output"><span>Output</span><strong>hidden tactile token for instantaneous contact</strong></div></div>',
+    visual: '<div class="expert-spec-card compact-spec"><h3>Current F6 Embedder</h3><div class="io-strip"><span>Input</span><strong>tactile_f6: [B, 10 fingers, 6D wrench]</strong></div><table class="micro-table"><tr><td>Preprocess</td><td>q01/q99 statistics normalize in inference server</td></tr><tr><td>Module</td><td>tacf6_embedder = ActionEmbedder(tacf6_dim=6, hidden_size=2048)</td></tr><tr><td>Per-finger mapping</td><td>[B, 10, 6] → [B, 10, 2048]</td></tr><tr><td>Role</td><td>current force / torque token</td></tr><tr><td>Training</td><td>VLA-specific module, initialized with Xavier and trained with tactile expert</td></tr><tr><td>Used in</td><td>_embed_tactile_observations() → tactile token sequence</td></tr></table><div class="io-strip output"><span>Output</span><strong>instantaneous contact tokens: [B, 10, 2048]</strong></div></div>',
     body: [
       '`tacf6_embedder`는 현재 시점의 force/torque vector를 Qwen hidden size에 맞는 tactile token으로 바꾸는 projection module이다. 코드에서는 `ActionEmbedder(tacf6_dim, H)`로 만들어지고, tactile_f6가 들어오면 tactile observation sequence의 한 부분으로 append된다.',
       '입력 tactile_f6는 raw sensor 값을 그대로 쓰지 않는다. inference server 쪽에서 q01/q99 statistics를 사용해 normalize한 뒤 모델에 전달한다. 따라서 이 branch는 sensor scale을 맞춘 현재 contact magnitude와 torque direction을 빠르게 반영하는 역할을 한다.',
@@ -188,7 +187,7 @@ const rawSlides = [
     title: 'Force VQ-VAE: 16-frame F6 history를 discrete contact code로 만든다',
     kicker: 'VQ-VAE branch는 순간 힘이 아니라 접촉의 시간 패턴을 압축한다.',
     variant: 'visual-tight',
-    visual: '<div class="expert-spec-card"><h3>Embedded Tactile VQ-VAE</h3><div class="io-strip"><span>Input</span><strong>raw F6 history: [B, T=16, 10 fingers, 6D]</strong></div><table class="micro-table"><tr><td>Split</td><td>two hands; each hand has 5 fingers × 6D</td></tr><tr><td>Encoder</td><td>1D temporal CNN: Conv1d + GroupNorm + GELU, strided blocks</td></tr><tr><td>Latent</td><td>256-d continuous code per hand window by default</td></tr><tr><td>Quantizer</td><td>VQ-EMA codebook</td></tr><tr><td>Decoder</td><td>mirror 1D up-conv stack reconstructing F6 window</td></tr><tr><td>Pretraining</td><td>learn discrete vocabulary for F6 contact history</td></tr><tr><td>In VLA</td><td>loaded from checkpoint, frozen, encode_only() on the fly</td></tr></table><div class="io-strip output"><span>Output</span><strong>integer tactile code → tactile_code_embedder → hidden token</strong></div></div>',
+    visual: '<div class="expert-spec-card"><h3>Embedded Tactile VQ-VAE</h3><div class="io-strip"><span>Input</span><strong>raw F6 history: [B, T=16, 10 fingers, 6D]</strong></div><table class="micro-table"><tr><td>Split</td><td>[B,16,10,6] → two hands/five fingers, per-finger temporal windows</td></tr><tr><td>Encoder</td><td>shared 1D temporal CNN + finger identity embedding</td></tr><tr><td>Latent</td><td>256D continuous embedding per fingertip history</td></tr><tr><td>Quantizer</td><td>VQ-EMA codebook K=64</td></tr><tr><td>Discrete code</td><td>one code per finger: [B, 10]</td></tr><tr><td>Decoder</td><td>mirror 1D up-conv stack reconstructing F6 window</td></tr><tr><td>In VLA</td><td>frozen encode_only(); tactile_code_embedder maps code to 2048D</td></tr></table><div class="io-strip output"><span>Output</span><strong>VQ codes [B,10] → tactile code tokens [B,10,2048]</strong></div></div>',
     body: [
       'Standalone VQ-VAE는 F6 history window를 discrete code로 바꾸기 위해 별도로 학습된다. 기본 입력 단위는 한 손의 `[T=16, 5 fingers, 6 force/torque]` window이며, left/right hand는 independent samples로 취급해 데이터 효율을 높인다.',
       'Encoder는 small 1D CNN이다. 5 fingers × 6D를 channel로 접고, Conv1d + GroupNorm + GELU stem과 strided temporal conv blocks를 지나 256-d continuous latent를 만든다. Quantizer는 EMA 방식의 vector quantization을 사용하고, unused code를 되살리는 dead-code revival을 지원한다.',
@@ -221,7 +220,7 @@ const rawSlides = [
     eyebrow: '6. Tactile Encoder',
     title: 'DeformEncoder: fingertip deformation map에서 공간 접촉 feature를 뽑는다',
     kicker: 'Deformation branch는 force vector가 놓치기 쉬운 접촉 위치, edge, shear, texture 정보를 담당한다.',
-    visual: '<div class="expert-spec-card"><h3>DeformEncoder</h3><div class="io-strip"><span>Input</span><strong>tactile_deform: [B, 10 fingers, 1, H, W]</strong></div><table class="micro-table"><tr><td>Stem</td><td>Conv2d 1→64, 7×7 stride 2 + BN/ReLU/MaxPool</td></tr><tr><td>Backbone</td><td>ResNet-18 layer1 → layer2 → layer3</td></tr><tr><td>Reshape</td><td>Conv2d 128→128 and 256→128 adapter blocks</td></tr><tr><td>Encoder output</td><td>[B×10, 128, H\', W\']; code comment shows 128×15×15</td></tr><tr><td>Projection</td><td>flatten → deform_proj = ActionEmbedder(28800, hidden_size)</td></tr><tr><td>Checkpoint</td><td>load_deform_encoder_weights() loads encoder.* weights if provided</td></tr></table><div class="io-strip output"><span>Output</span><strong>hidden deformation token for spatial contact geometry</strong></div></div>',
+    visual: '<div class="expert-spec-card"><h3>DeformEncoder</h3><div class="io-strip"><span>Input</span><strong>tactile_deform: [B, 10 fingers, 1, H, W]</strong></div><table class="micro-table"><tr><td>Batch reshape</td><td>[B,10,1,H,W] → [B×10,1,H,W]</td></tr><tr><td>Stem</td><td>Conv2d 1→64, 7×7 stride 2 + BN/ReLU/MaxPool</td></tr><tr><td>Backbone</td><td>ResNet-18 layer1 → layer2 → layer3</td></tr><tr><td>Reshape</td><td>3×3 conv adapters re-project feature maps to 128 channels</td></tr><tr><td>Encoder output</td><td>[B×10, 128, 15, 15] → reshape [B,10,28800]</td></tr><tr><td>Projection</td><td>deform_proj = ActionEmbedder(28800, hidden_size=2048)</td></tr><tr><td>Checkpoint</td><td>pretrained/frozen encoder weights if provided</td></tr></table><div class="io-strip output"><span>Output</span><strong>deformation tokens: [B, 10, 2048]</strong></div></div>',
     body: [
       '`DeformEncoder`는 grayscale tactile deformation image를 CNN feature map으로 바꾸는 module이다. 구현은 ResNet-18을 변형해 1-channel input stem을 쓰고, layer1/layer2/layer3와 두 개의 reshape conv block을 거쳐 128-channel spatial feature map을 만든다.',
       '모델 wrapper는 10개 fingertip deformation map을 `[B×nf, 1, H, W]`로 펼쳐 encoder에 넣고, 나온 feature를 다시 `[B, nf, -1]`로 reshape한다. 코드에서 `deform_proj = ActionEmbedder(28800, H)`로 projection하므로, 기본 feature 크기는 128×15×15를 가정한다.',
@@ -272,11 +271,10 @@ const rawSlides = [
     title: '학습 방법 Overview',
     kicker: 'T-Rex 학습은 human prior, robot tactile grounding, task adaptation을 세 단계로 나눈다.',
     layout: 'stack',
-    visual: '<div class="training-stages compact-diagram no-arrows"><div><b>1</b><strong>Pre-training</strong><span>human egocentric data</span><small>broad visuomotor prior</small></div><div class="focus"><b>2</b><strong>Mid-training</strong><span>T-Rex tactile robot data</span><small>robot contact grounding</small></div><div><b>3</b><strong>Post-training</strong><span>target task demos</span><small>task adaptation</small></div></div>',
+    visual: '<div class="training-stages training-detail compact-diagram no-arrows"><div><b>1</b><strong>Pre-training</strong><span>22,889h egocentric human video</span><small>latent/action experts만 학습. head-view visual-language representation과 retargeted human arm/hand motion으로 broad semantic + visuomotor prior를 만든다. tactile expert는 아직 없다.</small></div><div><b>2</b><strong>Mid-training</strong><span>100h T-Rex tactile robot data</span><small>robot multiview observation, executable 62D action, synchronized force/deformation tactile signal로 action expert를 robot embodiment에 맞추고 tactile expert의 high-frequency denoising을 학습한다.</small></div><div><b>3</b><strong>Post-training</strong><span>~100 target task demos</span><small>복잡하거나 task-specific한 skill에 대해 fine-tuning한다. mid-training에서 얻은 tactile-reactive behavior를 유지하면서 특정 task requirement에 맞춘다.</small></div></div>',
     body: [
-      '논문은 T-Rex를 three-stage recipe로 학습한다. 첫 단계는 EgoScale을 따라 22,889 hours의 egocentric human video로 latent/action experts를 pre-train하는 것이다.',
-      '두 번째 단계는 100 hours tactile-grounded robot mid-training이다. 이 단계에서 robot multiview observations, executable actions, synchronized tactile signals로 action expert를 robot embodiment에 맞추고 tactile expert를 학습한다.',
-      '세 번째 단계는 skill-specific post-training이며, 논문은 complex/task-specific skill에 대해 약 100 task demonstrations로 fine-tuning한다고 설명한다.'
+      'Pre-training은 tactile 없이 human egocentric video에서 latent/action experts의 broad visuomotor prior를 만들고, mid-training은 100시간 robot tactile data로 그 prior를 robot-executable contact dynamics에 접지한다.',
+      'Post-training은 약 100개 task demonstration으로 특정 skill에 적응하는 단계이며, 목표는 새로 tactile-reactive behavior를 배우는 것이 아니라 mid-training에서 얻은 접촉 반응성을 task requirement에 맞게 보존/조정하는 것이다.'
     ],
     bullets: [
       'pre-training: broad visual-motor-language prior',
@@ -290,30 +288,30 @@ const rawSlides = [
     title: '학습 loss와 augmentation',
     kicker: '학습 objective는 action generation만 보지 않고 tactile refinement와 future visual prediction까지 함께 본다.',
     layout: 'fill',
-    visual: '<table class="mini-table compact-table"><tr><th>Loss</th><th>역할</th></tr><tr><td>Action expert loss</td><td>coarse action denoising</td></tr><tr><td>Tactile expert loss</td><td>tactile-conditioned refinement</td></tr><tr><td>Future visual loss</td><td>visuomotor latent regularization</td></tr><tr><td>Delay augmentation</td><td>stale vision / real-time touch mismatch 대응</td></tr></table>',
+    visual: '<div class="equation-panel"><h3>Training objective in the paper</h3><div class="equation-card"><b>Eq. (3) shared flow target</b><code>x_tau = (1 - tau) A_demo + tau epsilon, v* = epsilon - A_demo</code></div><div class="equation-card"><b>Eq. (6) cascaded losses</b><code>L_act = || f_act(x_tau_act, tau_act) - v* ||^2<br/>L_tac = || f_tac(x_tau_tac, tau_tac; KV_tau_split) - v* ||^2</code></div><div class="equation-card"><b>Eq. (7) total loss</b><code>L = L_act + lambda_tac L_tac + lambda_future L_future</code><small>lambda_tac = 1.0, lambda_future = 0.5</small></div><div class="equation-card"><b>Delay augmentation</b><code>delta ~ Uniform{0, 4, 8, 12}</code><small>c_tac frame index를 c_vl 대비 shift해 stale visual cache + fresh tactile stream 상황을 학습 중에 만든다.</small></div></div>',
     body: [
-      'action expert와 tactile expert는 shared velocity target을 회귀하지만 conditioning이 다르다. action expert는 visual-language latent context에 의존하고, tactile expert는 tactile token과 intermediate action state에 의존한다.',
-      '논문은 deployment에서 visual context와 tactile frame이 완전히 같은 시점이 아닐 수 있다는 점을 고려해 delay augmentation을 넣는다. tactile frame index를 일부러 어긋나게 만들어, 실제 robot runtime에서 생기는 time mismatch에 robust하게 만든다.'
+      '논문 Eq. (3), (6), (7)의 핵심은 action expert와 tactile expert가 서로 다른 target을 보는 것이 아니라 동일한 shared velocity target v* = epsilon - A_demo를 회귀한다는 점이다.',
+      'Delay augmentation은 fast tick이 action chunk 내부 offset에서 비동기적으로 실행되는 배포 상황을 흉내내기 위해 delta를 {0,4,8,12}에서 뽑고, tactile context c_tac의 frame index를 visual context c_vl 대비 shift한다.'
     ],
     bullets: [
       'lambda_tac = 1.0, lambda_future = 0.5',
-      'delay는 {0, 4, 8, 12} frame 중 하나로 sampling된다.'
+      'delta ~ Uniform{0, 4, 8, 12}: chunk 내부 fast tick offset과 같은 분포로 sampling된다.'
     ]
   },
   {
     eyebrow: '8. Training',
-    title: 'Flow Matching 학습: 두 expert가 같은 velocity target을 본다',
-    kicker: '원본 train.py 기준으로 action expert와 tactile expert의 supervised target은 모두 ε - A_demo다.',
+    title: 'Flow Matching 학습: 공통 target, 다른 conditioning',
+    kicker: '두 expert의 공통점은 v* = ε - A_demo를 회귀한다는 점이고, 차이점은 어느 구간과 어떤 context를 보느냐다.',
     layout: 'stack',
-    visual: '<table class="mini-table compact-table flow-loss-table table-center"><tr><th>코드 단계</th><th>수식 / 텐서</th><th>의미</th></tr><tr><td>demo action</td><td>A_demo = norm_actions</td><td>normalized action chunk</td></tr><tr><td>noise</td><td>ε = torch.randn_like(A_demo)</td><td>flow의 시작점 x1</td></tr><tr><td>sample time</td><td>τ = beta_sample(B)</td><td>training timestep</td></tr><tr><td>interpolant</td><td>x_τ = τ ε + (1 - τ) A_demo</td><td>noisy action token</td></tr><tr><td>shared target</td><td>u = ε - A_demo</td><td>두 expert가 회귀하는 velocity</td></tr><tr><td>loss</td><td>MSE(v_θ(x_τ, τ, cond), u)</td><td>conditional flow matching</td></tr></table>',
+    visual: '<table class="mini-table compact-table flow-loss-table table-center"><tr><th>구분</th><th>Action expert</th><th>Tactile expert</th></tr><tr><td>공통 target</td><td colspan="2">A_demo와 Gaussian noise epsilon으로 x_tau=(1-tau)A_demo+tau epsilon, v*=epsilon-A_demo를 만들고 MSE로 회귀</td></tr><tr><td>학습 구간</td><td>tau_act ~ Beta(1.5,1.0), tau in (0,1]</td><td>tau_tac = tau_split * tau_tilde, lower segment tau in (0,tau_split]</td></tr><tr><td>condition</td><td>c_vl: head/wrist camera feature, language prompt, future-prediction tokens</td><td>c_tac + KV_tau_split: high-frequency tactile tokens와 detached slow-stream cache</td></tr><tr><td>역할</td><td>standalone action generation 능력을 유지</td><td>raw vision 없이 cached context와 fresh tactile로 lower flow를 완성</td></tr></table>',
     body: [
-      '`scripts/train.py`의 collate 단계는 `x_t = t * noise + (1 - t) * norm_actions`, `u_t = noise - norm_actions`를 만든다.',
-      '따라서 T-Rex의 tactile expert는 residual delta를 맞추는 것이 아니라, action expert와 같은 action-distribution velocity field를 lower flow segment에서 맞춘다.'
+      'Action expert와 tactile expert는 모두 Eq. (3)의 linear interpolant와 shared velocity target을 사용하지만, action expert는 전체 tau 영역에서 multimodal latent context c_vl에 condition된다.',
+      'Tactile expert는 tau_split 이하 lower segment만 학습하고, raw visual observation 대신 slow stream에서 detach한 KV_tau_split과 현재 tactile context c_tac에 condition된다.'
     ],
     bullets: [
       'x1 = Gaussian noise, x0 = clean action chunk',
-      'shared target: ε - A_demo',
-      'conditioning만 expert별로 달라진다.'
+      '공통점: x_tau와 v* 정의, MSE regression, action chunk Ta=16',
+      '차이점: tau 범위, condition source, raw vision 재실행 여부'
     ],
     insight: '이 구조 때문에 tactile expert의 출력은 “action에 더하는 보정량”이 아니라 tau=0까지 적분된 final clean action chunk로 해석해야 한다.'
   },
@@ -322,14 +320,14 @@ const rawSlides = [
     title: 'Action Expert vs Tactile Expert 학습 경로',
     kicker: '두 expert는 같은 target을 쓰지만, timestep 범위와 conditioning이 다르다.',
     layout: 'stack',
-    visual: '<table class="mini-table compact-table flow-loss-table table-center"><tr><th>구분</th><th>Action expert</th><th>Tactile expert</th></tr><tr><td>timestep 범위</td><td>τ ∈ [0, 1] 전체 구간</td><td>τ ∈ [0, τ_split] lower segment</td></tr><tr><td>입력 context</td><td>slow_embeds + fast_embeds + optional state + timestep + x_τ</td><td>cached [latent | action] KV + tactile tokens + τ + x_τ</td></tr><tr><td>코드 경로</td><td>model.model(...) → final_layer</td><td>forward_flow_action_partial() no-grad cache → tactile_flow_train_step() → final_layer_tactile</td></tr><tr><td>loss</td><td>MSE(v_act, ε - A_demo)</td><td>MSE(v_tac, ε_r - A_demo)</td></tr><tr><td>목적</td><td>tactile이 없어도 standalone full flow 가능</td><td>runtime과 같은 τ_split cache에서 fresh tactile로 lower flow 완성</td></tr></table>',
+    visual: '<div class="conditioning-flow"><div><b>1. Sample noisy action</b><span>x1 = epsilon ~ N(0,I)</span><small>Action expert의 upper flow 시작점이다.</small></div><div><b>2. Detached slow pass</b><span>action expert를 no-grad로 tau=1 → tau_split까지 적분</span><small>x_hat_tau_split와 KV_act_tau_split를 만든다.</small></div><div><b>3. Refresh KV cache</b><span>KV_tau_split = [KV_lat | KV_act_tau_split]</span><small>action positions를 tau_split 상태로 re-encode해 tactile expert가 coherent한 partially-denoised context를 보게 한다.</small></div><div><b>4. Train tactile expert</b><span>input: x_tau_tac + c_tac + KV_tau_split</span><small>raw vision은 보지 않고 tactile tokens와 detached cache로 v*를 회귀한다.</small></div></div>',
     body: [
-      'Action expert 학습은 tactile-blind full-range flow matching이다. `full_embeds = [slow_embeds_ext, fast_embeds, state_embeds, timesteps, noisy_actions]`를 넣고 `final_layer` 출력과 `target`을 MSE로 맞춘다.',
-      'Tactile expert 학습은 먼저 `forward_flow_action_partial(..., refresh_clean_kv=True)`를 no-grad로 실행해 τ_split의 cached KV를 만든다. 이후 `tau_t = time_r * tau_split`, `x_tau = (1 - tau_t) * A_demo + tau_t * ε_r`를 만들고 `tactile_flow_train_step()`의 `final_layer_tactile` 출력을 같은 velocity target에 맞춘다.'
+      'Action expert 학습은 tactile-blind full-range flow matching이다. c_vl에 condition된 상태에서 noisy action x_tau_act를 넣고, 출력 velocity를 shared target v*에 맞춘다.',
+      'Tactile expert 학습에서는 먼저 action expert를 no-grad slow pass로 실행해 x_hat_tau_split와 KV_tau_split=[KV_lat|KV_act_tau_split]를 만든다. 이때 action expert의 noise action은 x1=epsilon에서 시작해 tau_split까지 부분 denoising된 상태로 cache에 들어가고, tactile expert는 이 detached cache와 lower-segment x_tau_tac에 condition된다.'
     ],
     bullets: [
-      'action expert: full τ range, tactile-blind fallback 가능',
-      'tactile expert: lower τ range, cached KV + tactile observations',
+      '공통점: 둘 다 v* = epsilon - A_demo를 회귀한다.',
+      '차이점: tactile expert는 detached KV_tau_split + c_tac를 보고 raw vision은 다시 보지 않는다.',
       'total loss = loss_act + lambda_tac * loss_tac + lambda_future * loss_flare'
     ],
     insight: '학습도 inference와 같은 split 구조를 모사한다. tactile expert가 보는 cache는 단순 latent summary가 아니라 action expert가 τ_split까지 진행한 상태다.'
@@ -339,16 +337,16 @@ const rawSlides = [
     title: 'Experiment Setup',
     kicker: '평가는 contact-rich real-world task 12개에서 수행되며, task마다 object pose와 position을 randomize한다.',
     layout: 'stack',
-    visual: '<div class="plot-frame setup-figure"><img src="/trex/trex-setup.png" alt="T-Rex real-world setup" /></div>',
+    visual: '<div class="setup-rubric-grid"><div class="plot-frame setup-figure"><img src="/trex/trex-setup.png" alt="T-Rex real-world setup" /></div><div class="rubric-note"><h3>Progress-based rubric</h3><p>multi-stage task에서 최종 성공/실패만 보지 않고, predefined stage hierarchy 중 어디까지 도달했는지로 partial completion을 점수화한다.</p><p>예: key grasp → key insertion → rotation/open처럼 뒤 단계가 앞 단계 성공을 전제로 하는 task에 적합하다.</p></div></div>',
     body: [
       '모든 real-world experiments는 fixed-base bimanual Dexmate Vega-1 robot과 두 개의 22-DoF Sharpa Wave dexterous hands에서 수행된다. Policy는 head RGB camera, two wrist RGB cameras, per-finger tactile force vectors, deformation maps를 관측한다.',
-      '평가는 Appendix F에 정의된 12개 tactile-reactive tasks에서 수행된다. 각 task는 16 trials로 평가하며, object position과 rotation은 trial마다 randomize한다. Multi-stage task는 partial completion을 반영하기 위해 progress-based rubric을 사용한다.',
+      '평가는 Appendix F에 정의된 12개 tactile-reactive tasks에서 수행된다. 각 task는 16 trials로 평가하며, object position과 rotation은 trial마다 randomize한다.',
       '비교 baseline은 ViTacFormer, RDP, Tactile-VLA, EgoScale, pi_0.5, pi_0.5 + tactile이다. Appendix E는 모든 baseline이 같은 robot setup, action space, evaluation protocol을 사용하도록 adaptation되었다고 설명한다.'
     ],
     bullets: [
       '12 tasks, 16 rollouts per task',
       'object pose/position randomized',
-      'success rate + progress-based rubric'
+      'success rate + progress-based rubric: stage hierarchy에서 도달한 진행도를 반영'
     ]
   },
   {
@@ -363,7 +361,8 @@ const rawSlides = [
     ],
     bullets: [
       'Task I-VI: page, egg, plate, toothpaste, cup, Mahjong',
-      'rubric은 additive 또는 progress-based 방식으로 task stage를 평가한다.'
+      'rubric은 additive 또는 progress-based 방식으로 task stage를 평가한다.',
+      'additive는 독립 sub-step 점수를 합산하고, progress-based는 순서가 있는 stage hierarchy에서 가장 멀리 진행한 지점을 반영한다.'
     ]
   },
   {
@@ -613,7 +612,7 @@ const rawSlides = [
     title: 'Appendix F: Evaluation Protocol',
     kicker: 'Appendix F는 12개 task의 성격과 채점 방식을 명시한다.',
     layout: 'stack',
-    visual: '<table class="mini-table compact-table appendix-table table-center"><tr><th>구분</th><th>논문 내용</th></tr><tr><td>Task scope</td><td>12개 contact-rich dexterous manipulation task</td></tr><tr><td>Force-reactive</td><td>fragile grasp, controlled pressure, slip resistance처럼 contact force를 정밀 조절해야 함</td></tr><tr><td>Tactile-deformation</td><td>stacked cup, mahjong texture처럼 tactile pad deformation이 핵심 정보가 됨</td></tr><tr><td>Long sequence</td><td>insertion, extraction, bimanual handover처럼 여러 단계가 이어짐</td></tr><tr><td>Rubric</td><td>additive rubric 또는 progress-based rubric으로 partial completion 반영</td></tr></table>',
+    visual: '<table class="mini-table compact-table appendix-table table-center"><tr><th>구분</th><th>논문 내용</th></tr><tr><td>Task scope</td><td>12개 contact-rich dexterous manipulation task</td></tr><tr><td>Force-reactive</td><td>fragile grasp, controlled pressure, slip resistance처럼 contact force를 정밀 조절해야 함</td></tr><tr><td>Tactile-deformation</td><td>stacked cup, mahjong texture처럼 tactile pad deformation이 핵심 정보가 됨</td></tr><tr><td>Long sequence</td><td>insertion, extraction, bimanual handover처럼 여러 단계가 이어짐</td></tr><tr><td>Additive rubric</td><td>독립적인 sub-step별 점수를 더해 partial completion을 계산</td></tr><tr><td>Progress-based rubric</td><td>순서가 중요한 stage hierarchy에서 어디까지 진행했는지로 점수화</td></tr></table>',
     body: [
       'Appendix F는 benchmark가 단순 pick-and-place가 아니라 force-reactive, tactile-deformation sensitive, bimanual coordination, long-horizon sequencing을 동시에 평가하도록 설계됐다고 설명한다.',
       '각 task는 key-stage figure와 text instruction, grading rubric을 함께 제공한다. Table 1의 success rate는 이 rubric 기반으로 계산되므로 task 정의를 같이 봐야 해석할 수 있다.'
@@ -2480,6 +2479,19 @@ const slides = rawSlides.map((slide) => ({
     align-items: center;
   }
 
+  .seminar-deck .slide-visual .funnel-row strong {
+    display: grid;
+    place-items: center;
+    min-width: 3.4rem;
+    min-height: 3.4rem;
+    border: 2px solid var(--sl-color-accent);
+    border-radius: 999px;
+    color: var(--sl-color-accent-high);
+    font-size: 2rem;
+    font-weight: 900;
+    line-height: 1;
+  }
+
   .seminar-deck .slide-visual .funnel-row span,
   .seminar-deck .slide-visual .funnel-step,
   .seminar-deck .slide-visual .pair-examples span,
@@ -2508,7 +2520,9 @@ const slides = rawSlides.map((slide) => ({
   .seminar-deck .slide-visual .funnel-arrow,
   .seminar-deck .slide-visual .cache-arrow {
     color: var(--sl-color-accent-high);
+    font-size: 1.9rem;
     font-weight: 800;
+    line-height: 1;
     text-align: center;
   }
 
@@ -2774,6 +2788,86 @@ const slides = rawSlides.map((slide) => ({
     display: grid;
     gap: 0.7rem;
     width: 100%;
+  }
+
+  .seminar-deck .slide-visual .equation-panel,
+  .seminar-deck .slide-visual .conditioning-flow,
+  .seminar-deck .slide-visual .setup-rubric-grid {
+    display: grid;
+    gap: 0.7rem;
+    width: 100%;
+  }
+
+  .seminar-deck .slide-visual .equation-panel h3,
+  .seminar-deck .slide-visual .rubric-note h3 {
+    margin: 0;
+    font-size: 1.35rem;
+  }
+
+  .seminar-deck .slide-visual .equation-card,
+  .seminar-deck .slide-visual .conditioning-flow > div,
+  .seminar-deck .slide-visual .rubric-note {
+    display: grid;
+    gap: 0.45rem;
+    border: 1px solid var(--sl-color-gray-4);
+    border-radius: 8px;
+    background: var(--sl-color-bg);
+    padding: 0.75rem;
+  }
+
+  .seminar-deck .slide-visual .equation-card b,
+  .seminar-deck .slide-visual .conditioning-flow b,
+  .seminar-deck .slide-visual .rubric-note h3 {
+    color: var(--sl-color-white);
+  }
+
+  .seminar-deck .slide-visual .equation-card code {
+    display: block;
+    border-radius: 6px;
+    background: var(--sl-color-gray-6);
+    padding: 0.45rem 0.55rem;
+    color: var(--sl-color-gray-1);
+    font-size: 0.82rem;
+    line-height: 1.35;
+    white-space: normal;
+  }
+
+  .seminar-deck .slide-visual .equation-card small,
+  .seminar-deck .slide-visual .conditioning-flow small,
+  .seminar-deck .slide-visual .rubric-note p {
+    margin: 0;
+    color: var(--sl-color-gray-2);
+    line-height: 1.45;
+  }
+
+  .seminar-deck .slide-visual .conditioning-flow {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .seminar-deck .slide-visual .conditioning-flow span {
+    display: block;
+    border-radius: 6px;
+    background: var(--sl-color-gray-6);
+    padding: 0.45rem 0.55rem;
+    color: var(--sl-color-gray-1);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .seminar-deck .slide-visual .setup-rubric-grid {
+    grid-template-columns: minmax(0, 1.45fr) minmax(16rem, 0.55fr);
+    align-items: stretch;
+  }
+
+  .seminar-deck .slide-visual .setup-rubric-grid .setup-figure {
+    width: 100%;
+    height: 100%;
+  }
+
+  .seminar-deck .slide-visual .setup-rubric-grid .setup-figure img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
   }
 
   .seminar-deck .slide-visual .tactile-encoder-map h3 {
@@ -3512,6 +3606,55 @@ const slides = rawSlides.map((slide) => ({
     line-height: 1.25;
   }
 
+  .seminar-deck:fullscreen .slide-visual .funnel-row strong,
+  .seminar-deck.is-fullscreen .slide-visual .funnel-row strong {
+    min-width: clamp(2.8rem, 3vw, 6.8rem);
+    min-height: clamp(2.8rem, 3vw, 6.8rem);
+    font-size: clamp(1.6rem, 1.7vw, 4rem);
+  }
+
+  .seminar-deck:fullscreen .slide-visual .funnel-arrow,
+  .seminar-deck.is-fullscreen .slide-visual .funnel-arrow {
+    font-size: clamp(1.7rem, 1.8vw, 4.2rem);
+  }
+
+  .seminar-deck:fullscreen .slide-visual .equation-panel,
+  .seminar-deck:fullscreen .slide-visual .conditioning-flow,
+  .seminar-deck.is-fullscreen .slide-visual .equation-panel,
+  .seminar-deck.is-fullscreen .slide-visual .conditioning-flow {
+    gap: 0.45rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .equation-card,
+  .seminar-deck:fullscreen .slide-visual .conditioning-flow > div,
+  .seminar-deck:fullscreen .slide-visual .rubric-note,
+  .seminar-deck.is-fullscreen .slide-visual .equation-card,
+  .seminar-deck.is-fullscreen .slide-visual .conditioning-flow > div,
+  .seminar-deck.is-fullscreen .slide-visual .rubric-note {
+    gap: 0.28rem;
+    padding: 0.55rem;
+  }
+
+  .seminar-deck:fullscreen .slide-visual .equation-card b,
+  .seminar-deck:fullscreen .slide-visual .equation-card code,
+  .seminar-deck:fullscreen .slide-visual .equation-card small,
+  .seminar-deck:fullscreen .slide-visual .conditioning-flow b,
+  .seminar-deck:fullscreen .slide-visual .conditioning-flow span,
+  .seminar-deck:fullscreen .slide-visual .conditioning-flow small,
+  .seminar-deck:fullscreen .slide-visual .rubric-note h3,
+  .seminar-deck:fullscreen .slide-visual .rubric-note p,
+  .seminar-deck.is-fullscreen .slide-visual .equation-card b,
+  .seminar-deck.is-fullscreen .slide-visual .equation-card code,
+  .seminar-deck.is-fullscreen .slide-visual .equation-card small,
+  .seminar-deck.is-fullscreen .slide-visual .conditioning-flow b,
+  .seminar-deck.is-fullscreen .slide-visual .conditioning-flow span,
+  .seminar-deck.is-fullscreen .slide-visual .conditioning-flow small,
+  .seminar-deck.is-fullscreen .slide-visual .rubric-note h3,
+  .seminar-deck.is-fullscreen .slide-visual .rubric-note p {
+    font-size: 0.76rem;
+    line-height: 1.23;
+  }
+
   .seminar-deck .slide-visual .two-column,
   .seminar-deck .slide-visual .funnel-row,
   .seminar-deck .slide-visual .pair-examples,
@@ -3814,6 +3957,11 @@ const slides = rawSlides.map((slide) => ({
     height: clamp(12rem, 26vh, 30rem);
   }
 
+  .seminar-deck:fullscreen .slide-stack .slide-visual:has(.setup-rubric-grid),
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual:has(.setup-rubric-grid) {
+    height: clamp(14rem, 34vh, 42rem);
+  }
+
   .seminar-deck:fullscreen .slide-stack .slide-visual:has(.compact-plot),
   .seminar-deck.is-fullscreen .slide-stack .slide-visual:has(.compact-plot) {
     height: clamp(12rem, 24vh, 28rem);
@@ -3828,6 +3976,47 @@ const slides = rawSlides.map((slide) => ({
   .seminar-deck.is-fullscreen .slide-stack .slide-visual:has(.wide-table.compact-table) {
     height: clamp(12rem, 24vh, 28rem);
     padding-inline: clamp(0.45rem, 1vw, 1.4rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack[data-slide='23'] .slide-visual,
+  .seminar-deck:fullscreen .slide-stack[data-slide='24'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='23'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='24'] .slide-visual {
+    height: auto;
+    min-height: fit-content;
+    max-height: none;
+    overflow: visible;
+    padding-inline: clamp(0.45rem, 1vw, 1.4rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack[data-slide='23'] .slide-visual .result-table.wide-table.compact-table,
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='23'] .slide-visual .result-table.wide-table.compact-table {
+    width: min(100%, 106rem);
+    max-width: min(100%, 106rem);
+    font-size: clamp(0.62rem, 0.6vw, 0.9rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack[data-slide='24'] .slide-visual .result-table.compact-table,
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='24'] .slide-visual .result-table.compact-table {
+    width: min(100%, 88rem);
+    max-width: min(100%, 88rem);
+    font-size: clamp(0.82rem, 0.78vw, 1.02rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack[data-slide='23'] .slide-visual .result-table th,
+  .seminar-deck:fullscreen .slide-stack[data-slide='23'] .slide-visual .result-table td,
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='23'] .slide-visual .result-table th,
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='23'] .slide-visual .result-table td {
+    padding: clamp(0.22rem, 0.25vw, 0.38rem);
+    line-height: 1.16;
+  }
+
+  .seminar-deck:fullscreen .slide-stack[data-slide='24'] .slide-visual .result-table th,
+  .seminar-deck:fullscreen .slide-stack[data-slide='24'] .slide-visual .result-table td,
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='24'] .slide-visual .result-table th,
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='24'] .slide-visual .result-table td {
+    padding: clamp(0.32rem, 0.34vw, 0.5rem);
+    line-height: 1.18;
   }
 
   .seminar-deck:fullscreen .slide-stack .slide-visual:has(> table.table-center),
@@ -3860,6 +4049,11 @@ const slides = rawSlides.map((slide) => ({
     max-width: 100%;
     max-height: clamp(12rem, 22vh, 26rem);
     object-fit: contain;
+  }
+
+  .seminar-deck:fullscreen .slide-stack .slide-visual .setup-rubric-grid,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual .setup-rubric-grid {
+    height: 100%;
   }
 
   .seminar-deck:fullscreen .slide-stack .slide-visual .mini-table,
