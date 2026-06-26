@@ -429,12 +429,6 @@ Figure 4는 `Apply Toothpaste`, `Split Cup`, `Extract Card`에서 denoising spli
 
 <SectionFeedback page="T-Rex" section="Data efficiency" />
 
-![T-Rex data efficiency](https://arxiv.org/html/2606.17055v1/x6.png)
-
-그림 출처: [T-Rex Figure 6](https://arxiv.org/html/2606.17055v1)
-
-T-Rex는 target task마다 많은 demonstration을 새로 모으기보다, tactile-rich mid-training을 먼저 해두고 post-training demo 수를 줄이는 방향을 노린다. 이 관점에서 Figure 6은 “foundation-style robot policy가 tactile dataset을 통해 얼마나 빠르게 downstream task에 적응하는가”를 보는 그림이다.
-
 ![Post-training data efficiency](https://arxiv.org/html/2606.17055v1/x5.png)
 
 그림 출처: [T-Rex Figure 5](https://arxiv.org/html/2606.17055v1)
@@ -443,6 +437,10 @@ Figure 5는 `Apply Toothpaste`, `Split Cup`, `Extract Card`에서 downstream dem
 
 ### mid-training dataset ablation
 
+![Mid-training dataset ablation](https://arxiv.org/html/2606.17055v1/x6.png)
+
+그림 출처: [T-Rex Figure 6](https://arxiv.org/html/2606.17055v1)
+
 Figure 6은 100시간 T-Rex dataset mid-training과 100시간 task-specific data mid-training, 그리고 mid-training 없는 조건을 비교한다. 논문은 post-training task 6개와 zero-shot task 4개를 골라 비교하고, T-Rex dataset 방식이 더 강한 generalization과 zero-shot transfer를 만든다고 해석한다. zero-shot task에는 T-Rex dataset 안의 motor primitive인 pick, slide, press, wipe 계열이 포함된다.
 
 ### training recipe ablation: Table 3
@@ -450,8 +448,8 @@ Figure 6은 100시간 T-Rex dataset mid-training과 100시간 task-specific data
 | pre-training | mid-training | Flip Page | Apply Toothpaste | Split Cup | Open Lock | Extract Card | Screw Lightbulb | Average |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 없음 | 없음 | 46 | 16 | 20 | 6 | 14 | 5 | 18 |
-| 있음 | 없음 | 75 | 34 | 45 | 10 | 32 | 9 | 34 |
-| 없음 | 있음 | 88 | 40 | 52 | 22 | 46 | 20 | 45 |
+| 없음 | 있음 | 75 | 34 | 45 | 10 | 32 | 9 | 34 |
+| 있음 | 없음 | 88 | 40 | 52 | 22 | 46 | 20 | 45 |
 | 있음 | 있음 | 96 | 66 | 78 | 47 | 70 | 35 | 65 |
 
 이 표는 세 단계 recipe가 왜 필요한지 보여준다. human egocentric pretraining은 semantic grounding과 coarse visuomotor prior를 주고, tactile-grounded robot mid-training은 그 prior를 실제 robot contact dynamics에 맞춘다. 둘을 모두 썼을 때 평균 65%로 가장 높다.
