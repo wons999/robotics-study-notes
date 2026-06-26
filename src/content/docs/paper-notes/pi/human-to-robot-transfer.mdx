@@ -6,6 +6,8 @@ sidebar:
 ---
 
 import SectionFeedback from '../../../../components/SectionFeedback.astro';
+import PaperFigure from '../../../../components/PaperFigure.astro';
+import PublicImage from '../../../../components/PublicImage.astro';
 
 # Learning from Human Videos
 
@@ -28,13 +30,13 @@ import SectionFeedback from '../../../../components/SectionFeedback.astro';
 
 ## Official Visual Evidence
 
-![Learning from Human Videos official overview image](/pi/human-to-robot-og.png)
+<PaperFigure src="/pi/human-to-robot-og.png" alt="Learning from Human Videos official overview image" />
 
 공식 article의 overview visual이다. human video와 robot execution 사이의 domain gap을 이 연구가 직접 겨냥한다는 점을 보여준다.
 
 | Human-to-robot transfer visual |  |
 | --- | --- |
-| ![Human hand example](/pi/human-transfer-hand.png) | ![Robot arm example](/pi/human-transfer-robot-arm.png) |
+| <PublicImage src="/pi/human-transfer-hand.png" alt="Human hand example" /> | <PublicImage src="/pi/human-transfer-robot-arm.png" alt="Robot arm example" /> |
 
 공식 transfer section의 hand/robot visual이다. human data를 별도 transfer mechanism 없이 3D hand-position action이 있는 embodiment처럼 co-finetune한다는 설정을 시각적으로 확인한다.
 

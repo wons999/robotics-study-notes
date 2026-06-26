@@ -1,0 +1,23 @@
+---
+interface Props {
+  src: string;
+  alt: string;
+}
+
+const { src, alt } = Astro.props;
+const base = import.meta.env.BASE_URL === '/' ? '' : import.meta.env.BASE_URL.replace(/\/$/, '');
+const normalizedSrc = src.startsWith('/') ? src : `/${src}`;
+const imageSrc = `${base}${normalizedSrc}`;
+---
+
+<img class="public-image" src={imageSrc} alt={alt} loading="lazy" decoding="async" />
+
+<style>
+  .public-image {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: 0.375rem;
+    background: #fff;
+  }
+</style>

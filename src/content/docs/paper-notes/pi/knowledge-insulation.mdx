@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import SectionFeedback from '../../../../components/SectionFeedback.astro';
+import PaperFigure from '../../../../components/PaperFigure.astro';
 
 # Knowledge Insulation
 
@@ -27,7 +28,7 @@ Knowledge Insulation은 continuous action expert의 gradient가 pretrained VLM b
 
 ## Official Visual Evidence
 
-![Knowledge Insulation official page screenshot](/pi/knowledge-insulation-page.png)
+<PaperFigure src="/pi/knowledge-insulation-page.png" alt="Knowledge Insulation official page screenshot" />
 
 공식 Knowledge Insulation page는 주요 method/result visual을 React-rendered component로 제공해 독립 이미지 URL이 없었다. Playwright full-page screenshot을 저장해 method diagram과 result visual을 함께 확인할 수 있게 했다.
 

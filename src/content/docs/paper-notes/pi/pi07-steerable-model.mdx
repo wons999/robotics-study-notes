@@ -6,6 +6,8 @@ sidebar:
 ---
 
 import SectionFeedback from '../../../../components/SectionFeedback.astro';
+import PaperFigure from '../../../../components/PaperFigure.astro';
+import PublicImage from '../../../../components/PublicImage.astro';
 
 # π0.7
 
@@ -26,17 +28,17 @@ import SectionFeedback from '../../../../components/SectionFeedback.astro';
 
 ## Official Visual Evidence
 
-![π0.7 official overview image](/pi/pi07-og.png)
+<PaperFigure src="/pi/pi07-og.png" alt="π0.7 official overview image" />
 
 공식 π0.7 article의 overview visual이다. single generalist model을 prompt와 subgoal로 steer한다는 방향을 보여준다.
 
 | Current observations |  |  |  |  |
 | --- | --- | --- | --- | --- |
-| ![π0.7 current 1](/pi/pi07-current-1.png) | ![π0.7 current 2](/pi/pi07-current-2.png) | ![π0.7 current 3](/pi/pi07-current-3.png) | ![π0.7 current 4](/pi/pi07-current-4.png) | ![π0.7 current 5](/pi/pi07-current-5.png) |
+| <PublicImage src="/pi/pi07-current-1.png" alt="π0.7 current 1" /> | <PublicImage src="/pi/pi07-current-2.png" alt="π0.7 current 2" /> | <PublicImage src="/pi/pi07-current-3.png" alt="π0.7 current 3" /> | <PublicImage src="/pi/pi07-current-4.png" alt="π0.7 current 4" /> | <PublicImage src="/pi/pi07-current-5.png" alt="π0.7 current 5" /> |
 
 | Visual subgoals |  |  |  |  |
 | --- | --- | --- | --- | --- |
-| ![π0.7 subgoal 1](/pi/pi07-subgoal-1.png) | ![π0.7 subgoal 2](/pi/pi07-subgoal-2.png) | ![π0.7 subgoal 3](/pi/pi07-subgoal-3.png) | ![π0.7 subgoal 4](/pi/pi07-subgoal-4.png) | ![π0.7 subgoal 5](/pi/pi07-subgoal-5.png) |
+| <PublicImage src="/pi/pi07-subgoal-1.png" alt="π0.7 subgoal 1" /> | <PublicImage src="/pi/pi07-subgoal-2.png" alt="π0.7 subgoal 2" /> | <PublicImage src="/pi/pi07-subgoal-3.png" alt="π0.7 subgoal 3" /> | <PublicImage src="/pi/pi07-subgoal-4.png" alt="π0.7 subgoal 4" /> | <PublicImage src="/pi/pi07-subgoal-5.png" alt="π0.7 subgoal 5" /> |
 
 공식 article의 visual subgoal example이다. language prompt만이 아니라 현재 관측과 목표 상태 image를 함께 넣어 behavior를 steer하는 구조를 확인한다.
 

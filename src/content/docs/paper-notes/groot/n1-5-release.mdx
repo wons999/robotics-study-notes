@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import SectionFeedback from '../../../../components/SectionFeedback.astro';
+import PaperFigure from '../../../../components/PaperFigure.astro';
 
 # GR00T N1.5
 
@@ -25,6 +26,23 @@ import SectionFeedback from '../../../../components/SectionFeedback.astro';
 ## 한 줄 요약
 
 GR00T N1.5는 N1 논문의 “dual-system VLA + flow matching action generation” 흐름을 공개 3B급 checkpoint로 옮긴 release이며, 논문 contribution보다 checkpoint를 fine-tune하고 embodiment별 action interface에 맞추는 실무적 의미가 크다.
+
+<PaperFigure
+  src="/groot/n1-5-model-card/model-architecture.png"
+  alt="GR00T N1.X model architecture from the official model card"
+  caption="공식 Hugging Face model card가 참조하는 GR00T N1.X architecture image. N1.5는 image/language/state를 condition으로 사용하고, diffusion/flow matching transformer가 continuous action chunk를 생성하는 계열로 읽어야 한다."
+/>
+
+## Source/Image Inventory
+
+N1.5는 별도 arXiv paper가 아니라 공개 checkpoint/model card 중심 release다. 따라서 N1처럼 PDF figure/table inventory를 만들 수는 없고, 공식 model card와 Isaac-GR00T repository에서 확인 가능한 시각 자료와 근거를 분리해 반영한다.
+
+| 자료 | 반영 위치 | 읽을 포인트 |
+| --- | --- | --- |
+| Hugging Face `nvidia/GR00T-N1.5-3B` model card | 메타데이터, 입력/출력 계약, architecture, license/use 조건 | N1.5가 paper result가 아니라 공개 checkpoint/release라는 점 |
+| Model card architecture image | 한 줄 요약, Architecture | Vision-language model과 diffusion transformer/action module의 연결 |
+| NVIDIA Isaac-GR00T repository | 재현 체크리스트, N1.6/N1.7 차이 | current repository는 N1.7 중심이므로 N1.5 processor/checkpoint revision을 분리해야 함 |
+| GR00T N1 paper | Family 안에서의 위치, N1과의 연결 | N1.5가 계승하는 data pyramid/dual-system/flow matching 개념 |
 
 ## Family 안에서의 위치
 
@@ -54,6 +72,12 @@ N1.5를 N1 paper의 구현 그대로라고 읽으면 안 된다. N1.5는 N1 pape
 ## Architecture
 
 N1.5 model card는 architecture type을 Vision Transformer, MLP, Flow Matching Transformer로 설명한다.
+
+<PaperFigure
+  src="/groot/n1-5-model-card/model-architecture.png"
+  alt="GR00T N1.X architecture diagram"
+  caption="공식 model card의 구조도. 왼쪽의 image observation, language instruction, robot state가 vision-language model과 action transformer로 들어가며, 오른쪽에서 motor action을 생성한다."
+/>
 
 | 모듈 | 역할 | Survey에서 봐야 할 점 |
 | --- | --- | --- |
@@ -195,7 +219,7 @@ GR00T N1.5의 핵심은 “새 논문 contribution”이 아니라 “N1 연구 
 | pass | 확인 내용 |
 | --- | --- |
 | 1. 구조/coverage | metadata, family 위치, architecture, input/output, flow matching, world-modeling, references, post-training, 차이, 재현 체크를 포함했다. |
-| 2. 사실/수치 | Hugging Face `nvidia/GR00T-N1.5-3B` model card의 224x224 input, SigLip2/T5, non-commercial license, architecture 설명을 대조했다. |
+| 2. 사실/수치 | Hugging Face `nvidia/GR00T-N1.5-3B` model card의 224x224 input, SigLip2/T5, non-commercial license, architecture 설명을 대조했다. N1.5는 별도 PDF가 없으므로 PDF figure/table inventory 대신 공식 model card/source inventory를 남겼다. |
 | 3. 코드 구현 | current code가 N1.7 중심이라는 제약을 명시하고, N1.5 구현 detail은 checkpoint revision/branch 확인 대상으로 분리했다. |
 | 4. 해석/연결 | N1 paper, N1.6, N1.7, Flow Matching, pi_0와 연결했다. |
-| 5. 문서 품질/build | 제목에서 작업 단계 이름을 제거하고, nested sidebar build로 확인한다. |
+| 5. 문서 품질/build | 공식 model card가 참조하는 GR00T N1.X architecture image를 `public/groot/n1-5-model-card/`에 저장하고, base-aware `PaperFigure`로 연결한 뒤 build로 확인한다. |

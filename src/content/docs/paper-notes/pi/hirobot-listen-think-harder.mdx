@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import SectionFeedback from '../../../../components/SectionFeedback.astro';
+import PublicImage from '../../../../components/PublicImage.astro';
 
 # HI Robot
 
@@ -30,13 +31,13 @@ HI Robot은 π0를 reactive low-level “System 1”로 두고, 같은 VLM backb
 
 | HI Robot sandwich prompt examples |  |  |
 | --- | --- | --- |
-| ![HI Robot sandwich poster 1](/pi/hirobot-sandwich-poster-1.png) | ![HI Robot sandwich poster 2](/pi/hirobot-sandwich-poster-2.png) | ![HI Robot sandwich poster 3](/pi/hirobot-sandwich-poster-3.png) |
+| <PublicImage src="/pi/hirobot-sandwich-poster-1.png" alt="HI Robot sandwich poster 1" /> | <PublicImage src="/pi/hirobot-sandwich-poster-2.png" alt="HI Robot sandwich poster 2" /> | <PublicImage src="/pi/hirobot-sandwich-poster-3.png" alt="HI Robot sandwich poster 3" /> |
 
 공식 article의 sandwich-making video poster다. complex prompt를 high-level VLM이 substep으로 나누고 low-level π0가 실행하는 qualitative example로 사용한다.
 
 | High-level visual observations |  |  |
 | --- | --- | --- |
-| ![HI Robot observation 1](/pi/hirobot-sandwich-1.png) | ![HI Robot observation 2](/pi/hirobot-sandwich-2.png) | ![HI Robot observation 3](/pi/hirobot-sandwich-3.png) |
+| <PublicImage src="/pi/hirobot-sandwich-1.png" alt="HI Robot observation 1" /> | <PublicImage src="/pi/hirobot-sandwich-2.png" alt="HI Robot observation 2" /> | <PublicImage src="/pi/hirobot-sandwich-3.png" alt="HI Robot observation 3" /> |
 
 공식 HI Robot diagram에 포함된 scene observation images다. high-level policy가 base/wrist image와 user prompt/interjection을 함께 처리한다는 구조를 확인하는 데 쓴다.
 
