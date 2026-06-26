@@ -746,6 +746,23 @@ const rawSlides = [
       'imprecise positioning: insertion, sliding, torque task에서 contact constraint가 중요',
       'future work: tactile-reactive policy와 control/RL의 결합'
     ]
+  },
+  {
+    eyebrow: '13. Research Context',
+    title: '저자들의 연구 흐름으로 본 T-Rex',
+    kicker: 'T-Rex는 여러 그룹의 연구 축이 만난 결과다. VLM/VLA robotics, robot foundation model, human egocentric scaling, tactile-reactive control이 한 시스템 안에서 결합된다.',
+    layout: 'stack',
+    visual: '<table class="mini-table compact-table appendix-table table-center"><tr><th>저자 / 그룹 흐름</th><th>기존 연구 방향</th><th>T-Rex와의 연결</th></tr><tr><td>Dantong Niu / UC Berkeley / Trevor Darrell</td><td>VLM for robotics, robot action prediction, language-grounded robot learning</td><td>instruction grounding, visual-language context, VLA policy 관점으로 연결</td></tr><tr><td>Zhuoyang Liu 계열</td><td>VLA manipulation, reasoning/action 분리, MoT, hybrid VLA 흐름</td><td>variable-rate Mixture-of-Transformer-Experts와 slow/fast expert 분리에 연결</td></tr><tr><td>NVIDIA GEAR / Ruijie Zheng / Yuke Zhu / Jim Fan</td><td>GR00T, generalist robot foundation model, large-scale humanoid/robot policy</td><td>EgoScale/GR00T 기반 human-video prior와 robot foundation policy 축을 제공</td></tr><tr><td>Danfei Xu 계열</td><td>learning from human data, long-horizon reasoning, robot learning systems</td><td>human prior를 robot embodiment와 long-horizon manipulation system으로 옮기는 문제와 연결</td></tr></table>',
+    body: [
+      'Appendix E의 baseline 구성은 T-Rex의 출발점을 보여준다. tactile baseline과 foundation VLA를 같은 robot/action/evaluation 조건에 맞춰 비교하고, tactile을 단순 state input으로 붙이는 것만으로는 충분하지 않다는 점을 강조한다.',
+      '저자 흐름으로 보면 Berkeley 쪽의 VLM/VLA robotics, NVIDIA GEAR의 robot foundation model, human egocentric data scaling, tactile-reactive imitation learning이 T-Rex 안에서 합쳐진다.'
+    ],
+    bullets: [
+      'EgoScale/GR00T 흐름: human video와 foundation policy로 dexterous prior를 만든다.',
+      'pi_0.5 + tactile 결과: naive tactile concatenation은 오히려 성능을 떨어뜨릴 수 있다.',
+      'T-Rex의 차이: tactile을 lower flow segment의 high-frequency expert로 배치한다.'
+    ],
+    insight: '정리하면 T-Rex는 “touch를 input에 추가”한 논문이 아니라, human video foundation prior를 robot tactile contact dynamics에 접지시키고 control-frequency mismatch를 구조적으로 나눈 논문이다.'
   }
 ];
 
