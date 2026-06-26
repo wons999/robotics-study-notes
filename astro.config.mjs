@@ -48,7 +48,39 @@ export default defineConfig({
         },
         {
           label: '논문 Survey',
-          items: [{ autogenerate: { directory: 'paper-notes' } }]
+          items: [
+            { autogenerate: { directory: 'paper-notes' } },
+            {
+              label: 'GR00T Model Family',
+              items: [
+                { label: 'Overview', slug: 'paper-notes/groot' },
+                { label: 'GR00T N1', slug: 'paper-notes/groot/n1-open-foundation-model' },
+                { label: 'GR00T N1.5', slug: 'paper-notes/groot/n1-5-release' },
+                { label: 'GR00T N1.6', slug: 'paper-notes/groot/n1-6-release' },
+                { label: 'GR00T N1.7', slug: 'paper-notes/groot/n1-7-release' }
+              ]
+            },
+            {
+              label: 'PI Model Family',
+              items: [
+                { label: 'Overview', slug: 'paper-notes/pi' },
+                { label: 'π0', slug: 'paper-notes/pi/pi0-vla-flow-model' },
+                { label: 'π0-FAST', slug: 'paper-notes/pi/pi0-fast-action-tokenization' },
+                { label: 'OpenPI', slug: 'paper-notes/pi/openpi-release' },
+                { label: 'HI Robot', slug: 'paper-notes/pi/hirobot-listen-think-harder' },
+                { label: 'π0.5', slug: 'paper-notes/pi/pi05-open-world-generalization' },
+                { label: 'Knowledge Insulation', slug: 'paper-notes/pi/knowledge-insulation' },
+                { label: 'Real-Time Action Chunking', slug: 'paper-notes/pi/real-time-action-chunking' },
+                { label: 'π*0.6 / RECAP', slug: 'paper-notes/pi/pistar06-recap-learns-from-experience' },
+                { label: 'Human-to-Robot Transfer', slug: 'paper-notes/pi/human-to-robot-transfer' },
+                { label: 'Robot Olympics / π0.6', slug: 'paper-notes/pi/moravec-robot-olympics' },
+                { label: 'Physical Intelligence Layer', slug: 'paper-notes/pi/physical-intelligence-layer' },
+                { label: 'MEM', slug: 'paper-notes/pi/mem-multiscale-embodied-memory' },
+                { label: 'RLT', slug: 'paper-notes/pi/rlt-efficient-online-rl' },
+                { label: 'π0.7', slug: 'paper-notes/pi/pi07-steerable-model' }
+              ]
+            }
+          ]
         },
         {
           label: '세미나',
