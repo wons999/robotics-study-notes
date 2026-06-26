@@ -20,6 +20,8 @@ When checking user/site feedback, check issues in `wons999/robotics-study-notes-
 
 ## Agent Operating Rules
 
+- Before substantive survey or seminar work, read `rules/survey.md` and follow it strictly. Do not rely on memory of previous survey mistakes or fixes.
+- For paper survey updates, download or otherwise obtain the paper PDF when available, inspect the PDF directly, extract the paper's figures/tables as local assets when relevant, and verify the written content against the PDF figure/table inventory.
 - Before changing content based on site feedback, inspect the relevant issue in `wons999/robotics-study-notes-feedback`.
 - When a feedback issue is addressed, mention the issue number in the commit message or final summary when practical.
 - Do not add personal workplace details, private project details, or sensitive robot/system information to public site content.
