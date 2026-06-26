@@ -1,0 +1,437 @@
+---
+title: π0.5
+description: π0.5 논문의 open-world generalization, heterogeneous co-training, high-level semantic prediction, 실험 결과, appendix, openpi 구현을 정리한 Survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# π0.5
+
+<SectionFeedback page="π0.5" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | π0.5: a Vision-Language-Action Model with Open-World Generalization |
+| 저자/그룹 | Physical Intelligence, Kevin Black, Noah Brown, James Darpinian, Karan Dhabalia, Danny Driess, Adnan Esmail, Michael Equi, Chelsea Finn, Niccolo Fusai, Manuel Y. Galliker, Dibya Ghosh, Lachy Groom, Karol Hausman, Brian Ichter, Szymon Jakubczak, Tim Jones, Liyiming Ke, Devin LeBlanc, Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Allen Z. Ren, Lucy Xiaoyang Shi, Laura Smith, Jost Tobias Springenberg, Kyle Stachowicz, James Tanner, Quan Vuong, Homer Walke, Anna Walling, Haohuan Wang, Lili Yu, Ury Zhilinsky |
+| 공개 | arXiv v1 2025-04-22 |
+| 링크 | [arXiv](https://arxiv.org/abs/2504.16054), [PDF](https://arxiv.org/pdf/2504.16054), [project article](https://www.pi.website/blog/pi05) |
+| 코드/모델 | [Physical-Intelligence/openpi](https://github.com/Physical-Intelligence/openpi), `gs://openpi-assets/checkpoints/pi05_base` |
+| 태그 | VLA, open-world generalization, heterogeneous co-training, high-level policy, flow matching, household robotics |
+
+## 한 줄 요약
+
+π0.5는 π0의 flow-matching VLA를 집 안 mobile manipulation으로 확장하기 위해, robot action data만이 아니라 web visual-language data, object localization, high-level subtask prediction, verbal instruction, cross-embodiment robot data를 함께 학습해 unseen home에서 multi-stage cleanup task를 수행하도록 만든 모델이다.
+
+## Figure / Table Inventory
+
+PDF 기준 formal table caption은 없고, Figure 1-18이 핵심 근거다. Survey에서는 모든 figure를 본문에 반영했다.
+
+| 원문 Figure | Survey 반영 위치 | 핵심으로 읽을 내용 |
+| --- | --- | --- |
+| Fig. 1 | 문제의식, data mixture | π0.5가 multimodal data와 robot action data를 함께 써서 unseen home에 배포되는 전체 그림 |
+| Fig. 2 | 문제의식, system setting | 새 kitchen에서 high-level subtask를 거쳐 cleanup을 수행하는 qualitative rollout |
+| Fig. 3 | Method, Training Recipe | discrete pre-training, flow post-training, high-level/low-level inference로 나뉘는 two-stage recipe |
+| Fig. 4 | Dataset | MM, ME, CE, HL, WD, verbal instruction 예시 |
+| Fig. 5 | Robot System | 두 mobile manipulator platform, camera, arms, gripper, lift, base 구성 |
+| Fig. 6 | Experiments | mock/real kitchen-bedroom evaluation environments |
+| Fig. 7 | Main Result | unseen real homes에서 kitchen/bedroom cleanup evaluation |
+| Fig. 8 | Location Scaling | training location 수가 늘수록 unseen mock performance가 개선됨 |
+| Fig. 9 | Language Scaling | location 수 증가가 ID/OOD language following과 success에 미치는 영향 |
+| Fig. 10 | Training Ablation | WD, ME, CE 제거가 mock home task progress에 미치는 영향 |
+| Fig. 11 | Language Ablation | WD/ME/CE 제거가 ID/OOD language following에 미치는 영향 |
+| Fig. 12 | Model Comparison | π0.5 vs π0 vs π0-FAST+Flow |
+| Fig. 13 | High-Level Ablation | explicit high-level inference, implicit HL, no HL, no VI, no WD, GPT-4 HL, human HL 비교 |
+| Fig. 14 | Appendix Language Setup | language following initial state 예시 |
+| Fig. 15 | Appendix Language Result | π0.5, π0, π0-FAST+Flow language following 비교 |
+| Fig. 16 | Appendix Per-Task Ablation | training recipe ablation의 task별 breakdown |
+| Fig. 17 | Appendix Per-Task HL | high-level inference ablation의 task별 breakdown |
+| Fig. 18 | Appendix Model Detail | VLM/FAST/action expert attention mask |
+
+## 문제의식
+
+![Figure 1 heterogeneous knowledge transfer](/pi/pi05-paper/fig01-heterogeneous-knowledge-transfer.png)
+
+π0.5가 겨냥하는 문제는 benchmark에서의 평균 success가 아니라, 완전히 새로운 집에서 유용한 household behavior를 수행하는 것이다. 논문은 이 setting을 open-world generalization이라고 부른다. 여기서 어려운 점은 다음 네 가지가 동시에 온다는 점이다.
+
+| 어려움 | π0.5에서의 의미 |
+| --- | --- |
+| 새 환경 | train에 없던 kitchen, bedroom, drawer, furniture, lighting, clutter가 등장한다. |
+| 새 물체 | household object category가 long-tail이고, train robot data에 없던 object도 나온다. |
+| long-horizon task | "clean the kitchen"은 단일 grasp가 아니라 여러 subtask와 navigation/manipulation stage로 나뉜다. |
+| semantic-to-action grounding | object/destination을 이해하는 것과 실제로 집고 넣는 것은 서로 다른 능력이다. |
+
+![Figure 2 new kitchen cleaning](/pi/pi05-paper/fig02-new-kitchen-cleaning.png)
+
+Fig. 2의 qualitative rollout은 π0.5가 high-level command를 그대로 low-level action으로만 풀지 않는다는 점을 보여준다. 모델은 먼저 "close the cabinet", "put the items in the drawer", "wipe the spill", "place the dishes in ..." 같은 high-level subtask를 만들고, 그 subtask를 context로 action을 예측한다.
+
+## Family 안에서의 위치
+
+π0.5는 π0의 단순 checkpoint refresh가 아니다. π0가 general robot action generation과 flow-matching VLA recipe를 보여줬다면, π0.5는 "집이라는 open-world deployment domain에서 semantic knowledge를 어떻게 잃지 않고 action policy로 연결할 것인가"를 다룬다.
+
+| 축 | π0 | π0.5 |
+| --- | --- | --- |
+| 중심 질문 | VLA가 continuous action chunk를 잘 생성할 수 있는가 | unseen home에서 broad semantic/action generalization이 가능한가 |
+| 주요 학습 신호 | robot action trajectory 중심 | robot action + FAST action tokens + high-level subtask + object localization + web VQA/captioning |
+| inference | low-level action chunk generation | high-level subtask inference 후 low-level action inference |
+| data source | large robot mixture | 약 400 hours mobile manipulator data에 더해 ME/CE/HL/WD를 결합 |
+| 공개 코드 | `Pi0Config(pi05=False)` | `Pi0Config(pi05=True)`, 공개 repo는 flow matching head 중심 지원 |
+
+## 시스템 설정
+
+![Figure 5 robot system overview](/pi/pi05-paper/fig05-robot-system-overview.png)
+
+| 항목 | 논문 기준 |
+| --- | --- |
+| domain | kitchen cleanup, bedroom cleanup, household mobile manipulation |
+| robot | 두 종류의 mobile manipulator platform |
+| arms/gripper | 각 platform은 두 개의 6-DoF arm과 parallel jaw gripper를 사용 |
+| cameras | forward, backward, both wrists의 총 4개 camera |
+| base/body | holonomic base와 torso lift mechanism |
+| state/action | platform에 따라 18-19 DoF state/action space |
+| high-level inference input | 네 개 camera 모두 사용 |
+| low-level inference input | wrist cameras + forward camera |
+| control | joint/gripper target, base velocity, lift pose를 50 Hz target으로 직접 출력 |
+| controller | simple PD controller, trajectory planning이나 collision detection을 별도로 두지 않는 end-to-end control |
+
+이 시스템 설정은 결과 해석에 중요하다. π0.5의 success는 model만의 능력이 아니라, camera placement, mobile base, torso lift, action chunking, low-level controller까지 포함한 end-to-end deployment setting에서 나온다.
+
+## Dataset
+
+![Figure 4 pre-training and post-training examples](/pi/pi05-paper/fig04-pretrain-posttrain-examples.png)
+
+논문은 π0.5 학습 data를 한 종류로 보지 않는다. 핵심은 "모든 sample이 action label을 가질 필요는 없다"는 점이다. action data는 physical grounding을 주고, non-action multimodal data는 object/scene/language prior를 유지한다.
+
+| 약어 | 데이터 | 역할 |
+| --- | --- | --- |
+| MM | Diverse Mobile Manipulator data | 약 400 hours, 약 100개 real home environment에서 수집한 target domain data |
+| ME | Multiple Environment data | non-mobile robot을 다양한 home-like environment에 놓고 수집한 manipulation data |
+| CE | Cross-Embodiment data | laboratory condition의 cross-embodiment robot data, open-source OXE 포함 |
+| HL | High-Level subtask prediction | observation과 high-level command에서 다음 semantic subtask를 예측 |
+| WD | Web Data | image captioning, VQA, object localization 등 broad visual-semantic data |
+| VI | Verbal Instruction | human supervisor가 policy rollout 중 high-level subtask를 말로 지정한 post-training data |
+
+논문이 강조하는 수치는 두 가지다. 첫째, target mobile manipulator data는 약 400 hours지만, 이것만으로는 open-world generalization을 만들기 부족하다. 둘째, 첫 번째 training phase에서는 training examples의 97.6%가 mobile household manipulation에서 오지 않는다. 즉 π0.5의 핵심 가정은 "실제 robot data의 domain coverage를 non-robot/web/semantic data가 보완할 수 있다"이다.
+
+### Pre-Training과 Post-Training의 데이터 경계
+
+Fig. 4에서 중요한 점은 data category가 두 stage에서 같은 방식으로 쓰이지 않는다는 것이다.
+
+| stage | 사용 데이터 | 제외/강조 |
+| --- | --- | --- |
+| pre-training | MM, ME, CE, HL, WD를 discrete next-token prediction으로 결합 | robot action은 FAST token으로 넣고, web/object/localization task도 같은 token space에 넣음 |
+| post-training | MM과 ME robot data, WD, ME 쪽 HL slice, VI를 사용 | laboratory CE는 omits; target mobile manipulation과 diverse home environment에 더 집중 |
+| VI collection | expert user가 learned low-level policy를 쓰는 robot에게 step-by-step subtask command를 제공 | action demonstration이라기보다 좋은 high-level subtask output을 만들기 위한 language demonstration |
+
+이 구분은 Fig. 10/11 ablation을 읽을 때 필요하다. CE는 pre-training에서 cross-embodiment skill prior를 주지만, 논문 설명상 post-training은 mobile manipulation과 home-like environment에 초점을 맞춰 CE를 빼고 MM/ME/WD/HL/VI로 좁힌다.
+
+### Action Data Schema
+
+| 항목 | 내용 |
+| --- | --- |
+| target | robot action은 joint pose 또는 end-effector pose target으로 표현 |
+| control mode token | prompt에 `<control mode> joint/end effector <control mode>` 형식으로 action representation을 알려줌 |
+| normalization | action dimension별 1%와 99% quantile을 사용해 `[-1, 1]` 범위로 정규화 |
+| action dimension | 가장 큰 action space를 수용하도록 고정하고, 낮은 dimension robot은 zero padding |
+| FAST use | pre-training 단계에서 robot action chunk를 FAST tokenizer로 discrete token화 |
+
+이 schema는 heterogeneous robot mixture를 같은 transformer input/output space에 넣기 위한 장치다. control mode token과 zero padding이 없으면 robot embodiment가 달라질 때 action meaning이 섞인다.
+
+### High-Level Data
+
+HL data는 "clean the bedroom" 같은 broad command를 바로 action으로 바꾸는 대신, 현재 observation에서 policy가 수행해야 할 semantic subtask를 예측하도록 만든다. 논문은 일부 multi-subtask robot data에 manual annotation을 붙여 high-level target을 만들고, object bounding box prediction과 subtask command prediction을 함께 사용한다.
+
+VI data는 post-training에서 중요하다. 논문은 VI가 high-level mobile manipulation examples의 약 11%에 불과하지만, Fig. 13의 no VI ablation에서 성능이 유의하게 떨어진다고 보고한다. 즉 작은 양의 human verbal supervision도 runtime high-level policy의 안정성에 강하게 작용한다.
+
+## Method
+
+![Figure 3 two-stage model overview](/pi/pi05-paper/fig03-two-stage-model-overview.png)
+
+π0.5의 method는 "discrete token VLA pre-training"과 "flow matching post-training"을 결합한다. 논문은 high-level inference와 low-level inference를 같은 모델에서 수행하지만, 확률 분해 관점에서는 다음처럼 나눈다.
+
+```text
+pi_theta(a_{t:t+H}, l_hat | o_t, l)
+  = pi_theta(a_{t:t+H} | o_t, l_hat) * pi_theta(l_hat | o_t, l)
+```
+
+| 부분 | 의미 |
+| --- | --- |
+| `o_t` | image observations와 proprioceptive state |
+| `l` | user/high-level language instruction |
+| `l_hat` | 모델이 예측한 high-level subtask |
+| `a_{t:t+H}` | low-level continuous action chunk |
+
+### Stage 1: Discrete Pre-Training
+
+첫 번째 stage에서는 모든 task를 discrete token prediction 문제로 넣는다. web caption/VQA/object localization은 자연스럽게 text/location token prediction이고, robot action data는 FAST tokenizer로 action chunk를 discrete token sequence로 바꾼다. 이 단계는 action expert를 쓰지 않고 VLM이 broad semantic/action token prior를 갖도록 만든다.
+
+### Stage 2: Post-Training With Flow Matching
+
+두 번째 stage에서는 task-relevant mobile manipulation data와 VI data를 중심으로 post-training한다. 이때 text/FAST token prediction과 continuous action expert의 flow matching을 함께 사용한다.
+
+논문 수식의 핵심은 cross entropy와 flow loss를 같이 두는 것이다.
+
+```text
+L = CE(text / FAST action tokens)
+    + alpha * || omega - a_{t:t+H} - f_theta^a(a_tau, o_t, l) ||^2
+```
+
+| 항목 | 논문 기준 |
+| --- | --- |
+| pre-training length | 280k steps |
+| post-training length | 80k additional steps |
+| flow loss weight | `alpha = 10.0` |
+| noisy action | `a_tau = tau * a_{t:t+H} + (1 - tau) * omega`, `omega ~ N(0, I)`로 설명 |
+| target vector | 논문 수식 기준 `omega - a_{t:t+H}` |
+| inference | 먼저 autoregressive high-level subtask를 만들고, 그 subtask 조건에서 action expert를 10 denoising steps로 sampling |
+
+주의할 점은 공개 `openpi` 코드 주석이 diffusion literature convention을 따른다고 적고, `t=1`을 noise, `t=0`을 target으로 둔다는 점이다. 논문 설명과 코드 구현은 같은 flow matching idea를 쓰지만 time convention 설명이 다를 수 있으므로 Survey에서는 분리해서 읽어야 한다.
+
+## Model Architecture
+
+![Figure 18 attention mask](/pi/pi05-paper/fig18-attention-mask.png)
+
+Appendix E는 π0.5 모델 구조를 재현 관점에서 가장 자세히 설명한다.
+
+| 구성 | 논문 기준 |
+| --- | --- |
+| VLM backbone | PaliGemma 기반 2B VLM |
+| action expert | 작은 transformer expert, 약 300M parameters |
+| image encoder | π0 계열과 동일하게 vision tokens를 VLM prefix에 넣음 |
+| state | proprioceptive state `q_t`를 tokenized form으로 VLM에 제공 |
+| FAST actions | FAST action tokens를 autoregressive token으로 예측 가능 |
+| continuous actions | action expert가 noisy action token sequence를 받아 vector field 출력 |
+| action horizon | action horizon 50, 논문 표기상 `H = 49` |
+| VLM dimensions | width 2048, depth 18, mlp_dim 16384, num_heads 18, num_kv_heads 1, head_dim 256 |
+| action expert dimensions | width 1024, mlp_dim 4096, 나머지는 VLM 설정과 대응 |
+
+### Attention Mask
+
+Fig. 18에서 중요한 점은 VLM과 action expert 사이의 정보 흐름이 대칭이 아니라는 것이다.
+
+| token group | attention rule |
+| --- | --- |
+| images, prompt tokens, proprio state | full prefix mask |
+| FAST action tokens | prefix와 previous FAST tokens에 autoregressive attention |
+| action expert embeddings | prefix와 action expert token끼리는 attend하지만 FAST action tokens에는 attend하지 않음 |
+| VLM embeddings | action expert output을 attend하지 않음 |
+
+이 mask는 두 action representation 사이의 leakage를 막는다. FAST token prediction은 discrete semantic/action prior를 유지하고, action expert는 continuous control을 담당한다. 두 경로가 같은 target을 서로 복사하는 구조가 아니라, prefix knowledge를 공유하면서 역할을 분리하는 구조다.
+
+### Timestep Conditioning
+
+π0는 noisy action과 flow timestep을 함께 MLP로 섞어 action token을 만든다. π0.5는 timestep `tau`를 별도 MLP로 projection하고, adaptive RMSNorm으로 action expert 각 layer에 주입한다. 논문은 timestep MLP를 `swish(W2 * swish(W1 * phi(tau)))` 형태로 설명한다.
+
+flow timestep sampling은 π0를 따른다. standard uniform sampling 대신 낮은 timestep을 강조하는 `Beta((s - tau) / s; alpha=1.5, beta=1)` distribution을 쓰며, cutoff `s = 0.999`를 둬 최대 1000 integration steps까지 수용한다. image augmentation은 random crop 0.95, resize, rotation `[-5, 5]`, color jitter brightness 0.3, contrast 0.4, saturation 0.5 순서로 적용한다.
+
+## Training Recipe
+
+| 단계 | 학습 방식 | 목적 |
+| --- | --- | --- |
+| pre-training | all tasks를 discrete token prediction으로 학습, robot action은 FAST token 사용 | broad VLM/robot/action token prior 형성 |
+| post-training | text/FAST token prediction + action expert flow matching | target mobile manipulation에 맞춘 continuous control |
+| high-level inference training | HL/VI data로 subtask output을 학습 | long-horizon task decomposition |
+| low-level inference training | predicted/manual subtask 조건에서 action chunk를 학습 | subtask-conditioned manipulation |
+
+π0.5는 web data만 넣은 VLM도 아니고 robot action data만 넣은 policy도 아니다. pre-training에서는 heterogeneous task를 discrete token space로 묶고, post-training에서는 action expert를 붙여 physical control quality를 회복한다. 이 구조 때문에 π0.5는 object recognition, subtask reasoning, manipulation skill을 같은 model family 안에서 연결한다.
+
+## Experiments and Results
+
+![Figure 6 evaluation environments](/pi/pi05-paper/fig06-evaluation-environments.png)
+
+논문 실험은 총 다섯 질문을 중심으로 구성된다.
+
+| 질문 | 관련 Figure | 의미 |
+| --- | --- | --- |
+| 새로운 real home에서 동작하는가 | Fig. 6, Fig. 7 | unseen kitchen/bedroom의 실제 deployment |
+| training location 수가 generalization을 키우는가 | Fig. 8, Fig. 9 | location diversity scaling |
+| co-training source가 필요한가 | Fig. 10, Fig. 11, Fig. 16 | WD/ME/CE ablation |
+| π0와 비교해 나아졌는가 | Fig. 12, Fig. 15 | π0, π0-FAST+Flow와 비교 |
+| high-level inference가 필요한가 | Fig. 13, Fig. 17 | explicit/implicit/no HL, VI, WD, GPT-4, human oracle 비교 |
+
+### Main Real-Home Evaluation
+
+![Figure 7 real-home evaluation](/pi/pi05-paper/fig07-real-home-evaluation.png)
+
+Fig. 7은 세 개 real kitchens와 세 개 real bedrooms에서 unseen home evaluation을 수행한다. task는 kitchen cleanup과 bedroom cleanup이고, 논문은 각 episode가 multi-minute이며 일부 task는 10-15분 길이의 complex multi-stage behavior까지 포함한다고 설명한다.
+
+이 figure를 binary success로 읽으면 안 된다. Appendix B의 rubric이 partial credit을 정의하고, 본문 결과는 percent of total rubric points로 보고한다. 예를 들어 Dishes in Sink에서 4개 중 2개를 sink에 넣으면 약 50% progress가 된다. Fig. 7의 real-home qualitative/quantitative example은 Items in Drawer, Dishes in Sink, Laundry Basket을 보여주며, mock environment가 real-home performance의 대표성을 갖는지 함께 비교한다.
+
+### Location Scaling
+
+![Figure 8 location scaling](/pi/pi05-paper/fig08-location-scaling.png)
+
+Fig. 8은 training location 수를 `3, 12, 22, 53, 82, 104`로 늘렸을 때 mock evaluation environment에서 평균 task progress가 어떻게 변하는지 보여준다. 비교를 공정하게 하기 위해 pre-training과 post-training 전체를 매번 처음부터 반복하지 않고, non-mobile manipulation data가 빠진 pretraining mixture에서 시작한 뒤 40k post-training steps로 맞춘다. 논문은 이 step 수가 각 model이 같은 수의 unique data sample을 보도록 하기 위한 선택이라고 설명한다.
+
+해석은 명확하다. location diversity가 늘수록 unseen mock performance가 개선되고, 104-location model은 test environment data를 직접 본 in-domain baseline에 접근한다. 반대로 104-location target mobile manipulation data만 쓰고 다른 co-training source를 쓰지 않는 baseline은 크게 낮다. 즉 성능은 단순히 target platform data 양이 아니라 heterogeneous co-training recipe에 의존한다.
+
+![Figure 9 language location scaling](/pi/pi05-paper/fig09-language-location-scaling.png)
+
+Fig. 9는 location scaling이 language following에도 영향을 준다는 점을 보여준다. metric은 correct object를 골랐는지 보는 language following rate와 실제 placement까지 성공했는지 보는 success rate로 나뉜다. ID object보다 OOD object가 더 어렵고, OOD에서 location 수 증가가 특히 중요하다.
+
+### Training Recipe Ablation
+
+![Figure 10 training recipe ablation](/pi/pi05-paper/fig10-training-recipe-ablation-mock-homes.png)
+
+Fig. 10은 mock homes에서 full π0.5와 data ablation을 비교한다.
+
+| ablation | 제외한 것 | 결과 해석 |
+| --- | --- | --- |
+| no WD | web data, VQA/captioning/object localization 계열 | full task progress에서는 유의한 drop이 아니지만, 뒤의 language/OOD 결과에서 약점이 드러남 |
+| no CE | cross-embodiment laboratory data | mock household task progress가 크게 떨어짐 |
+| no ME | diverse non-mobile home-like environment data | CE 제거와 마찬가지로 task progress가 크게 떨어짐 |
+| no CE or ME | ME와 CE를 모두 제거 | 가장 큰 drop, target MM data만으로는 부족함 |
+
+Fig. 10의 p-value 표기는 no WD가 `p=0.385`로 유의하지 않고, no CE/no ME/no CE or ME는 `p<0.001`로 유의한 차이를 보인다. 따라서 "web data는 중요하지 않다"가 아니라, full task progress 평균에서는 ME/CE robot data가 더 직접적인 bottleneck이고, WD의 효과는 object/language generalization에서 더 잘 드러난다고 읽어야 한다.
+
+![Figure 11 training recipe ablation language](/pi/pi05-paper/fig11-training-recipe-ablation-language.png)
+
+Fig. 11은 같은 ablation을 language following으로 보면 결론이 달라진다는 점을 보여준다. WD를 제거하면 특히 OOD object follow rate와 success rate가 크게 떨어진다. ME/CE도 ID/OOD 모두에 영향을 주며, no CE or ME는 가장 낮다. 이 결과는 web semantic data가 unseen object category를 이해하는 데 필요하고, robot data diversity가 실제 placement success를 받쳐준다는 해석을 뒷받침한다.
+
+### Model Comparison
+
+![Figure 12 model comparison](/pi/pi05-paper/fig12-model-comparison.png)
+
+Fig. 12는 π0.5를 π0와 π0-FAST+Flow와 비교한다.
+
+| model | 비교 의미 |
+| --- | --- |
+| π0.5 | full co-training recipe, HL/WD data 포함 |
+| π0-FAST+Flow | Eq. (1)과 유사한 hybrid recipe를 action data에 적용하지만 HL/WD data가 없어 high-level inference를 못 함 |
+| π0 300k / π0 80k | pure π0 계열 baseline, longer training을 허용해도 π0.5보다 낮음 |
+
+핵심은 π0.5 성능이 action expert나 longer training만으로 설명되지 않는다는 점이다. π0-FAST+Flow가 flow matching과 FAST를 결합해도, HL/WD와 high-level inference가 없으면 full π0.5에 도달하지 못한다.
+
+### High-Level Inference Ablation
+
+![Figure 13 high-level inference ablation](/pi/pi05-paper/fig13-high-level-inference-ablation.png)
+
+Fig. 13은 high-level inference가 단순 convenience가 아니라 성능 요인임을 보여준다.
+
+| condition | 의미 | 해석 |
+| --- | --- | --- |
+| π0.5 | 같은 model이 high-level과 low-level inference 수행 | best overall |
+| implicit HL | runtime high-level inference는 없지만 HL data를 학습에는 포함 | second best, HL data 자체도 low-level policy에 도움 |
+| no HL | runtime HL도 없고 HL data도 없음 | 큰 성능 하락 |
+| no VI | verbal instruction data 제거 | high-level policy adaptation이 약화됨 |
+| no WD | web data 제거 | semantic object/scene grounding 약화 |
+| GPT-4 HL | GPT-4를 external high-level policy로 사용 | zero-shot large API model이 robot-domain fine-tuned high-level policy보다 낮음 |
+| human HL | human oracle high-level policy | π0.5보다도 낮게 나와, high-level label만 좋다고 low-level success가 보장되지는 않음을 시사 |
+
+논문은 implicit HL이 두 번째로 좋다는 점을 중요하게 본다. runtime에 high-level subtask를 명시적으로 만들지 않아도, HL data를 학습에 넣은 것만으로 low-level policy가 subtask prior를 얻는다. 하지만 full π0.5가 가장 좋기 때문에, 학습 중 HL data와 runtime high-level inference가 함께 필요하다고 해석한다.
+
+## Appendix Notes
+
+Appendix는 π0.5 Survey에서 특히 중요하다. task rubric, language following protocol, per-task breakdown, architecture detail이 모두 appendix에 있다.
+
+### Task Evaluation Rubric
+
+Appendix B는 네 task의 partial credit을 정의한다. 각 policy/task/location 비교는 같은 item set을 사용하고, standard evaluation에서는 policy당 40 evaluations가 되도록 네 task와 네 location을 사용한다. 기본 단위는 task당 10 evaluations이고, episode 하나가 multi-minute일 수 있기 때문에 evaluation cost가 크다. 논문은 policy 실행 순서를 interleave해서 환경 변화 bias를 줄이고, 일부 robot failure/time limitation 등으로 cancelled episode를 제거한 뒤 variable trial count에 대한 two-sided t-test를 plot에서 보고한다고 설명한다.
+
+| task | maximum score | point 구성 |
+| --- | ---: | --- |
+| Dishes in Sink | 8 | 4개 dish 각각에 대해 `+1 pick`, `+1 placed in sink` |
+| Items in Drawer | 4 | `+1 pick`, `+1 open drawer`, `+1 object in drawer`, `+1 close drawer if object inside` |
+| Laundry in Basket | 3 | `+1 navigate and pick clothing`, `+1 place into/on basket`, `+1 clothing fully inside basket` |
+| Make the Bed | 5 | `+1 blanket covers sheets`, `+1 pillow 1 at head`, `+1 pillow 2 at head`, `+1 blanket very neat`, `+1 both pillows very neat` |
+
+이 rubric은 π0.5 결과를 해석할 때 반드시 같이 봐야 한다. task progress 60%는 "완전 성공률 60%"가 아니라, stage별 partial point 평균일 수 있다.
+
+### Language Following Setup
+
+![Figure 14 language following initial states](/pi/pi05-paper/fig14-language-following-initial-states.png)
+
+Appendix C의 language following experiment는 두 unseen kitchen scene에서 수행된다.
+
+| scenario | object set |
+| --- | --- |
+| Items in drawer | tongs, wooden serving spoon, can opener, scissors, small yellow mustard |
+| Items in sink | cup, bowl, plate, plastic spoon, cutting board |
+| OOD drawer variant | funnel, pill bottle, grill lighter, lighter, safety goggles |
+
+각 trial에는 object 5개가 있고, target object를 distractor보다 멀리 배치한다. instruction을 이해하지 못하고 가까운 물체를 잡는 shortcut policy는 약 20% language following accuracy 수준에 머물도록 만든 protocol이다.
+
+![Figure 15 language following model comparison](/pi/pi05-paper/fig15-language-following-model-comparison.png)
+
+Fig. 15는 π0.5가 π0-FAST+Flow보다 약간 높고, π0보다 훨씬 높은 language following 성능을 보인다고 설명한다. 이 결과는 discrete token training과 semantic co-training이 command following 능력 보존에 중요하다는 근거다.
+
+### Per-Task Breakdown
+
+![Figure 16 per-task training ablation](/pi/pi05-paper/fig16-per-task-training-ablation.png)
+
+Fig. 16은 Fig. 10 평균 결과를 task별로 풀어준다. Items in Drawer는 broad object knowledge와 drawer interaction이 함께 필요해 WD/ME/CE 제거에 모두 민감하다. Dishes in Sink는 WD 제거에는 비교적 robust하지만 ME/CE 제거에 민감해서, visual semantic보다 manipulation strategy transfer가 더 직접적인 bottleneck임을 시사한다. Laundry Basket과 Make Bed도 cross-embodiment data 제거에서 하락하지만, task별 민감도는 다르다.
+
+![Figure 17 per-task high-level ablation](/pi/pi05-paper/fig17-per-task-high-level-ablation.png)
+
+Fig. 17은 high-level inference ablation을 task별로 보여준다. Items in Drawer와 Dishes in Sink에서는 no HL이 크게 떨어진다. 이는 object를 고르고 drawer/sink destination을 정하는 semantic decomposition이 중요하기 때문이다. Laundry Basket과 Dishes in Sink 일부는 high-level policy choice에 덜 민감한데, task horizon이 짧거나 semantic branching이 적기 때문으로 해석된다. GPT-4 HL이 full π0.5보다 낮은 점은 generic VLM reasoning이 robot-domain high-level supervision을 대체하지 못한다는 근거다.
+
+## Code-Level Check
+
+공식 `openpi` repository를 직접 확인했다. 중요한 점은 논문 system과 공개 구현 범위를 섞지 않는 것이다. README는 π0.5가 better open-world generalization을 위해 knowledge insulation으로 학습된 model이라고 설명하지만, repository에서는 현재 π0.5 training/inference에 flow matching head만 지원한다고 명시한다. 또한 2025년 9월 이후 README 기준으로 JAX 구현뿐 아니라 π0/π0.5 PyTorch implementation도 제공되지만, PyTorch path는 converted checkpoint와 `model.safetensors` 자동 감지, transformers patch, precision 제한 같은 공개 runtime/fine-tuning 지원 범위에 해당한다. 논문 내부의 high-level semantic co-training pipeline 전체가 그대로 공개된 것은 아니다.
+
+| 공식 코드 경로 | 확인 내용 |
+| --- | --- |
+| `README.md` | `pi05_base`, `pi05_libero`, `pi05_droid` checkpoint 안내. π0.5는 현재 repo에서 flow matching head 중심으로 지원된다고 명시. PyTorch support는 π0/π0.5에 제공되고 π0-FAST는 제외 |
+| `src/openpi/models/pi0_config.py` | `Pi0Config(pi05=True)`이면 `ModelType.PI05`, `max_token_len=200`, `discrete_state_input=True`가 기본값 |
+| `src/openpi/models/pi0.py` | `Pi0` class가 π0/π0.5를 함께 구현. `pi05=True`면 action expert에 AdaRMSNorm timestep conditioning을 사용 |
+| `src/openpi/training/config.py` | `pi05_aloha`, `pi05_droid`, `pi05_libero`, `pi05_full_droid_finetune`, `pi05_droid_finetune` configs 존재 |
+| `src/openpi/transforms.py` | `TokenizePrompt(..., discrete_state_input=model_config.discrete_state_input)`로 π0.5의 discrete state input path를 구성 |
+| `src/openpi/policies/policy_config.py` | checkpoint assets, norm stats, transforms를 policy creation path에서 연결. checkpoint directory에 `model.safetensors`가 있으면 PyTorch model로 자동 감지 |
+
+### 구현에서 확인한 π0.5 차이
+
+| 항목 | π0 path | π0.5 path |
+| --- | --- | --- |
+| state input | action expert suffix에 continuous state token 추가 | state를 discrete prompt/token input으로 넣는 path가 기본 |
+| timestep injection | noisy action과 time embedding을 concatenate 후 MLP | timestep만 별도 MLP로 처리하고 action expert AdaRMSNorm condition으로 주입 |
+| token length | default `48` | default `200` |
+| action horizon | default `50` | default `50`, fine-tuning config별 override 가능 |
+| flow loss | `u_t = noise - actions`, MSE | 같은 `compute_loss` path 사용 |
+| inference | noise에서 시작해 `num_steps=10` default로 Euler-style update | 같은 `sample_actions` path, `pi05=True`에서 AdaRMSNorm condition 포함 |
+
+공개 fine-tuning config는 논문 household deployment와 동일하다고 보면 안 된다. 예를 들어 `pi05_libero`는 `action_horizon=10`, `discrete_state_input=False`로 override하고, `pi05_droid`는 `action_horizon=15`, full DROID fine-tuning 계열은 `action_horizon=16`과 `action_dim=32`를 사용한다. 이 값들은 public benchmark/fine-tuning setting이고, 논문 Appendix E의 internal household model setting과 분리해서 적어야 한다.
+
+## 한계와 주의
+
+| 한계 | 이유 |
+| --- | --- |
+| full data mixture 재현성 | MM/ME/CE/HL/WD/VI의 정확한 weighting, internal data, annotation pipeline이 전부 공개된 것은 아니다. |
+| public openpi 범위 | 공개 repo는 π0.5 checkpoint와 flow matching head path를 제공하지만, 논문 전체 high-level semantic co-training pipeline을 그대로 재현하는 package는 아니다. |
+| PyTorch 지원 범위 | 공개 repo는 π0/π0.5 PyTorch inference/fine-tuning path를 제공하지만, mixed precision/FSDP/LoRA/EMA 등 일부 training feature 제한을 README에 명시한다. |
+| hardware dependency | mobile base, torso lift, camera layout, PD controller, action interface가 결과에 강하게 묶여 있다. |
+| evaluation metric | progress rubric은 partial credit이므로 binary success와 다르다. |
+| failure modes | 논문 discussion은 drawer/cabinet handle, partial observability, spill occlusion, repeated open/close 등 persistent challenge를 언급한다. |
+| prompt/context limit | 논문은 비교적 단순한 prompt를 사용하며, 더 복잡한 preference/instruction과 rich context/memory는 future work로 남긴다. |
+
+## Citation Trail
+
+| 연결 논문/모델 | 연결 이유 |
+| --- | --- |
+| π0 | base flow-matching VLA architecture와 action expert |
+| FAST | pre-training stage에서 action chunk를 discrete token으로 표현 |
+| RT-2 / OpenVLA 계열 | web/VLM semantic prior를 robot action으로 transfer하려는 VLA 흐름 |
+| Open X-Embodiment / DROID / Bridge | cross-embodiment robot data와 broad robot foundation training 배경 |
+| Hi Robot | hierarchical VLA와 high-level instruction following 흐름 |
+| Embodied CoT / CoT-VLA | high-level reasoning과 action policy를 연결하는 관련 연구 |
+| T-Rex | π0.5가 tactile-reactive dexterous manipulation 연구의 action expert baseline/비교 축으로 이어짐 |
+
+## 기억할 점
+
+1. π0.5의 핵심은 "더 큰 robot dataset"이 아니라 "heterogeneous data를 섞어 semantic knowledge와 physical action을 동시에 유지하는 recipe"다.
+2. Fig. 10만 보면 WD 효과가 작아 보이지만, Fig. 11과 Fig. 16을 같이 보면 WD는 OOD object/language grounding에 중요하다.
+3. high-level inference는 runtime planning module을 외부에 붙인 것이 아니라, 같은 model이 semantic subtask를 먼저 만들고 그 subtask로 low-level action을 조건화하는 구조다.
+4. human HL oracle이 full π0.5보다 낮게 나온 점은 high-level label 품질만으로 전체 performance가 결정되지 않음을 보여준다. high-level policy와 low-level policy의 training distribution alignment가 중요하다.
+5. 공개 openpi의 `pi05=True` 구현은 논문 전체 system이 아니라, π0.5 checkpoint/fine-tuning을 위한 flow matching action model path로 이해해야 한다.
+
+## 검증 메모
+
+| Pass | 결과 |
+| --- | --- |
+| 1. 구조/coverage | `rules/survey.md` 기준으로 문제의식, system, dataset, method, architecture, training, all result figures, appendix, code-level check, 한계, citation trail을 재확인했다. |
+| 2. 사실/수치 | arXiv PDF 19 pages를 다시 확보해 Figure 1-18 inventory, 400 hours/약 100 homes, 97.6%, 280k+80k, post-training CE omission, `alpha=10.0`, 10 denoising steps, location counts `3/12/22/53/82/104`, rubric 점수와 standard 40-evaluation protocol을 PDF와 대조했다. |
+| 3. 코드 구현 | 공식 `openpi` 최신 `README.md`, `pi0_config.py`, `pi0.py`, `training/config.py`, `transforms.py`, `policy_config.py`를 다시 확인해 `pi05=True`, PyTorch/JAX support, `model.safetensors` detection, fine-tuning config override를 분리했다. |
+| 4. 시각 자료 | arXiv PDF를 180 dpi로 page render한 뒤 Figure 1-18을 모두 재-crop했다. Fig. 5/8/9/10/11 등 기존에 본문이 끼거나 caption/축이 빡빡하던 asset은 좌표를 재조정했고, contact sheet로 전수 검수했다. |
+| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 Astro check/build와 `/paper-notes/pi/pi05-open-world-generalization/` route 생성을 확인했다. |
