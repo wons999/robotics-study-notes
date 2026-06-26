@@ -1,0 +1,201 @@
+---
+title: GR00T N1.5
+description: GR00T N1.5 공개 모델의 architecture, 학습 관점, release 위치, 재현 체크포인트를 정리한 Survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# GR00T N1.5
+
+<SectionFeedback page="GR00T N1.5" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 문서 성격 | 논문 Survey가 아니라 공개 모델/release Survey |
+| 대표 모델 | `nvidia/GR00T-N1.5-3B` |
+| 공식 자료 | Hugging Face model card, NVIDIA Isaac-GR00T repository |
+| 계열 위치 | [GR00T N1](../n1-open-foundation-model/) paper 이후, N1.6/N1.7 이전의 공개 3B급 checkpoint |
+| 공개 사용 조건 | model card 기준 non-commercial use |
+| 핵심 키워드 | open foundation checkpoint, cross-embodiment VLA, vision-language encoders, flow matching action transformer, world-modeling objective |
+
+## 한 줄 요약
+
+GR00T N1.5는 N1 논문의 “dual-system VLA + flow matching action generation” 흐름을 공개 3B급 checkpoint로 옮긴 release이며, 논문 contribution보다 checkpoint를 fine-tune하고 embodiment별 action interface에 맞추는 실무적 의미가 크다.
+
+## Family 안에서의 위치
+
+| 비교 축 | N1 paper | N1.5 | N1.6/N1.7 방향 |
+| --- | --- | --- | --- |
+| primary evidence | arXiv paper + appendix | model card/checkpoint 중심 | model card + current Isaac-GR00T code |
+| 역할 | data pyramid와 dual-system VLA 제안 | 공개 foundation checkpoint 제공 | backbone, processor, deployment stack 업데이트 |
+| 모델 설명 | Eagle-2 VLM + DiT action module | vision/text transformer + MLP + flow matching transformer | N1.6은 architecture 설명 강화, N1.7은 `gr00t_n1d7` 코드 기준 |
+| 학습 설명 | real/sim/human/neural data pyramid | real/synthetic data로 post-training 가능 | N1.7은 human video pretraining, relative EEF action, TensorRT path 강조 |
+| 주의점 | paper result는 N1 기준 | 독립 paper result가 아님 | release별 성능/데이터/라이선스 기준이 다름 |
+
+N1.5를 N1 paper의 구현 그대로라고 읽으면 안 된다. N1.5는 N1 paper가 만든 연구 질문을 “공개 checkpoint + fine-tuning workflow”로 쓰기 시작한 단계다.
+
+## 입력과 출력 계약
+
+| 구성 | 내용 |
+| --- | --- |
+| vision input | robot camera RGB frames, embodiment별 view 수는 달라질 수 있음 |
+| language input | natural language instruction |
+| state input | robot proprioception, embodiment별 dimension이 다름 |
+| embodiment condition | 어떤 robot/action schema인지 구분하기 위한 embodiment index 또는 processor 설정 |
+| output | robot embodiment에 대응되는 continuous action vector |
+| action horizon | model card는 “chunk of actions”라고 설명하며, 정확한 horizon은 checkpoint/config를 함께 확인해야 함 |
+
+핵심은 “모든 robot을 하나의 고정 action vector로 강제로 맞춘다”가 아니다. 각 embodiment의 state/action을 shared transformer space에 올리고, 마지막에는 해당 embodiment의 action dimension으로 decode하는 계열로 이해해야 한다.
+
+## Architecture
+
+N1.5 model card는 architecture type을 Vision Transformer, MLP, Flow Matching Transformer로 설명한다.
+
+| 모듈 | 역할 | Survey에서 봐야 할 점 |
+| --- | --- | --- |
+| vision transformer | image observation을 visual token으로 변환 | view 수가 embodiment마다 달라도 token sequence로 concatenate하는 구조 |
+| text transformer | instruction을 language token으로 변환 | action transformer의 condition으로 들어감 |
+| MLP connector | vision-language feature와 DiT/action transformer 사이 연결 | N1.5에서 sim benchmark 성능 개선을 위해 수정된 것으로 설명됨 |
+| proprio encoder | proprioception을 action transformer가 쓸 token/embedding으로 변환 | embodiment별 state dimension 차이를 흡수해야 함 |
+| flow matching transformer | proprio/action self-attention과 vision-language cross-attention을 interleave | N1 paper의 System 1 계열 역할 |
+| action decoder | velocity prediction 또는 denoised action을 embodiment-specific motor command로 변환 | output dimension과 normalization이 중요 |
+
+N1.5는 “VLM이 직접 action token을 autoregressive하게 생성한다”기보다, vision-language features가 continuous action flow model을 condition하는 구조다.
+
+## Model Card 기준 세부 구조
+
+N1.5 model card는 GR00T N1.X architecture diagram을 기준으로 더 구체적인 component를 제시한다.
+
+| Component | model card 근거 | 해석 |
+| --- | --- | --- |
+| vision encoder | RGB camera frames are processed through SigLip2 | image를 고정 크기 token sequence로 만들고, multi-view는 token sequence concat으로 처리한다. |
+| text encoder | text is encoded by T5 | instruction token이 action transformer의 semantic condition이 된다. |
+| proprio encoder | embodiment ID로 indexed된 MLP 사용 | variable-dimension proprioception을 max length로 padding한 뒤 embodiment-specific MLP가 처리한다. |
+| action encoder/decoder | action encoding과 velocity prediction decoding은 embodiment별 MLP | action dimension과 motor semantics가 embodiment마다 다르다는 점을 구조적으로 반영한다. |
+| flow matching transformer | DiT, diffusion step conditioning은 AdaLN | timestep condition이 transformer block normalization에 들어가는 diffusion/flow 계열 구조다. |
+| MLP connector | N1.5에서 post-VLM connector가 sim benchmark 성능 개선을 위해 수정됨 | VLM feature와 DiT action head 사이의 bottleneck이 중요한 성능 요소였다는 뜻이다. |
+
+이 표에서 중요한 부분은 SigLip2/T5/DiT라는 이름 자체보다 “vision-language foundation model과 action diffusion transformer 사이에 connector와 embodiment-specific action interface가 있다”는 점이다. Survey나 세미나에서 GR00T를 단일 VLM처럼 설명하면 핵심을 놓친다.
+
+## Input/Output Contract
+
+| 구분 | N1.5 model card 기준 |
+| --- | --- |
+| vision input | variable number of `224x224` uint8 RGB image frames |
+| state input | 1D floating point robot proprioception |
+| language input | string instruction |
+| output type | continuous-value action vectors |
+| output shape 설명 | 2D action output으로 표기되며, 실제 motor control 의미는 robot DoF/embodiment에 따라 달라짐 |
+| runtime | PyTorch |
+| OS | Linux |
+| supported hardware | NVIDIA Ampere, Blackwell, Jetson, Hopper, Lovelace |
+
+N1.5는 image resolution을 `224x224`로 명시한다. N1.6 model card의 “any resolution” 및 N1.7 README의 native aspect ratio 지원과 구분해야 한다.
+
+## Flow Matching 학습 구조
+
+| 단계 | 의미 |
+| --- | --- |
+| clean action | demonstration에서 온 continuous action chunk |
+| noise | Gaussian noise vector |
+| corrupted action | clean action과 noise 사이를 random interpolation해서 만든 training input |
+| condition | vision tokens, language tokens, proprioception, timestep |
+| target | corrupted action을 clean action 쪽으로 이동시키는 velocity field |
+| inference | Gaussian noise에서 시작해 velocity prediction을 반복 적용하여 continuous action을 재구성 |
+
+이 구조는 [Flow Matching](../../flow-matching-generative-modeling/)과 [PI Model Family](../../pi/) 계열 VLA와 직접 연결된다. 다만 N1.5 model card만으로는 timestep distribution, loss normalization, action mask 처리까지 확정할 수 없으므로, 그 세부는 N1.7 code-level Survey처럼 source가 있는 release에서 확인한다.
+
+## World-Modeling Objective
+
+N1.5 model card는 flow matching objective와 world-modeling objective를 jointly 사용했다고 설명한다. Survey에서는 이를 다음처럼 해석한다.
+
+| 관점 | 의미 |
+| --- | --- |
+| action objective | 현재 observation과 instruction에서 action chunk를 생성하는 policy learning |
+| world-modeling objective | visual/state transition에 대한 representation learning pressure를 추가해 action policy가 dynamics-sensitive feature를 쓰도록 유도 |
+| 불확실한 부분 | loss weight, target modality, prediction horizon은 model card만으로는 제한적으로만 확인 가능 |
+| 작성 원칙 | “world modeling을 썼다”는 사실과 “어떤 tensor를 어떤 loss로 예측했다”는 구현 detail을 분리 |
+
+이 지점이 N1.5 Survey에서 가장 조심해야 할 부분이다. 코드나 config를 확인하지 않은 채 auxiliary loss 형태를 만들어 쓰면 안 된다.
+
+## References가 말해주는 방법론 흐름
+
+| Reference | N1.5에서 맡는 역할 |
+| --- | --- |
+| Eagle 2 | vision-language backbone/post-training strategy 흐름 |
+| Rectified Flow / Flow Straight and Fast | noise에서 data로 가는 vector field 학습의 generative modeling 기반 |
+| pi_0 | vision-language-action flow model로 continuous robot action을 생성하는 직접 비교 축 |
+| GR00T N1 paper | humanoid foundation model, data pyramid, action module의 family origin |
+
+N1.5의 모델카드는 독립 논문이 아니지만, references만 봐도 “VLM + rectified/flow action generation + robot foundation model”이라는 세 축이 명확하다.
+
+## 학습과 Post-Training
+
+| 단계 | N1.5에서의 의미 |
+| --- | --- |
+| foundation pretraining | 다양한 robot embodiment와 manipulation data를 통해 cross-embodiment prior를 만든다. |
+| post-training | target humanoid robot, task, environment에 맞춰 real/synthetic data로 fine-tune한다. |
+| synthetic data | Isaac/GR00T ecosystem의 synthetic data generation 흐름과 연결된다. |
+| real data | target robot의 camera/state/action schema가 processor와 맞아야 한다. |
+| evaluation | N1 paper result를 N1.5 자체 result로 옮기지 않는다. model card 또는 별도 benchmark card의 수치만 N1.5 근거로 쓴다. |
+
+N1.5를 실제로 쓸 때는 model 자체보다 dataset conversion이 병목이 될 가능성이 높다. camera key, state key, action key, normalization, embodiment tag가 맞아야 policy가 의미 있는 action을 낸다.
+
+## N1.5와 N1 Paper의 연결
+
+| N1 paper 개념 | N1.5에서 이어지는 부분 |
+| --- | --- |
+| System 2 vision-language reasoning | pretrained vision/language encoder가 instruction과 visual context를 제공 |
+| System 1 action module | flow matching transformer가 continuous action chunk를 생성 |
+| cross-embodiment learning | embodiment-specific projection/decoder 필요성으로 이어짐 |
+| data pyramid | model card에서는 real/synthetic post-training 가능성으로 압축됨 |
+| low-data adaptation | target robot/task data로 post-training하는 사용 방식으로 이어짐 |
+
+N1.5 문서는 N1 paper의 appendix나 result table을 반복하는 곳이 아니다. 대신 “N1의 방법론이 공개 checkpoint에서 어떤 형태의 사용 계약으로 바뀌었는가”를 정리하는 것이 목적이다.
+
+## N1.6/N1.7과의 차이
+
+| 항목 | N1.5 | N1.6 | N1.7 |
+| --- | --- | --- | --- |
+| 공개 설명 | foundation checkpoint/model card 중심 | architecture/training 설명이 더 구체적 | source code, README, model card가 가장 구체적 |
+| license/use | non-commercial use로 명시 | model card 조건 확인 필요 | commercial/non-commercial ready, Apache 2.0 repository 흐름 |
+| backbone | model card는 vision/text transformers와 Eagle reference를 연결 | Eagle 2.5 계열 설명 | Cosmos-Reason2-2B/Qwen3-VL |
+| implementation anchor | checkpoint revision 확인 필요 | model card 중심 | `gr00t_n1d7` source code |
+| deployment | fine-tuning 사용 중심 | variants 증가 | ONNX/TensorRT, relative EEF action, SONIC |
+
+## 재현 체크리스트
+
+| 체크 | 이유 |
+| --- | --- |
+| checkpoint revision | current repository가 N1.7 중심으로 바뀌어 old processor와 mismatch가 날 수 있다. |
+| license/use restriction | N1.5는 non-commercial use로 설명되므로 공개/상업 사용 조건을 N1.7과 섞으면 안 된다. |
+| embodiment tag | state/action projector 선택과 action decoder가 달라질 수 있다. |
+| modality config | view, state, action slice가 processor와 정확히 맞아야 한다. |
+| action normalization | min/max, relative/absolute, joint/EEF target을 확인해야 한다. |
+| performance claim source | N1 paper, N1.5 card, N1.7 card 수치를 한 표에 섞지 않는다. |
+
+## 한계와 주의
+
+- N1.5는 독립 논문이 아니므로, T-Rex처럼 main text/appendix 기반 result table을 모두 복원할 수 있는 자료 형태가 아니다.
+- model card는 architecture 개념을 제공하지만, loss weight, scheduler, batch size, processor implementation detail은 제한적으로만 공개한다.
+- current Isaac-GR00T code는 N1.7 중심이므로, N1.5를 재현하려면 repository revision과 checkpoint processor를 맞춰야 한다.
+- N1.5의 “cross-embodiment” 주장은 target embodiment fine-tuning data와 schema 품질에 크게 의존한다.
+- non-commercial license 조건이 명시되어 있으므로 N1.7의 commercial/non-commercial ready 설명과 섞으면 안 된다.
+
+## 기억할 점
+
+GR00T N1.5의 핵심은 “새 논문 contribution”이 아니라 “N1 연구 아이디어가 공개 checkpoint 사용 방식으로 옮겨간 첫 중간 release”라는 점이다. Survey에서는 N1 paper 결과와 N1.5 model card 설명을 분리하고, checkpoint 사용 계약과 재현 리스크를 중심으로 읽어야 한다.
+
+## 검증 메모
+
+| pass | 확인 내용 |
+| --- | --- |
+| 1. 구조/coverage | metadata, family 위치, architecture, input/output, flow matching, world-modeling, references, post-training, 차이, 재현 체크를 포함했다. |
+| 2. 사실/수치 | Hugging Face `nvidia/GR00T-N1.5-3B` model card의 224x224 input, SigLip2/T5, non-commercial license, architecture 설명을 대조했다. |
+| 3. 코드 구현 | current code가 N1.7 중심이라는 제약을 명시하고, N1.5 구현 detail은 checkpoint revision/branch 확인 대상으로 분리했다. |
+| 4. 해석/연결 | N1 paper, N1.6, N1.7, Flow Matching, pi_0와 연결했다. |
+| 5. 문서 품질/build | 제목에서 작업 단계 이름을 제거하고, nested sidebar build로 확인한다. |

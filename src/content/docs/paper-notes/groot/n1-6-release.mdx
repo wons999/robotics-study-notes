@@ -1,0 +1,241 @@
+---
+title: GR00T N1.6
+description: GR00T N1.6 공개 모델의 architecture, flow matching, data, variants, N1.7과의 차이를 정리한 Survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# GR00T N1.6
+
+<SectionFeedback page="GR00T N1.6" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 문서 성격 | 논문 Survey가 아니라 공개 모델/release Survey |
+| 대표 모델 | `nvidia/GR00T-N1.6-3B` |
+| 공식 자료 | Hugging Face model card, NVIDIA Isaac-GR00T repository |
+| 계열 위치 | N1.5 이후, N1.7 직전의 open VLA checkpoint |
+| 모델 버전 | model card 기준 Version 1.6 |
+| 핵심 키워드 | Eagle 2.5, cross-embodiment, flow matching transformer, world-modeling objective, GR00T X-Embodiment Sim |
+| 연구 페이지 | NVIDIA Research GEAR, “GR00T N1.6: An Improved Open Foundation Model for Generalist Humanoid Robots” |
+
+## 한 줄 요약
+
+GR00T N1.6은 N1.5의 공개 checkpoint 흐름을 이어받아 architecture 설명과 benchmark/domain variant가 더 구체화된 release이며, N1.7의 relative EEF action, Cosmos-Reason2/Qwen3-VL backbone, TensorRT path로 넘어가기 직전의 기준점이다.
+
+## Family 안에서의 위치
+
+| 비교 축 | N1.5 | N1.6 | N1.7 |
+| --- | --- | --- | --- |
+| 역할 | 공개 foundation checkpoint의 초기 확장 | open VLA architecture와 variants 확대 | 최신 code-level implementation |
+| backbone 설명 | vision/text transformer와 Eagle reference | Eagle 2.5 계열 VLM과 action transformer | Cosmos-Reason2-2B/Qwen3-VL |
+| data | real/synthetic post-training 중심 | `PhysicalAI-Robotics-GR00T-X-Embodiment-Sim` 등 synthetic/robot data 강조 | 13 datasets, 21.6M data points, EgoScale human video pretraining |
+| deployment | checkpoint 사용 중심 | benchmark/domain fine-tuning variants 증가 | ONNX/TensorRT, relative EEF action, SONIC |
+| 구현 추적성 | checkpoint revision 확인 필요 | model card 중심 | repository source code 중심 |
+
+## 입력과 출력 계약
+
+| 구성 | 설명 |
+| --- | --- |
+| visual input | variable number of RGB views |
+| language input | natural language instruction |
+| state input | robot proprioception, embodiment-specific dimension |
+| action input during training | clean action과 Gaussian noise 사이에서 interpolation된 noised action trajectory |
+| output | continuous-value action vector, robot DoF와 embodiment에 따라 의미가 달라짐 |
+| runtime engine | PyTorch |
+| hardware family | Ampere, Blackwell, Jetson, Hopper, Lovelace 계열 지원으로 설명됨 |
+
+N1.6은 “variable views + language + proprioception + noisy action”을 하나의 transformer policy에 넣고, action velocity를 예측해 continuous action을 복원하는 VLA release로 읽는다.
+
+## Architecture
+
+| 모듈 | 역할 | 해석 |
+| --- | --- | --- |
+| vision transformer | 여러 camera frame에서 image token을 만든다. | view 수가 달라도 image token sequence로 합친다. |
+| text transformer | instruction token을 만든다. | vision token 뒤 또는 함께 action transformer condition으로 쓰인다. |
+| proprio encoder | robot state를 shared representation으로 올린다. | embodiment별 dimension 차이를 흡수해야 한다. |
+| action encoder | noised action chunk와 timestep 정보를 token화한다. | flow matching objective의 입력이다. |
+| flow matching transformer | proprio/action self-attention과 vision/language cross-attention을 interleave한다. | N1 paper의 DiT System 1과 같은 역할 계열이다. |
+| action decoder | predicted velocity/action representation을 embodiment별 motor command로 바꾼다. | output vector의 physical meaning은 robot별로 다르다. |
+
+N1.6은 N1.5와 마찬가지로 “action을 language token처럼 생성”하는 방식이 아니다. language와 image는 condition이고, action은 continuous vector field로 생성된다.
+
+## N1.5 대비 Architecture 변화
+
+NVIDIA Research의 N1.6 페이지는 N1.6이 N1.5를 단순 checkpoint update한 것이 아니라 architecture, data, modeling을 함께 바꾼 release라고 설명한다.
+
+| 변화 | N1.5 대비 의미 |
+| --- | --- |
+| VLM backbone | internal NVIDIA Cosmos-2B VLM variant 사용. flexible resolution과 native aspect ratio encoding을 지원한다고 설명됨 |
+| DiT scale | DiT가 16 layers에서 32 layers로 커짐 |
+| adapter 제거 | N1.5의 post-VLM 4-layer transformer adapter를 제거 |
+| VLM tuning | pretraining 중 VLM top 4 layers를 unfreeze |
+| action representation | 대부분 embodiment에서 absolute joint/EEF target 대신 state-relative action chunk를 예측 |
+
+이 내용 때문에 N1.6은 N1.5보다 “action head만 조금 좋아진 모델”이 아니다. 더 큰 DiT, 다른 VLM adaptation 방식, relative action representation이 함께 들어간 transition release다.
+
+## Input/Output Contract
+
+| 구분 | N1.6 model card 기준 |
+| --- | --- |
+| vision input | variable number of RGB image frames from robot cameras |
+| vision resolution | any resolution |
+| state input | 1D floating point robot proprioception |
+| language input | string instruction |
+| output | continuous-value action vectors |
+| output 의미 | robot embodiment의 DoF와 motor control target에 따라 달라짐 |
+| runtime | PyTorch |
+| OS | Linux |
+| supported hardware | NVIDIA Ampere, Blackwell, Jetson, Hopper, Lovelace |
+
+N1.6부터 resolution 설명이 N1.5의 `224x224`보다 유연해진다. N1.7 README의 native aspect ratio 지원과 연결되지만, N1.7과 동일한 Qwen3/Cosmos-Reason2 code path라고 단정하면 안 된다.
+
+## Flow Matching 학습 해석
+
+| 단계 | 내용 |
+| --- | --- |
+| clean action 준비 | demonstration action chunk를 target으로 둔다. |
+| noise sampling | Gaussian noise vector를 action과 같은 shape로 만든다. |
+| random interpolation | clean action과 noise를 timestep에 따라 섞어 corrupted action을 만든다. |
+| transformer conditioning | corrupted action, proprioception, timestep, vision-language embeddings를 입력한다. |
+| velocity prediction | clean action 방향으로 이동하는 vector field를 예측한다. |
+| inference | Gaussian noise에서 시작해 velocity prediction을 반복 적용해 action을 재구성한다. |
+
+N1.6에서 중요한 점은 flow matching이 단순 loss 이름이 아니라 runtime inference 방식까지 결정한다는 점이다. 학습 때는 noise-action interpolation의 vector field를 맞추고, inference 때는 이 vector field를 적분해 action chunk를 만든다.
+
+## World-Modeling Objective와 Representation
+
+N1.6 model card 역시 flow matching과 world-modeling objective의 joint training 흐름을 계승한 것으로 읽힌다.
+
+| 항목 | 의미 |
+| --- | --- |
+| 목적 | action generation feature가 visual dynamics와 task-relevant state transition을 더 잘 보게 만든다. |
+| 기대 효과 | pure imitation loss보다 environment/object 변화에 민감한 representation을 얻는다. |
+| 제약 | 공개 model card만으로는 exact target, loss weight, prediction horizon을 확정하기 어렵다. |
+| Survey 원칙 | objective가 언급됐다는 사실과 구현 detail을 분리해 쓴다. |
+
+이 부분은 특히 “확실히 확인한 것”과 “계열상 추론한 것”을 구분해야 한다. N1.7 source code처럼 loss implementation을 직접 확인한 release와 같은 강도로 쓰면 안 된다.
+
+## Data와 Variants
+
+| 분류 | 내용 |
+| --- | --- |
+| 대표 dataset | `nvidia/PhysicalAI-Robotics-GR00T-X-Embodiment-Sim` |
+| data 성격 | real captured data와 Isaac GR00T Blueprint 기반 synthetic data |
+| target embodiment | bimanual, semi-humanoid, humanoid 계열 |
+| variant 예시 | Fractal, Bridge, DROID, BEHAVIOR1k, Unitree G1 task variant |
+| 해석 | base checkpoint와 benchmark/domain/task fine-tuned checkpoint를 분리해서 읽어야 함 |
+
+N1.6의 variant inventory는 N1.7의 4개 post-trained model처럼 깔끔하게 닫힌 목록이 아니다. Hugging Face에는 benchmark, task, third-party fine-tune 성격이 섞일 수 있으므로, Survey에서는 “N1.6 base”와 “N1.6-derived fine-tuned checkpoint”를 분리한다.
+
+## N1.6 Pretraining Data 변화
+
+N1.6 research page는 N1.5 data mixture에 더해 “several thousand hours” 규모의 teleoperation/simulation data가 추가됐다고 설명한다.
+
+| 추가 data source | 의미 |
+| --- | --- |
+| Bimanual YAM arms | bimanual manipulation과 long-horizon coordination data 강화 |
+| AGIBot Genie1 | humanoid/semi-humanoid manipulation diversity 확장 |
+| Simulated Galaxea R1 Pro on BEHAVIOR | simulated household behavior/task coverage 확장 |
+| Whole-Body Locomanipulation with Unitree G1 | manipulation뿐 아니라 locomotion+manipulation coordination을 포함 |
+
+이 data 변화는 N1.6이 N1.5보다 real bimanual YAM, Agibot Genie-1, Unitree G1 robot experiments에서 좋아졌다는 research page의 주장과 연결된다.
+
+## Training Recipe와 Post-Training
+
+| 항목 | N1.6 research page 기준 |
+| --- | --- |
+| pretraining steps | 300K steps |
+| pretraining global batch | 16,384 |
+| post-training | small task-specific datasets |
+| post-training steps | 보통 10K-30K steps |
+| post-training global batch | 1K 이하 |
+
+N1 paper의 200K pretraining steps/Table 6과 N1.6의 300K steps는 같은 수치가 아니다. 모델 family 안에서 training recipe가 바뀌었다는 점을 명시해야 한다.
+
+## Real-World Rollout Lessons
+
+N1.6 research page의 discussion은 실제 robot rollout에서 중요한 engineering lesson을 준다.
+
+| Lesson | 해석 |
+| --- | --- |
+| relative actions default | 상대 action은 smoother/more accurate motion을 만들지만, small dataset에서는 error accumulation으로 correction ability가 약해질 수 있다. |
+| pretrained statistics | task distribution이 pretraining data와 비슷하면 도움이 되고, 다르면 post-training statistics가 필요할 수 있다. |
+| faster convergence | N1.6은 N1.5보다 빠르게 수렴하고 action이 smoother하지만, overfitting 방지를 위해 더 강한 regularization이 필요하다. |
+| regularization | stronger state regularization, additional data augmentation, pretraining data co-training을 사용한다. |
+| DAgger | real-world underperformance가 있을 때 DAgger가 성능 개선에 효과적이라고 권장된다. |
+| RTC | train-time/test-time RTC가 asynchronous rollout에서 motion smoothness와 robustness를 높인다. |
+| remaining challenge | multi-task language following과 OOD task generalization은 여전히 어렵고, fine-grained subtask annotation이 도움은 되지만 완전한 해결은 아니다. |
+
+이 섹션은 model card보다 더 중요하다. 실제 로봇에서 foundation checkpoint를 task policy로 바꿀 때 어떤 문제가 남는지 보여주기 때문이다.
+
+## N1.6에서 확인해야 하는 구현 질문
+
+| 질문 | 확인 이유 |
+| --- | --- |
+| action space가 joint인지 EEF인지 | N1.7은 relative EEF action을 핵심 변화로 내세운다. N1.6과 섞으면 action interface 설명이 틀린다. |
+| relative/absolute command 여부 | cross-embodiment transfer 해석이 달라진다. |
+| embodiment projector 수와 tag | action/state decoder 선택이 달라진다. |
+| world-modeling loss target | model card만으로는 구현 detail이 부족하다. |
+| variant별 processor | Bridge/DROID/Fractal/BEHAVIOR1k는 observation/action schema가 다를 수 있다. |
+| trainable module | VLM, connector, DiT 중 무엇을 fine-tune했는지 variant별로 다를 수 있다. |
+
+## N1.7로 넘어가는 변화
+
+| 변화 | N1.6 대비 의미 |
+| --- | --- |
+| new VLM backbone | Eagle 계열에서 Cosmos-Reason2-2B/Qwen3-VL로 이동 |
+| relative EEF action | human/robot embodiment 사이 action representation을 더 맞추는 방향 |
+| human video pretraining | 20K hours EgoScale human video를 pretraining에 포함 |
+| flexible resolution/native aspect ratio | image preprocessing에서 padding 없이 native aspect ratio 지원 |
+| simplified processor | `processing_gr00t_n1d7.py` 중심으로 data processing path가 명확해짐 |
+| TensorRT/ONNX | full pipeline export와 inference frequency 개선 |
+
+이 변화 때문에 N1.7 source code를 N1.6 구현이라고 역으로 적용하면 안 된다. N1.6은 N1.7의 직전 release로 비교해야지, 같은 코드 경로로 취급하면 안 된다.
+
+## References가 말해주는 방법론 흐름
+
+| Reference | N1.6에서 맡는 역할 |
+| --- | --- |
+| Eagle 2.5 | long-context/post-training VLM backbone 흐름 |
+| Rectified Flow | action flow objective의 generative modeling 기반 |
+| pi_0 | VLA flow policy의 직접 비교 축 |
+| GR00T N1 paper | humanoid generalist foundation model의 original formulation |
+
+N1.6은 N1.5보다 backbone/data/action representation 변화가 크지만, 방법론 축은 여전히 VLM-conditioned flow action policy다.
+
+## 실무 해석
+
+N1.6은 다음 질문에 답하기 위한 release로 보면 좋다.
+
+| 질문 | N1.6에서의 답 |
+| --- | --- |
+| GR00T가 VLA 형태로 어떻게 action을 만들까? | vision/language/proprioception을 condition으로 flow matching transformer가 action chunk를 복원한다. |
+| cross-embodiment는 어디서 처리할까? | state/action projection과 embodiment-specific decoder/processor 쪽에서 처리해야 한다. |
+| benchmark별 모델은 무엇을 의미할까? | base model이 아니라 dataset/domain별 post-trained checkpoint일 수 있다. |
+| N1.7을 왜 새 release로 봐야 할까? | backbone, action representation, processor, deployment path가 바뀌기 때문이다. |
+
+## 한계와 주의
+
+- N1.6은 독립 paper가 아니므로 N1 paper처럼 Table/Figure 전체를 복원할 근거가 제한적이다.
+- model card의 architecture 설명은 상세하지만, full training recipe와 loss implementation은 공개 코드 수준으로 닫혀 있지 않다.
+- N1.6 variants는 이름만 보고 같은 evaluation 조건으로 묶으면 안 된다.
+- N1.7에서 개선된 요소를 N1.6에 소급해서 설명하지 않는다.
+
+## 기억할 점
+
+GR00T N1.6은 N1.5와 N1.7 사이의 중요한 transition release다. N1.5보다 architecture와 variant 설명은 구체적이고, N1.7보다 code-level anchor는 약하다. 따라서 Survey에서는 “model card로 확인한 구조”와 “N1.7 code로 확인 가능한 구현”을 분리하는 것이 핵심이다.
+
+## 검증 메모
+
+| pass | 확인 내용 |
+| --- | --- |
+| 1. 구조/coverage | metadata, family 위치, architecture 변화, input/output, flow matching, data/variants, training recipe, rollout lessons, N1.7 변화, 구현 질문을 포함했다. |
+| 2. 사실/수치 | Hugging Face model card와 NVIDIA Research N1.6 page를 대조해 DiT 32 layers, pretraining 300K steps/global batch 16,384, post-training 10K-30K steps를 반영했다. |
+| 3. 코드 구현 | N1.7 source와 동일 구현으로 단정하지 않고, N1.6 branch/checkpoint에서 확인해야 할 implementation 질문을 분리했다. |
+| 4. 해석/연결 | N1.5, N1.7, Flow Matching, pi_0, GR00T family overview와 연결했다. |
+| 5. 문서 품질/build | 제목에서 작업 단계 이름을 제거하고, nested sidebar build로 확인한다. |

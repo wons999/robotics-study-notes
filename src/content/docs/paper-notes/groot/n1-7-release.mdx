@@ -1,0 +1,357 @@
+---
+title: GR00T N1.7
+description: GR00T N1.7의 공개 README, model card, source code를 기준으로 구조, loss, processor, training, evaluation, deployment를 정리한 Survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# GR00T N1.7
+
+<SectionFeedback page="GR00T N1.7" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 문서 성격 | 논문 Survey가 아니라 code-level model/release Survey |
+| 대표 모델 | `nvidia/GR00T-N1.7-3B` |
+| 공식 코드 | `NVIDIA/Isaac-GR00T` |
+| 공식 모델 | Hugging Face `nvidia/GR00T-N1.7-3B` |
+| 현재 family 위치 | 2026-06-26 기준 README가 중심으로 두는 최신 GR00T release |
+| 모델 버전 | GR00T N1.7 EA |
+| 라이선스/사용 | model card는 commercial/non-commercial use 가능, repository는 Apache 2.0 흐름 |
+| 핵심 키워드 | Cosmos-Reason2-2B, Qwen3-VL, flow matching DiT, relative EEF action, LeRobot format, TensorRT, SONIC |
+
+## 한 줄 요약
+
+GR00T N1.7은 N1 paper의 VLA/action-flow 흐름을 최신 공개 implementation으로 옮긴 release이며, `gr00t_n1d7` source code에서 action head, flow matching loss, processor, embodiment projector, fine-tuning script, inference/deployment path를 직접 확인할 수 있는 GR00T family의 현재 기준점이다.
+
+## Family 안에서의 위치
+
+| 비교 축 | N1 paper | N1.6 | N1.7 |
+| --- | --- | --- | --- |
+| primary evidence | arXiv paper + appendix | model card 중심 | README + model card + source code |
+| backbone | Eagle-2 | Eagle 계열 설명 | Cosmos-Reason2-2B / Qwen3-VL architecture |
+| action horizon | `H=16` | checkpoint/config 확인 필요 | config default `action_horizon=40` |
+| denoising steps | `K=4` | release별 확인 필요 | `num_inference_timesteps=4` |
+| action representation | paper 기준 embodiment-specific action | N1.7 이전 action interface | relative EEF action space 강조 |
+| data statement | 592.9M frames, Table 7 | GR00T X-Embodiment Sim 등 | 13 datasets, 21.6M data points, 20K hours EgoScale human video |
+| deployment | L40 bf16 16-action chunk timing | PyTorch runtime 중심 | TensorRT/ONNX export, full pipeline acceleration |
+
+N1.7은 N1 paper를 대체하는 논문이 아니라, N1 계열을 실제 공개 코드와 checkpoint로 운용하기 위한 release다. 따라서 N1 paper result와 N1.7 model card result를 한 표에서 직접 비교하면 안 된다.
+
+## 공개 코드에서 확인한 구성
+
+| 파일 | 확인한 내용 |
+| --- | --- |
+| `gr00t/model/gr00t_n1d7/gr00t_n1d7.py` | `Gr00tN1d7`, `Gr00tN1d7ActionHead`, flow matching loss, inference update, RTC option |
+| `gr00t/configs/model/gr00t_n1d7.py` | backbone, horizon, max state/action dimension, denoising steps, noise beta, dropout config |
+| `gr00t/model/modules/dit.py` | DiT, AdaLayerNorm, alternating self/cross attention, `AlternateVLDiT` |
+| `gr00t/model/gr00t_n1d7/processing_gr00t_n1d7.py` | Qwen3VL processor, state/action processor, embodiment tag mapping, relative action support |
+| `gr00t/data/dataset/lerobot_episode_loader.py` | LeRobot metadata와 video/state/action/language/mask loading |
+| `gr00t/experiment/launch_finetune.py` | fine-tuning entrypoint, trainable flags, dataset config, relative action option |
+| `gr00t/policies` 계열 | `Gr00tPolicy`를 robot controller 또는 evaluation loop에 붙이는 deployment path |
+
+## Checkpoints와 Embodiment Tags
+
+N1.7 README는 base checkpoint와 benchmark별 finetuned checkpoint를 명확히 나눈다.
+
+| Checkpoint | Type | Embodiment tag | 의미 |
+| --- | --- | --- | --- |
+| `nvidia/GR00T-N1.7-3B` | Base | pretrain tags 참조 | pretrain embodiment zero-shot 또는 새 task fine-tuning 기준 |
+| `nvidia/GR00T-N1.7-LIBERO` | Finetuned | `LIBERO_PANDA` | LIBERO Franka Panda benchmark용 |
+| `nvidia/GR00T-N1.7-DROID` | Finetuned | `OXE_DROID_RELATIVE_EEF_RELATIVE_JOINT` | DROID dataset/task용 |
+| `nvidia/GR00T-N1.7-SimplerEnv-Bridge` | Finetuned | `SIMPLER_ENV_WIDOWX` | SimplerEnv Bridge/WidowX용 |
+| `nvidia/GR00T-N1.7-SimplerEnv-Fractal` | Finetuned | `SIMPLER_ENV_GOOGLE` | SimplerEnv Fractal/Google Robot용 |
+
+Every inference or fine-tuning command requires an `--embodiment-tag`. 이 tag는 단순 label이 아니라 modality config, state/action key, normalization, action decoder 선택과 연결된다. tag는 case-insensitive라고 README에 명시되어 있다.
+
+## Config 핵심값
+
+| 설정 | 값 | 의미 |
+| --- | --- | --- |
+| `model_name` | `nvidia/Cosmos-Reason2-2B` | VLM backbone path |
+| backbone embedding dim | `2048` | VLM hidden feature dimension |
+| hidden size | `1024` | action transformer hidden size |
+| input embedding dim | `1536` | state/action token projection dimension |
+| action horizon | `40` | 한 번에 생성하는 action chunk length |
+| max state/action dim | `132 / 132` | padding된 maximum proprio/action dimension |
+| max embodiments | `32` | embodiment-indexed MLP/projector 수 |
+| inference denoising steps | `4` | action flow integration step 수 |
+| timestep buckets | `1000` | timestep embedding discretization |
+| noise beta | alpha `1.5`, beta `1.0`, `noise_s=0.999` | training timestep sampling |
+| state dropout | `0.8` | state conditioning robustness를 위한 dropout |
+
+이 config는 N1 paper의 `H=16`, Eagle-2, 2.2B parameter setting과 다르다. N1.7을 설명할 때는 이 config를 기준으로 써야 한다.
+
+## Model Architecture
+
+| 모듈 | 구현상 역할 | 왜 중요한가 |
+| --- | --- | --- |
+| `Qwen3Backbone` | Cosmos-Reason2/Qwen3-VL 계열 backbone으로 image/text hidden states를 만든다. | N1/N1.6의 Eagle 계열 설명과 달라진 핵심 변화다. |
+| state encoder | `CategorySpecificMLP`가 embodiment별 state vector를 shared embedding으로 project한다. | robot별 state dimension 차이를 흡수한다. |
+| action encoder | `MultiEmbodimentActionEncoder`가 noised action chunk와 timestep을 action token으로 만든다. | flow matching transformer가 continuous action을 다룰 수 있게 한다. |
+| DiT action head | VLM token을 condition으로 받아 action velocity를 예측한다. | System 1 action generation의 실제 구현이다. |
+| action decoder | `CategorySpecificMLP`가 shared action token을 embodiment-specific action dimension으로 decode한다. | output action의 physical meaning을 robot별로 복원한다. |
+| processor | Qwen3VL chat/image processing과 GR00T state/action padding, mask, relative action transform을 묶는다. | data schema와 model input contract를 맞춘다. |
+
+N1.7의 핵심은 VLM backbone과 action transformer가 붙어 있다는 사실보다, embodiment-specific state/action projection과 processor가 action schema mismatch를 관리한다는 점이다.
+
+## Flow Matching Code Path
+
+`Gr00tN1d7ActionHead.forward` 기준 학습 흐름은 다음과 같다.
+
+| 단계 | 코드 레벨 의미 |
+| --- | --- |
+| time sampling | CPU fp32 `Beta(alpha=1.5, beta=1.0)`에서 sample 후 `t=(1-sample)*noise_s` 형태로 timestep 생성 |
+| noise sampling | action과 같은 shape의 Gaussian noise를 만든다. |
+| noisy trajectory | `noisy_trajectory=(1-t)*noise+t*actions` |
+| target velocity | `velocity=actions-noise` |
+| prediction input | VLM hidden state, state, noisy action, timestep, action mask |
+| prediction output | action shape에 맞는 velocity prediction |
+| loss | `F.mse_loss(pred_actions, velocity) * action_mask`, mask sum으로 normalize |
+
+Inference는 Gaussian action에서 시작해 Euler-style update를 반복한다.
+
+```text
+actions <- actions + dt * pred_velocity * vel_strength
+```
+
+`num_inference_timesteps=4`가 default라 N1 paper의 `K=4` denoising claim과 family resemblance가 있다. 그러나 실제 N1.7은 action horizon, backbone, processor가 다르므로 N1 paper implementation으로 직접 등치하면 안 된다.
+
+## RTC Option과 Action Overlap
+
+N1.7 action head에는 realtime control을 의식한 option이 들어간다.
+
+| 기능 | 의미 |
+| --- | --- |
+| previous action overlap | 이전 chunk 일부와 현재 chunk가 겹칠 때 continuity를 유지한다. |
+| frozen/ramp handling | chunk boundary에서 갑작스러운 action jump를 줄이는 데 쓰일 수 있다. |
+| `vel_strength` | Euler update에서 velocity contribution을 조절한다. |
+
+이 부분은 paper-level Survey에서 빠지기 쉬운 구현 detail이다. 실제 robot loop에서는 action chunk 품질뿐 아니라 chunk 사이 transition도 중요하다.
+
+## Processor와 Dataset Contract
+
+| 구성 | 구현상 확인한 내용 |
+| --- | --- |
+| input format | GR00T LeRobot format, parquet/video/metadata 기반 |
+| metadata | `info.json`, `episodes.jsonl`, `tasks.jsonl`, `modality.json`, `stats.json`, optional `relative_stats.json` |
+| allowed modalities | video, state, action, language, mask |
+| loaded keys | `video.<view>`, `state.<joint_group>`, `action.<joint_group>`, `language.<key>` |
+| embodiment tags | `simpler_env_google_robot`, `widowx`, `libero_sim`, `unitree_g1_sonic`, `oxe_droid_relative_eef_relative_joint` 등 |
+| action handling | state/action padding, mask, relative action support, embodiment-indexed projector |
+| VLM processing | Qwen3VL processor, chat-template style image/text input |
+
+`modality.json`은 단순 metadata가 아니라 state/action vector의 semantic slicing을 정의한다. action decoder와 dataset schema가 맞지 않으면 fine-tuning은 돌아가도 의미 있는 action을 내지 못한다.
+
+## Data Format에서 봐야 할 점
+
+| 항목 | 이유 |
+| --- | --- |
+| view naming | camera view 이름이 processor와 맞아야 한다. |
+| state/action group order | left/right arm, hand, torso, gripper 순서가 바뀌면 action이 다른 joint로 간다. |
+| relative stats | relative EEF action을 쓸 때 normalization 기준이 중요하다. |
+| mask | padded state/action dimension을 loss에서 제외해야 한다. |
+| task language | `tasks.jsonl`과 language key가 training sample에 제대로 연결되어야 한다. |
+| video sync | parquet timestep과 video frame index가 어긋나면 action target이 깨진다. |
+
+N1.7에서 fine-tuning 품질은 model capacity보다 dataset contract 준수에 더 민감할 수 있다.
+
+## README 기준 Dataset Layout
+
+N1.7 README는 GR00T LeRobot flavor의 directory layout을 제시한다.
+
+```text
+my_dataset/
+  meta/
+    info.json
+    episodes.jsonl
+    tasks.jsonl
+    modality.json
+  data/chunk-000/
+  videos/chunk-000/
+```
+
+| 파일/디렉터리 | 역할 |
+| --- | --- |
+| `meta/info.json` | dataset metadata |
+| `meta/episodes.jsonl` | episode index와 length |
+| `meta/tasks.jsonl` | language task descriptions |
+| `meta/modality.json` | state/action/video key mapping, GR00T-specific |
+| `data/chunk-*` | timestep별 state/action parquet |
+| `videos/chunk-*` | episode별 mp4 video |
+
+Included demo datasets도 documentation상 중요한 anchor다.
+
+| Demo dataset | Robot | Embodiment tag | Use case |
+| --- | --- | --- | --- |
+| `demo_data/droid_sample` | DROID | `OXE_DROID_RELATIVE_EEF_RELATIVE_JOINT` | base/finetuned DROID inference |
+| `demo_data/libero_demo` | LIBERO Panda | `LIBERO_PANDA` | LIBERO finetuned checkpoint inference |
+| `demo_data/simplerenv_bridge_sample` | WidowX | `SIMPLER_ENV_WIDOWX` | SimplerEnv Bridge |
+| `demo_data/simplerenv_fractal_sample` | Google Robot | `SIMPLER_ENV_GOOGLE` | SimplerEnv Fractal |
+| `demo_data/cube_to_bowl_5` | SO100 | `NEW_EMBODIMENT` | custom embodiment fine-tuning example |
+| `demo_data/cube_to_bowl_5_with_mask` | SO100 + masks | `NEW_EMBODIMENT` | mask-guided background suppression example |
+
+## Fine-Tuning Recipe
+
+`launch_finetune.py` 기준 fine-tuning은 다음 순서로 읽는다.
+
+| 단계 | 내용 |
+| --- | --- |
+| modality config load | dataset별 Python config에서 state/action/language/video modality를 정의 |
+| embodiment tag resolve | checkpoint와 processor가 쓸 projector index를 정한다. |
+| dataset config build | LeRobot format path, stats, transform, augmentation, percentiles를 묶는다. |
+| trainable flags | `tune_llm`, `tune_visual`, `tune_projector`, `tune_diffusion_model`을 분리 |
+| N1.7 defaults | `model_name="nvidia/Cosmos-Reason2-2B"`, relative action enabled, backbone trainable fp32 option |
+| optimizer | AdamW 기반 fine-tuning |
+
+실무적으로는 “checkpoint를 받는다”보다 “dataset modality config와 embodiment tag가 checkpoint action/state processor와 맞는가”가 더 중요하다.
+
+## README 기준 Inference/Fine-Tuning Workflow
+
+N1.7 README는 workflow를 prepare data, run inference, fine-tune, evaluate, deploy 순서로 제시한다.
+
+| 단계 | 대표 command/entrypoint | 의미 |
+| --- | --- | --- |
+| zero-shot inference | `scripts/deployment/standalone_inference_script.py --model-path nvidia/GR00T-N1.7-3B --dataset-path demo_data/droid_sample --embodiment-tag OXE_DROID_RELATIVE_EEF_RELATIVE_JOINT --action-horizon 8` | base model을 pretrain embodiment sample에 open-loop로 적용 |
+| finetuned inference | `--model-path nvidia/GR00T-N1.7-DROID` 등 | benchmark/domain checkpoint 사용 |
+| server-client inference | `gr00t/eval/run_gr00t_server.py` + `gr00t/eval/open_loop_eval.py` | GPU policy server와 lightweight client 분리 |
+| custom fine-tuning | `gr00t/experiment/launch_finetune.py --base-model-path nvidia/GR00T-N1.7-3B --dataset-path ... --embodiment-tag NEW_EMBODIMENT --modality-config-path ...` | 새 robot/task에 맞춰 post-train |
+| closed-loop evaluation | `PolicyClient` 또는 sim benchmark examples | deployment loop 검증 |
+
+README examples는 open-loop에서 `--action-horizon 8` 또는 `16`을 쓰지만, model config의 default action horizon은 40이다. command-level horizon과 model config horizon을 혼동하지 않는다.
+
+## Trainable Module 해석
+
+| flag | 의미 | 주의 |
+| --- | --- | --- |
+| `tune_llm` | language/backbone 쪽 tuning 여부 | data가 작으면 overfit/compute 부담이 커진다. |
+| `tune_visual` | visual encoder tuning 여부 | camera domain shift가 크면 중요하지만 memory 비용이 커진다. |
+| `tune_projector` | VLM-action bridge/projector tuning | 새 embodiment adaptation에서 중요하다. |
+| `tune_diffusion_model` | action DiT/action head tuning | task-specific motor skill adaptation의 중심이다. |
+
+새 robot에 붙일 때는 모든 module을 무조건 full fine-tune하는 것보다, dataset size와 compute에 맞춰 projector/action head 중심으로 시작하는 것이 실무적으로 자연스럽다.
+
+## Training Tips와 Regularization
+
+README의 training tips는 N1.7 fine-tuning에서 바로 써야 할 운영 지침이다.
+
+| 항목 | README 기준 내용 |
+| --- | --- |
+| batch size | hardware가 허용하는 한 batch size를 크게 잡고 수천 step 학습 |
+| run variance | non-deterministic image augmentation 때문에 run 간 5-6% variance가 날 수 있음 |
+| `state_dropout_prob` | model config default 0.8, finetune CLI default 0.2 |
+| benchmark override | LIBERO 10-Long 0.2, SimplerEnv Bridge 0.8, SimplerEnv Fractal 0.5 |
+| 해석 | proprioceptive state 의존이 큰 task는 dropout을 낮추는 것이 필요할 수 있음 |
+
+이 내용은 N1.7이 “foundation checkpoint만 있으면 끝”이 아니라, post-training regularization과 benchmark별 override가 중요한 model임을 보여준다.
+
+## Model Card 기준 Data와 Evaluation
+
+| 항목 | 내용 |
+| --- | --- |
+| training data scale | 13 datasets, 21.6M data points |
+| data mix | human, robot, simulated data를 hybrid로 사용 |
+| human video | README는 20K hours EgoScale human video pretraining을 N1.7 generalization/language following 개선 요인으로 설명 |
+| post-trained models | SimplerEnv Bridge, SimplerEnv Fractal, DROID, LIBERO |
+| simulated eval | DexMG, RoboCasa, Digital Cousin 계열 task |
+| real eval | grocery packing, novel objects, industrial multi-robot coordination handoff |
+
+Model card는 benchmark별 post-trained model을 함께 제공한다. Base `GR00T-N1.7-3B`와 Bridge/DROID/LIBERO fine-tuned checkpoints를 같은 row의 “성능”으로 섞으면 안 된다.
+
+## N1.7 Post-Trained Models
+
+| 모델 | post-training data | 해석 |
+| --- | --- | --- |
+| SimplerEnv Bridge | BridgeData V2 LeRobot conversion, 60,096 trajectories, 24 environments | WidowX/Bridge-style manipulation benchmark용 |
+| SimplerEnv Fractal | model card에는 Fractal label이지만 BridgeData link/summary가 반복되어 보임 | 문서 inconsistency 가능성이 있으므로 인용 시 주의 |
+| DROID | 약 76,000 trajectories, 약 350 hours, 564 scenes, 52 buildings, 86 tasks | in-the-wild robot manipulation generalization 평가 |
+| LIBERO | 130 language-conditioned tasks, multiple suites | lifelong/continual manipulation benchmark |
+
+이 표는 N1.7 base model architecture와 별개다. 각 post-trained checkpoint는 dataset/domain adaptation 결과로 봐야 한다.
+
+## Inference Timing
+
+Model card는 4 denoising steps와 1 camera 기준 timing을 제공한다.
+
+| Hardware | Mode | E2E latency / frequency |
+| --- | --- | --- |
+| H100 | PyTorch eager | 85.8 ms / 11.7 Hz |
+| H100 | `torch.compile` | 48.6 ms / 20.6 Hz |
+| H100 | TensorRT full pipeline | 27.9 ms / 35.9 Hz |
+| RTX Pro 6000 Blackwell | PyTorch eager | 78.4 ms / 12.8 Hz |
+| RTX Pro 6000 Blackwell | TensorRT full pipeline | 27.9 ms / 35.9 Hz |
+| L40 | PyTorch eager | 128.3 ms / 7.8 Hz |
+| L40 | TensorRT full pipeline | 38.4 ms / 26.0 Hz |
+| Orin | PyTorch eager | 342.8 ms / 2.9 Hz |
+| Orin | TensorRT DiT-only | 216.5 ms / 4.6 Hz |
+
+Orin은 backbone engine 제약 때문에 DiT-only TensorRT path로 설명된다. 이 timing은 N1 paper의 L40 bf16 16-action chunk timing과 다른 release 기준 timing이다.
+
+## N1.7의 주요 변화
+
+| 변화 | 의미 |
+| --- | --- |
+| relative EEF action | cross-embodiment fine-tuning과 action normalization을 더 안정적으로 만든다. |
+| human video pretraining | 20K hours EgoScale human video를 통해 human-object interaction prior를 강화한다. |
+| Cosmos-Reason2/Qwen3-VL backbone | N1/N1.6의 Eagle 계열 설명과 달라진다. |
+| flexible resolution/native aspect ratio | image preprocessing과 deployment usability가 개선된다. |
+| simplified processor | dataset onboarding과 fine-tuning path가 단순해진다. |
+| ONNX/TensorRT export | inference deployment를 실제 로봇 loop에 맞추기 쉬워진다. |
+
+## SONIC / Whole-Body 계열
+
+N1.7 README는 `UNITREE_G1_SONIC` 계열을 통해 whole-body humanoid control도 지원한다고 설명한다. 이 경우 VLA가 full joint command를 직접 모두 내는 것이 아니라, compact latent action token을 예측하고 whole-body controller가 full-body joint command로 decode하는 구조로 읽어야 한다.
+
+| 구성 | 해석 |
+| --- | --- |
+| VLA output | compact latent action token 또는 high-level action representation |
+| whole-body controller | latent/action token을 full-body joint command로 decode |
+| 장점 | VLA가 모든 joint dynamics를 직접 책임지는 부담을 줄임 |
+| 주의 | manipulation VLA와 whole-body controller의 책임 경계를 분리해서 봐야 함 |
+
+## N1.7을 실제로 사용할 때의 체크리스트
+
+| 체크 | 이유 |
+| --- | --- |
+| GPU memory | README는 inference 16GB+ VRAM, fine-tuning은 40GB+급 GPU를 권장한다. |
+| model/checkpoint revision | EA release라 code/checkpoint가 바뀔 수 있다. |
+| modality config | camera/state/action/language key가 processor와 맞아야 한다. |
+| action space | relative EEF인지 joint action인지 확인해야 한다. |
+| embodiment tag | projector/action decoder 선택과 직접 연결된다. |
+| TensorRT mode | hardware별 full pipeline/DiT-only 지원이 다르다. |
+| safety validation | model card는 deployment 전 use-case-specific testing과 guardrail 필요성을 명시한다. |
+
+## Official Source별 근거 분리
+
+| 출처 | Survey에 반영한 내용 |
+| --- | --- |
+| Hugging Face model card | 3B params, N1.7 family 4 models, 21.6M data points/13 datasets, timing table, license, evaluation benchmark categories |
+| Isaac-GR00T README | EA status, relative EEF action, 20K hours EgoScale human video, N1.6 대비 key changes, dataset layout, inference/fine-tuning commands, training tips |
+| Source code | flow matching noising/velocity/loss, config values, processor/dataset loader contract |
+| N1 paper | family origin, white paper architecture reference, N1/N1.7 차이 |
+
+## 한계와 주의
+
+- N1.7은 Early Access 성격의 release로 설명된다. production-grade stable API처럼 가정하면 안 된다.
+- N1 paper의 Table 2/3 결과는 N1.7 base checkpoint 성능표가 아니다.
+- post-trained variants는 benchmark/domain별로 action schema와 processor assumption이 다를 수 있다.
+- model card의 Fractal entry는 Bridge dataset link/summary가 반복되어 보이므로, 해당 항목은 원문 확인 없이 수치화하지 않는다.
+- tactile/force feedback은 기본 modality의 중심이 아니므로, T-Rex 같은 tactile-reactive policy와 비교할 때는 modality gap을 명시해야 한다.
+
+## 기억할 점
+
+N1.7은 GR00T family 중 현재 가장 code-level로 확인 가능한 release다. Survey에서는 N1 paper의 방법론 계승점과 N1.7 공개 구현의 실제 config/loss/processor를 분리해서 쓰는 것이 핵심이다.
+
+## 검증 메모
+
+| pass | 확인 내용 |
+| --- | --- |
+| 1. 구조/coverage | README, model card, source code, config, processor, dataset loader, fine-tuning script, checkpoints/tags, commands, variants, timing을 분리했다. |
+| 2. 사실/수치 | N1.7 model card의 3B params, 21.6M data points, 13 datasets, timing table과 README의 20K hours EgoScale, hardware requirement, action-horizon examples를 대조했다. |
+| 3. 코드 구현 | `Gr00tN1d7ActionHead`의 noising, velocity target, masked MSE, Euler inference update, processor/dataset contract를 반영했다. |
+| 4. 해석/연결 | N1 paper, N1.6, EgoScale, Flow Matching, T-Rex와의 연결과 차이를 명시했다. |
+| 5. 문서 품질/build | 제목에서 작업 단계 이름을 제거하고, nested sidebar build로 확인한다. |

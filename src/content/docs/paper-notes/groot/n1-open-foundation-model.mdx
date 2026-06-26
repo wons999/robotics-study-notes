@@ -1,0 +1,449 @@
+---
+title: GR00T N1
+description: GR00T N1 논문의 dual-system VLA, data pyramid, flow matching, data generation, 실험과 appendix를 정리한 Survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# GR00T N1
+
+<SectionFeedback page="GR00T N1" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | GR00T N1: An Open Foundation Model for Generalist Humanoid Robots |
+| 저자 | NVIDIA |
+| 공개 | arXiv v1 2025-03-18, v2 2025-03-27 |
+| 링크 | https://arxiv.org/abs/2503.14734 |
+| 코드/모델 | https://github.com/NVIDIA/Isaac-GR00T, `nvidia/GR00T-N1-2B` |
+| 태그 | humanoid, VLA, data pyramid, flow matching, diffusion transformer, latent action, neural trajectory |
+
+## 한 줄 요약
+
+GR00T N1은 humanoid robot foundation model을 만들기 위해 VLM 기반 reasoning module과 DiT 기반 fast action module을 결합하고, real robot, simulation, neural-generated video, human video를 action/latent-action target으로 통합해 학습하는 open VLA 모델이다.
+
+## Family 안에서의 위치
+
+GR00T N1은 [GR00T Model Family](../)의 기준 paper다. 이후 N1.5, N1.6, N1.7 release는 backbone과 action interface, 공개 코드가 달라졌지만, “dual-system VLA + heterogeneous data pyramid + flow matching action generation”이라는 핵심 질문은 N1에서 시작된다.
+
+| 구분 | N1 paper 기준 |
+| --- | --- |
+| 공개 checkpoint | GR00T-N1-2B |
+| parameter count | total 2.2B, VLM 1.34B |
+| VLM backbone | Eagle-2 |
+| action module | DiT-based flow-matching policy |
+| action chunk | `H=16` |
+| inference | 16-action chunk sampling 63.9 ms on L40 bf16, `K=4` denoising |
+| runtime framing | VLM System 2는 10 Hz, action System 1은 120 Hz를 목표로 설명 |
+
+N1.7 공개 구현은 Cosmos-Reason2-2B/Qwen3-VL, action horizon 40, TensorRT path 등으로 바뀌었다. 따라서 이 문서의 수식, 실험, dataset 수치는 N1 paper 기준으로 읽어야 한다.
+
+## 문제의식
+
+논문이 보는 핵심 bottleneck은 “Internet-scale humanoid robot dataset이 없다”는 점이다. humanoid hardware는 general-purpose robot form factor로 매력적이지만, 특정 humanoid 플랫폼에서 모을 수 있는 real robot trajectory는 foundation model을 학습하기엔 너무 적다.
+
+GR00T N1은 이 문제를 두 방향에서 푼다.
+
+| 문제 | GR00T N1의 답 |
+| --- | --- |
+| robot embodiment가 너무 다양함 | embodiment-specific state/action encoder-decoder로 서로 다른 state/action dimension을 shared DiT space에 올린다. |
+| real humanoid data가 부족함 | data pyramid를 만들어 human video, neural video, simulation, real robot trajectory를 함께 쓴다. |
+| action 없는 video가 많음 | latent action과 IDM pseudo-action으로 action-less video를 학습 target으로 변환한다. |
+| reasoning과 motor control의 속도 요구가 다름 | VLM System 2와 DiT System 1을 분리하되 end-to-end로 결합한다. |
+| 새 task data가 적음 | pretrained GR00T를 post-training해 low-data regime에서 fine-tune한다. |
+
+## 시스템 설정
+
+| 항목 | 설정 |
+| --- | --- |
+| observation | image observation, language instruction, robot proprioceptive state |
+| action | embodiment별 motor action chunk |
+| target robots | single-arm robot arms, bimanual robot arms, GR-1 humanoid with dexterous hands |
+| VLM rate | 논문 설명상 System 2 VLM은 L40에서 10 Hz |
+| action rate | System 1 action module은 120 Hz high-frequency action generation을 담당 |
+| real robot | Fourier GR-1 humanoid |
+| training mode | pre-training across data pyramid, post-training per downstream embodiment/task |
+| evaluation | RoboCasa, DexMG, GR-1 tabletop simulation, GR-1 real-world tasks |
+
+## Data Pyramid
+
+GR00T N1의 데이터 전략은 Fig. 1의 pyramid로 요약된다. 아래로 갈수록 scale은 크고 embodiment-specificity는 낮다. 위로 갈수록 real robot execution에 가깝지만 data는 적다.
+
+| Pyramid layer | 데이터 | 역할 |
+| --- | --- | --- |
+| base | web data, human egocentric video | broad visual/behavioral prior, human-object interaction prior |
+| middle | synthetic simulation data, neural-generated video | robot-like trajectory scale을 늘리고 counterfactual scenario를 만든다. |
+| top | real robot teleoperation data | 실제 embodiment, sensor, actuator grounding |
+
+논문은 heterogeneous source를 그냥 섞지 않고, 각 source에 action target을 붙여 unified training corpus로 만든다.
+
+| source | action label 문제 | 해결 방식 |
+| --- | --- | --- |
+| real robot trajectory | ground-truth robot action 있음 | ground-truth action과 latent action을 모두 flow-matching target으로 사용 |
+| Open X-Embodiment robot data | ground-truth action 있음 | robot action + learned latent action |
+| human video | explicit robot action 없음 | VQ-VAE latent action을 action target처럼 사용 |
+| neural-generated video | generated video라 action 없음 | latent action 또는 IDM pseudo-action으로 label |
+| simulation trajectory | simulator action 있음 | simulation action과 task success filtering |
+
+## Training Data Generation
+
+### Latent Actions
+
+Action-less video를 학습에 쓰기 위해 GR00T N1은 latent action을 만든다. 방법은 LAPA 계열 아이디어에 가깝다.
+
+1. VQ-VAE를 학습한다.
+2. encoder는 현재 frame `x_t`와 future frame `x_{t+H}`를 보고 latent action `z_t`를 출력한다.
+3. decoder는 `x_t`와 `z_t`로 `x_{t+H}`를 reconstruct한다.
+4. 학습 후에는 encoder를 inverse dynamics처럼 사용해 frame pair에서 latent action label을 추출한다.
+5. 이 latent action을 별도 “LAPA embodiment”처럼 취급해 flow matching target으로 쓴다.
+
+핵심은 human video를 robot action space로 직접 retarget하지 않고, 여러 embodiment에서 공유 가능한 learned latent action space로 우회한다는 점이다. Fig. 4는 서로 다른 robot/human embodiment에서 유사한 latent action이 “right arm left/right movement” 같은 공통 motion semantics를 갖는다고 해석한다.
+
+### Neural Trajectories
+
+Neural trajectory는 real teleoperation data를 video generation model로 확장하는 전략이다.
+
+| 항목 | 내용 |
+| --- | --- |
+| seed data | in-house GR00T N1 humanoid teleoperation 88 hours |
+| video model | image-to-video generation model을 real teleop data로 fine-tune |
+| generated scale | 827 hours, roughly 10x augmentation |
+| generation prompt | initial frame + novel language prompt |
+| quality control | multimodal LLM judge가 downsampled 8 frames를 보고 instruction following을 filtering |
+| recaption | 실패/불일치 video는 recaption pipeline을 거침 |
+| downstream use | pre-training과 post-training 모두에서 사용 |
+
+Appendix F는 neural trajectory model을 WAN2.1-I2V-14B + LoRA로 fine-tune한다고 설명한다. trajectory는 480P, 81 frames로 downsample되어 fine-tuning되고, recaption 과정에서는 256P, 16 frames가 사용된다.
+
+### Simulation Trajectories
+
+Simulation data는 DexMimicGen으로 만든다. 초기 human demonstration을 object-centric subtask segment로 나누고, object pose에 맞춰 transformation/replay한다. 성공한 demonstration만 retained한다.
+
+| 항목 | 내용 |
+| --- | --- |
+| generation system | DexMimicGen |
+| pre-training task pattern | `rearrange A from B to C` |
+| source-target combinations | 54 unique receptacle combinations |
+| pre-training demos | 10,000 demos per pair, 540k total demonstrations |
+| broader generated scale | pre/post-training 포함 780,000 simulation trajectories |
+| compute claim | 6,500 hours, nine months equivalent human demonstration data를 11 hours에 생성 |
+| quality | task success verified, successful demos only |
+
+## Pre-Training Datasets
+
+논문 Table 7 기준 pre-training corpus는 총 592.9M frames다.
+
+| Category | Frames | Hours |
+| --- | ---: | ---: |
+| Total robot data | 262.3M | 3,288.8 |
+| Total human data | 181.3M | 2,517.0 |
+| Total simulation data | 125.5M | 1,742.6 |
+| Total neural data | 23.8M | 827.3 |
+| Total | 592.9M | - |
+
+대표 dataset은 다음과 같다.
+
+| Dataset group | 예시 | 역할 |
+| --- | --- | --- |
+| in-house GR-1 teleop | GR-1 Teleop Pre-Training, 6.4M frames, 88.4 hours | real humanoid manipulation grounding |
+| OXE robot datasets | DROID, RT-1, Language Table, Bridge-v2, MUTEX, Plex, RoboSet | cross-embodiment robot prior |
+| AgiBot/RH20T | AgiBot-Alpha, RH20T-Robot | large-scale robot manipulation diversity |
+| human video | Ego4D, Ego-Exo4D, Assembly-101, HOI4D, HoloAssist, RH20T-Human, EPIC-KITCHENS | human-object interaction prior |
+| simulation | GR-1 Simulation Pre-Training | scalable task/action data |
+| neural-generated | GR-1 Neural Videos | real-world counterfactual video augmentation |
+
+## Model Architecture
+
+GR00T N1은 Fig. 2/3 기준으로 VLM System 2와 DiT System 1을 결합한다.
+
+| 모듈 | 역할 |
+| --- | --- |
+| Eagle-2 VLM | image + text를 vision-language token으로 encode |
+| state encoder | embodiment-specific MLP가 proprioceptive state를 shared embedding으로 project |
+| action encoder | noised action chunk와 diffusion timestep을 action token으로 encode |
+| DiT blocks | state/action tokens에 self-attention, VLM tokens에 cross-attention |
+| action decoder | embodiment-specific MLP가 final action tokens를 motor action으로 decode |
+
+### System 2: Eagle-2 VLM
+
+N1 paper의 VLM은 Eagle-2다. Eagle-2는 SmolLM2 LLM과 SigLIP-2 image encoder 기반으로 설명된다.
+
+| 항목 | N1 paper 기준 |
+| --- | --- |
+| image resolution | 224 x 224 |
+| image tokens | pixel shuffle 후 64 image tokens per frame |
+| text/image input | VLM chat format |
+| extracted feature | `(batch size, sequence length, hidden dimension)` |
+| layer choice | final layer보다 middle-layer LLM embedding이 faster inference와 higher success rate를 보였고, GR00T-N1-2B는 12th layer 사용 |
+| frozen/trainable | Appendix Table 6 기준 text tokenizer frozen, vision encoder unfrozen |
+
+### System 1: DiT Action Module
+
+DiT는 noised action token과 state token을 처리하고 VLM token에 cross-attention한다. self-attention과 cross-attention block을 alternating 형태로 사용한다는 점에서 Flamingo/VIMA 계열 conditioning 구조와 연결된다.
+
+N1 논문 구현의 action chunk는 `H=16`이다. action chunk는 `A_t = [a_t, a_{t+1}, ..., a_{t+H-1}]`로 정의된다.
+
+## Flow Matching Objective
+
+Ground-truth action chunk `A_t`, timestep `tau`, Gaussian noise `epsilon`이 있을 때 논문은 noised action을 다음처럼 정의한다.
+
+```text
+A_t^tau = tau * A_t + (1 - tau) * epsilon
+```
+
+논문 수식은 denoising vector field target을 `epsilon - A_t`로 표기한다. 그러나 update 식은 `A_t^{tau+1/K} = A_t^tau + (1/K) V_theta(...)`로 적혀 있고, 현재 N1.7 공개 코드는 `velocity = actions - noise`를 학습한 뒤 Euler update에 더한다. 즉 구현 관점에서는 noise에서 clean action으로 이동하는 `A_t - epsilon` 방향으로 이해하는 것이 자연스럽다. Survey에서는 이 부분을 “논문 표기와 공개 코드 구현의 sign convention 차이 가능성”으로 분리해서 기억한다.
+
+| 항목 | 내용 |
+| --- | --- |
+| noising path | noise와 action 사이 linear interpolation |
+| timestep distribution | `p(tau) = Beta((s - tau) / s; 1.5, 1)`, `s=0.999` |
+| inference init | `A_t^0 ~ N(0, I)` |
+| inference update | forward Euler integration |
+| denoising steps | `K=4` works well across embodiments |
+| N1.7 code check | `Gr00tN1d7ActionHead.forward`는 `noisy_trajectory=(1-t)*noise+t*actions`, `velocity=actions-noise`, masked MSE 사용 |
+
+## Training Recipe
+
+### Pre-Training
+
+Pre-training은 data pyramid 전체에서 flow matching loss를 사용한다.
+
+| source | target |
+| --- | --- |
+| robot datasets | ground-truth robot action + learned latent action |
+| human videos | learned latent action |
+| neural trajectories | latent action + IDM predicted action |
+| simulation trajectories | simulator action / generated task action |
+
+### Post-Training
+
+Post-training은 single embodiment 또는 downstream task dataset에 맞춰 fine-tune한다. 논문은 VLM language component는 frozen으로 두고 나머지 model을 fine-tune한다고 설명한다.
+
+### Hyperparameters
+
+Appendix Table 6 기준이다.
+
+| Hyperparameter | Pre-training | Post-training |
+| --- | --- | --- |
+| learning rate | 1e-4 | 1e-4 |
+| optimizer | AdamW | AdamW |
+| beta1 / beta2 | 0.95 / 0.999 | 0.95 / 0.999 |
+| epsilon | 1e-8 | 1e-8 |
+| weight decay | 1e-5 | 1e-5 |
+| LR scheduler | cosine | cosine |
+| warmup ratio | 0.05 | 0.05 |
+| batch size | 16,384 | 128 or 1024 |
+| gradient steps | 200,000 | 20,000-60,000 |
+| vision encoder | unfrozen | unfrozen |
+| text tokenizer | frozen | frozen |
+| DiT | unfrozen | unfrozen |
+
+### Training Infrastructure
+
+논문은 GR00T-N1-2B pretraining에 약 50,000 H100 GPU hours를 사용했다고 적는다. 최대 1024 GPUs를 단일 모델 학습에 사용했고, OSMO와 Ray 기반 custom library로 multi-node training/data ingestion을 관리했다고 설명한다. Compute-constrained fine-tuning은 single A6000에서도 테스트했으며, adapter layers와 DiT만 tuning하면 batch size up to 200, vision encoder까지 tuning하면 batch size up to 16이라고 보고한다.
+
+## Post-Training with Neural Trajectories
+
+Post-training에서 real task data가 적을 때 neural trajectory를 같이 쓴다.
+
+| 항목 | 내용 |
+| --- | --- |
+| simulation task | human-collected trajectory만으로 video generation model fine-tune |
+| real-world task | full data가 아니라 10% post-training data만 사용해 realistic low-data setting 유지 |
+| generated video action label | latent action 또는 IDM-labeled action |
+| sampling ratio | real-world trajectories와 neural trajectories를 1:1로 co-training |
+| multi-view generation | multiple view task는 subimages를 grid로 만들어 video model fine-tune |
+| future work | img2img diffusion으로 novel initial frame 생성, long-horizon multi-round generation, liquids/articulated objects quantitative eval |
+
+IDM은 current/future image pair를 condition으로 action chunk를 생성하도록 학습한다. Appendix F에 따르면 IDM은 System 1 DiT module과 SigLIP-2 vision embedding을 사용하고, flow-matching objective로 embodiment별 30K 또는 60K steps 학습된다.
+
+## Dataset Format and Action Standardization
+
+Appendix E는 GR00T의 dataset format과 action/state standardization을 설명한다. 핵심은 LeRobot format을 그대로 쓰되, cross-embodiment VLA에 필요한 metadata를 더 강하게 요구한다는 점이다.
+
+| 구성 | 내용 |
+| --- | --- |
+| tabular data | robot states, actions, metadata는 parquet |
+| image/video | MP4 video 또는 PNG sequence, parquet에서 reference |
+| metadata | statistics, episode indices, dataset metadata는 JSON |
+| episode | synchronized observation-action pairs |
+| modality config | `meta/modality.json`이 state/action vector dimension의 semantic meaning을 정의 |
+| annotation | task description, validity flag, success indicator 등 multiple annotation support |
+
+Action/state standardization은 다음 practice를 포함한다.
+
+| 항목 | 목적 |
+| --- | --- |
+| EEF rotation state -> 6D rotation | Euler singularity/discontinuity 회피 |
+| EEF rotation action -> axis-angle | compact하고 smooth한 rotation control |
+| min-max normalization | joint state/action, EEF position/action range 통일 |
+| consistent ordering | left-to-right order, EEF rotation -> position -> gripper closeness 순서 |
+
+## Evaluation Setup
+
+### Simulation Benchmarks
+
+| Benchmark | tasks | embodiment/action 특징 |
+| --- | ---: | --- |
+| RoboCasa Kitchen | 24 | Franka Panda, 3 RGB views, EEF relative position/rotation + gripper |
+| DexMimicGen Cross-Embodiment | 9 | bimanual Panda grippers, bimanual Panda dexterous hands, GR-1 humanoid dexterous hands |
+| GR-1 Tabletop | 24 | GR-1 humanoid + Fourier dexterous hands, head egocentric RGB, arms/hands/waist/neck state/action |
+
+Simulation evaluation은 100 trials 평균 success rate를 보고하고, checkpoints는 500 training steps마다 저장하며 last 5 checkpoints 중 maximum score를 사용한다.
+
+### Real-World Benchmarks
+
+| Category | tasks | 평가 포인트 |
+| --- | ---: | --- |
+| Pick-and-Place | 5 | seen/unseen object generalization |
+| Articulated | 3 | drawer/cabinet/chest에 object 넣고 닫기 |
+| Industrial | 3 | machinery packing, mesh cup pouring, cylinder handover |
+| Coordination | 2 | two robot/agent coordination, handoff and pouring |
+
+Real robot evaluation은 task당 10 trials 평균 success rate를 보고한다. Pack Machinery는 30s time limit 안에 5개 part/tool 중 몇 개를 bin에 넣는지로 계산하고, 시간 제약 때문에 5 trials만 수행했다.
+
+## Main Results
+
+### Pre-Training Evaluation
+
+Pretrained GR00T-N1-2B는 real GR-1 humanoid에서 두 개의 task로 평가된다.
+
+| Task | 평가 | Result |
+| --- | --- | ---: |
+| left-to-right bimanual handover 후 shelf placement | 5 objects x 3 trials | 76.6% (11.5/15) |
+| novel object를 unseen target container에 넣기 | 5 objects x 3 trials | 73.3% (11/15) |
+
+논문은 0.5 점수를 “object를 correctly grasp했지만 container placement 실패”로 설명한다. 이 partial credit은 real robot success rate 해석에서 중요하다.
+
+### Simulation Results
+
+Table 2는 100 demonstrations per task 기준 평균 success rate다.
+
+| Model | RoboCasa | DexMG | GR-1 | Average |
+| --- | ---: | ---: | ---: | ---: |
+| BC Transformer | 26.3% | 53.9% | 16.1% | 26.4% |
+| Diffusion Policy | 25.6% | 56.1% | 32.7% | 33.4% |
+| GR00T-N1-2B | 32.1% | 66.5% | 50.0% | 45.0% |
+
+가장 큰 차이는 GR-1 tabletop에서 난다. GR00T-N1-2B는 Diffusion Policy 대비 +17.3%p, BC Transformer 대비 +33.9%p 높다. 이 결과는 GR00T가 humanoid/dexterous embodiment에 pretrained prior를 잘 옮긴다는 주장과 연결된다.
+
+Appendix Table 4와 Fig. 10은 demo 수별 결과를 제공한다.
+
+| Benchmark | Diffusion Policy 30/100/300 demos | GR00T-N1-2B 30/100/300 demos |
+| --- | --- | --- |
+| RoboCasa average | 14.7 / 25.6 / 43.2 | 17.4 / 32.1 / 49.6 |
+| DexMG average | 23.7 / 46.9 / 68.4 | 29.6 / 58.5 / 74.2 |
+| GR-1 average | 21.3 / 32.7 / 40.4 | 43.2 / 50.0 / 49.3 |
+
+GR-1에서는 30 demos에서도 GR00T가 43.2%로 Diffusion Policy 300 demos의 40.4%를 넘는다. 이 부분이 sample efficiency claim의 핵심이다.
+
+### Real-World Results
+
+Table 3은 GR-1 humanoid real-world task category 평균이다.
+
+| Model | Pick-and-Place | Articulated | Industrial | Coordination | Average |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Diffusion Policy, 10% data | 3.0% | 14.3% | 6.7% | 27.5% | 10.2% |
+| Diffusion Policy, full data | 36.0% | 38.6% | 61.0% | 62.5% | 46.4% |
+| GR00T-N1-2B, 10% data | 35.0% | 62.0% | 31.0% | 50.0% | 42.6% |
+| GR00T-N1-2B, full data | 82.0% | 70.9% | 70.0% | 82.5% | 76.8% |
+
+논문은 GR00T-N1-2B가 Diffusion Policy보다 10% data setting에서 +32.4%p, full data setting에서 +30.4%p 높다고 해석한다. 또 GR00T 10% data 평균 42.6%는 Diffusion Policy full data 46.4%보다 3.8%p 낮은 수준이라, 적은 real data로도 strong adaptation이 가능하다고 주장한다.
+
+## Ablation and Qualitative Findings
+
+### Neural Trajectory Ablation
+
+Fig. 9는 neural trajectory를 post-training에 추가했을 때의 gain을 보여준다.
+
+| Setting | Reported gain |
+| --- | ---: |
+| RoboCasa, 30 demos per task | +4.2% average |
+| RoboCasa, 100 demos per task | +8.8% average |
+| RoboCasa, 300 demos per task | +6.8% average |
+| GR-1 real-world, 8 tasks, 10% data regime | +5.8% average |
+
+논문은 RoboCasa에서 LAPA와 IDM labels를 비교한다. 30 demos low-data에서는 LAPA가 약간 좋고, 100/300 demos에서는 IDM이 더 강해지는 경향을 보고한다. 해석은 IDM training data가 늘어날수록 pseudo-action label이 real action에 더 잘 맞아 positive transfer가 커진다는 것이다.
+
+### Qualitative Results
+
+| Figure | 관찰 |
+| --- | --- |
+| Fig. 11 | pretrained GR00T-N1-2B가 post-training benchmark instruction을 받아 apple을 left hand로 잡고 right hand로 handover한 뒤 basket에 넣는다. motion은 jerkier하지만 unseen setup generalization을 보여준다. |
+| Fig. 12 | post-trained GR00T-N1-2B는 cucumber/lemon pick-and-place를 성공하고, Diffusion Policy는 inaccurate grasp 또는 stuck behavior를 보인다. |
+| Fig. 13 | neural generated trajectory는 multi-view grid, multi-round composition, articulated/liquid-like difficult cases, inpainted initial frame generation을 보여준다. |
+
+논문은 Diffusion Policy baseline이 Turn Sink Spout 같은 task에서 task semantics를 혼동한다고 설명한다. 예시로 100 sample regime에서 DP 11.8%, GR00T N1 42.2%를 언급한다.
+
+## Appendix Deep Notes
+
+| Appendix | Survey에서 기억할 내용 |
+| --- | --- |
+| Appendix B | Table 4/5가 task별 simulation/real result를 제공한다. 평균만 보면 어떤 task가 약한지 놓친다. |
+| Appendix C | pretrained/post-trained qualitative rollout이 language following과 unseen setup 대응을 보여준다. |
+| Appendix D | Table 6 hyperparameters. Pre/post training은 많은 hyperparameter를 공유하지만 post-training batch/steps가 작다. |
+| Appendix E | LeRobot 기반 dataset format 확장, `modality.json`, semantic state/action slicing, rotation/action standardization이 재현 핵심이다. |
+| Appendix F | auxiliary object detection loss, neural trajectory generation, IDM model training detail이 들어 있다. |
+
+Appendix F의 auxiliary object detection loss는 target object localization을 VLM embedding 위 linear head로 예측하는 보조 loss다. OWL-v2로 target object bounding box를 annotate하고, normalized center coordinate를 squared loss로 학습한다. 최종 loss는 `L = L_fm + L_det`로 제시된다.
+
+## N1 Paper와 N1.7 공개 코드 차이
+
+N1 논문 Survey와 N1.7 release/code Survey를 섞으면 안 된다.
+
+| 항목 | N1 paper | N1.7 public code/model card |
+| --- | --- | --- |
+| checkpoint | GR00T-N1-2B | GR00T-N1.7-3B |
+| backbone | Eagle-2 | Cosmos-Reason2-2B / Qwen3-VL architecture |
+| action horizon | 16 | config default 40 |
+| state/action max dim | 논문은 embodiment-specific projection 중심 설명 | `max_state_dim=132`, `max_action_dim=132` |
+| flow target implementation | paper 수식과 update sign convention은 주의 필요 | code uses `velocity=actions-noise` and masked MSE |
+| dataset statistic | N1 Table 7, 592.9M frames | N1.7 model card, 13 datasets and 21.6M data points |
+| deployment timing | L40 bf16 63.9 ms for 16-action chunk | H100/RTX/L40/Orin eager/TensorRT timing table |
+
+## 한계와 주의
+
+- N1의 많은 핵심 data는 in-house GR-1 teleop, neural trajectory generation, commercial-grade multimodal LLM filtering에 의존한다. 공개 checkpoint와 dataset이 있어도 전체 training pipeline 재현성은 제한적이다.
+- Latent action과 IDM pseudo-action은 action-less video를 활용하는 강력한 장치지만, pseudo-label quality가 policy learning에 직접 영향을 준다.
+- Simulation/real task 모두 manipulation 중심이다. locomotion이나 whole-body navigation까지 일반화된 foundation policy로 읽으면 과장이다.
+- N1 paper와 N1.7 public release는 backbone과 action interface가 다르다. N1.7 code detail을 N1 paper 실험 결과의 구현이라고 단정하면 안 된다.
+- Tactile/force feedback은 핵심 modality가 아니다. contact-rich dexterous manipulation에서는 [T-Rex](../../t-rex-tactile-reactive-dexterous-manipulation/) 같은 tactile-reactive pathway와 별도 비교가 필요하다.
+
+## 기억할 점
+
+GR00T N1의 핵심은 “큰 VLM + action DiT”만이 아니다. 더 중요한 contribution은 action 없는 human/neural video까지 latent action과 IDM으로 action-conditioned training corpus에 편입하고, 그 corpus를 embodiment-aware flow matching policy로 학습했다는 점이다. 이 때문에 GR00T N1은 model architecture paper이면서 동시에 data strategy paper다.
+
+## Citation Trail
+
+| 연결 논문/프로젝트 | 연결 이유 |
+| --- | --- |
+| [GR00T Model Family](../) | N1 이후 N1.5/N1.6/N1.7 release 흐름 |
+| [Flow Matching](../../flow-matching-generative-modeling/) | noised action에서 clean action으로 가는 vector field 학습 |
+| [PI Model Family](../../pi/) | continuous action VLA와 flow/diffusion action generation 비교 |
+| [EgoScale](../../egoscale-scaling-dexterous-manipulation/) | human video scaling과 GR00T N1.7 계열의 data prior 연결 |
+| [T-Rex](../../t-rex-tactile-reactive-dexterous-manipulation/) | slow VLA와 fast reactive control 분리라는 공통 질문 |
+| Open X-Embodiment / RT-X | cross-embodiment robot data를 foundation policy로 묶는 선행 흐름 |
+| DexMimicGen / MimicGen | simulation demonstration multiplication 기반 |
+| LeRobot | dataset format과 공개 robotics data ecosystem |
+
+## 검증 메모
+
+5-pass 기준으로 확인했다.
+
+| pass | 확인 내용 |
+| --- | --- |
+| 1. 구조/coverage | family overview와 paper Survey를 분리했고, N1 문서는 problem, system, data, method, model, training, result, appendix, limitation을 포함했다. |
+| 2. 사실/수치 | arXiv PDF text extraction으로 Table 2, Table 3, Fig. 9, Fig. 10, Table 4, Table 5, Table 6, Table 7 수치를 대조했다. |
+| 3. 코드 구현 | N1.7 공개 코드의 `Gr00tN1d7ActionHead`, `DiT`, `processing_gr00t_n1d7.py`, `LeRobotEpisodeLoader`, `launch_finetune.py`와 N1 paper 차이를 분리했다. |
+| 4. 해석/연결 | GR00T family, pi_0, EgoScale, T-Rex, Flow Matching과 연결했다. |
+| 5. 문서 품질/build | MDX component props, internal link, build를 확인한다. |
+
+확인한 공식 자료:
+
+- arXiv `2503.14734` PDF: N1 paper main text와 appendix.
+- NVIDIA Isaac-GR00T GitHub README와 raw source files.
+- Hugging Face `nvidia/GR00T-N1-2B`, `GR00T-N1.5-3B`, `GR00T-N1.6-3B`, `GR00T-N1.7-3B` model cards/API.
