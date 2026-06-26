@@ -1,0 +1,123 @@
+---
+title: π0.7
+description: diverse multimodal prompt로 robot behavior를 steering하고 compositional generalization을 보이는 π0.7 Survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# π0.7
+
+<SectionFeedback page="π0.7" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 글/논문 | π0.7: a Steerable Model with Emergent Capabilities |
+| 공개 | pi.website blog, 2026-04-16 |
+| 링크 | https://www.pi.website/blog/pi07 |
+| 태그 | VLA, steerable generalist policy, compositional generalization, multimodal prompt, visual subgoal |
+
+## 한 줄 요약
+
+π0.7은 task뿐 아니라 strategy, quality, speed, control modality, visual subgoal 같은 diverse multimodal prompt를 학습해, 단일 generalist model이 specialist 수준의 dexterous skill과 compositional task generalization을 동시에 보이도록 만든 PI 계열의 최신 모델이다.
+
+## Official Visual Evidence
+
+![π0.7 official overview image](/pi/pi07-og.png)
+
+공식 π0.7 article의 overview visual이다. single generalist model을 prompt와 subgoal로 steer한다는 방향을 보여준다.
+
+| Current observations |  |  |  |  |
+| --- | --- | --- | --- | --- |
+| ![π0.7 current 1](/pi/pi07-current-1.png) | ![π0.7 current 2](/pi/pi07-current-2.png) | ![π0.7 current 3](/pi/pi07-current-3.png) | ![π0.7 current 4](/pi/pi07-current-4.png) | ![π0.7 current 5](/pi/pi07-current-5.png) |
+
+| Visual subgoals |  |  |  |  |
+| --- | --- | --- | --- | --- |
+| ![π0.7 subgoal 1](/pi/pi07-subgoal-1.png) | ![π0.7 subgoal 2](/pi/pi07-subgoal-2.png) | ![π0.7 subgoal 3](/pi/pi07-subgoal-3.png) | ![π0.7 subgoal 4](/pi/pi07-subgoal-4.png) | ![π0.7 subgoal 5](/pi/pi07-subgoal-5.png) |
+
+공식 article의 visual subgoal example이다. language prompt만이 아니라 현재 관측과 목표 상태 image를 함께 넣어 behavior를 steer하는 구조를 확인한다.
+
+## 문제의식
+
+LLM은 “영어를 프랑스어로 번역”과 “JSON format으로 출력” 같은 능력을 조합할 수 있다. VLA는 semantic concept을 이해하더라도 “새 도구를 쓰기”, “새 appliance 조작”, “새 robot embodiment에서 같은 task 수행”처럼 skill을 recombine하는 compositional generalization을 충분히 보여주지 못했다.
+
+π0.7의 목표는 다음이다.
+
+| 목표 | 설명 |
+| --- | --- |
+| out-of-box generalist | task별 specialist fine-tuning 없이 다양한 dexterous task 수행 |
+| compositional generalization | training에 없는 appliance/task를 prompt와 coaching으로 해결 |
+| cross-embodiment transfer | data가 없는 robot/task 조합에서도 수행 |
+| steerability | 무엇을 할지뿐 아니라 어떻게 할지 prompt로 제어 |
+
+## Method: Diverse Multimodal Prompting
+
+π0.7은 단순 text instruction만 쓰지 않는다. 공식 글은 generalization의 key가 diverse data를 naive하게 섞는 것이 아니라, behavior를 disambiguate하는 diverse context를 prompt에 넣는 것이라고 설명한다.
+
+| Prompt modality | 역할 |
+| --- | --- |
+| diverse language | task와 sub-step 설명 |
+| metadata | speed, quality, desired strategy 같은 “how” 정보 |
+| control modality | data source/robot/control style 차이를 명시 |
+| visual subgoal image | sub-step end state의 precise spatial layout 제공 |
+| world-model-generated subgoal | test-time visual generalization을 돕는 synthetic subgoal |
+
+이 구조 덕분에 suboptimal autonomous data도 “lower quality/lower speed” metadata로 구분해 training에 포함할 수 있다. 즉 π0.7은 좋은 data만 골라 쓰는 것이 아니라 heterogeneous data의 behavior style을 prompt로 조건화한다.
+
+## Experiments and Results
+
+### Compositional Task Generalization: Air Fryer
+
+π0.7은 air fryer에 sweet potato를 넣는 task를 zero-shot으로 시도한다. 단순 prompt만으로는 reasonable attempt를 하지만 완전히 끝내지는 못한다. 사람이 step-by-step language coaching을 제공하면 훨씬 잘 수행한다. 여러 번 coaching한 뒤에는 high-level policy를 fine-tune해 language subgoals를 autonomously 생성하고, world model이 만든 visual subgoal image와 함께 π0.7에 제공해 task를 수행한다.
+
+중요한 분석:
+
+- training set에는 해당 mobile robot의 air fryer loading demonstration이 없다.
+- 가까운 episode로 air fryer basket을 닫는 두 episode와 DROID Franka data가 발견되었다.
+- 실제 수행은 이 source episodes와 morphology/setting이 다르므로, 행동 조합 능력의 초기 신호로 해석한다.
+
+### Cross-Embodiment Laundry Folding
+
+π0.7은 bimanual UR5e system에서 laundry folding을 수행한다. 이 robot은 training set에서 underrepresented embodiment이며, 해당 robot/task 조합의 laundry folding data는 없다. Source robot과 UR5e는 size, positioning, morphology가 달라 strategy도 달라져야 한다.
+
+공식 글은 π0.7의 success rate가 source robot에서 folding data를 수집했던 expert teleoperators가 UR5e에서 처음 시도한 “zero-shot” success rate와 match한다고 설명한다. 이 teleoperators는 평균 375시간의 teleoperation experience를 가졌다.
+
+### RECAP Specialist와 비교
+
+π0.7은 RECAP으로 학습한 π*0.6 specialist가 수행하던 laundry folding, espresso making, box folding task를 단일 model로 수행한다. 공식 글은 autonomous data와 RL-trained specialist experience를 strategy metadata로 distill해, 단일 π0.7 model이 task-specific RECAP specialist와 비슷하거나 더 높은 throughput을 얻는다고 설명한다.
+
+### Out-of-Box Skill Breadth
+
+공식 페이지는 vegetable peeling, glass door cleaning with Windex 등 다양한 platform/task examples를 보여준다. 이는 controlled benchmark 하나보다 “single unified model의 breadth”를 강조하는 evidence다.
+
+## PI Family 안에서의 위치
+
+| 이전 연구 | π0.7에서의 역할 |
+| --- | --- |
+| π0 | VLA + flow action foundation |
+| π0-FAST/KI | prompt/action representation과 semantic knowledge preservation |
+| π0.5 | open-world household generalization |
+| RECAP / π*0.6 | autonomous/RL data와 strategy metadata source |
+| MEM | long-horizon memory와 future integration |
+| RLT | future online refinement axis |
+
+π0.7은 “더 큰 모델”보다 “다양한 data를 prompt context로 정렬해 behavior를 steerable하게 만드는 모델”로 읽어야 한다.
+
+## 한계와 주의
+
+- 공식 글은 broad capability demo와 qualitative evidence가 많고, full paper/PDF 수치 표는 별도 확인해야 한다.
+- air fryer는 완전 zero-shot success라기보다 coaching과 high-level policy fine-tuning이 결합된 흐름이다.
+- “specialist 수준” 비교는 normalized throughput 기준이며 task별 raw success/throughput table을 추가 확인해야 한다.
+
+## 5-Pass 검증 메모
+
+| Pass | 결과 |
+| --- | --- |
+| 1. 구조/coverage | prompt modalities, air fryer, UR5e laundry, RECAP specialist comparison, limitations 포함 |
+| 2. 사실/수치 | 평균 375h teleop, no UR5e laundry data, air fryer source episodes, specialist comparison 확인 |
+| 3. 코드 구현 | 공개 code/checkpoint 미확인 |
+| 4. 해석/연결 | π0.5, KI, RECAP, RLT/MEM과 연결 |
+| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |

@@ -1,0 +1,89 @@
+---
+title: The Physical Intelligence Layer
+description: PI가 robot foundation model을 reusable platform layer와 partner deployment 관점으로 설명한 article 정리.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# The Physical Intelligence Layer
+
+<SectionFeedback page="The Physical Intelligence Layer" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 글 | The Physical Intelligence Layer |
+| 분류 | pi.website article |
+| 링크 | https://www.pi.website/blog/partner |
+| 연결 모델 | π0, π0.5, π0.6, π*0.6 |
+| 태그 | robot foundation model, platform, partner deployment, industrial robotics, home robotics |
+
+## 한 줄 요약
+
+The Physical Intelligence Layer는 PI 모델을 논문 단위 알고리즘이 아니라, robot application 개발자가 LLM API처럼 재사용할 수 있는 physical-world intelligence layer로 만들겠다는 제품/플랫폼 관점의 글이다.
+
+## Official Visual Evidence
+
+![Physical Intelligence Layer official overview image](/pi/partner-og.png)
+
+공식 partner article의 overview visual이다. PI model family를 reusable platform layer로 설명하는 제품/배포 관점을 보여준다.
+
+| Partner deployment logos |  |
+| --- | --- |
+| ![Weave Robotics logo](/pi/partner-weave-mark.png) | ![Ultra logo](/pi/partner-ultra-logomark.svg) |
+
+공식 article의 partner section visual이다. Weave laundromat deployment와 Ultra warehouse packaging deployment를 구분해 읽기 위한 자료로 둔다.
+
+## 핵심 주장
+
+Software에서는 app 개발자가 foundation model API를 호출해 language intelligence를 재사용할 수 있다. Robotics에는 아직 그런 off-the-shelf layer가 없어서, controller, data pipeline, model training, deployment stack을 모두 직접 만들어야 한다. PI는 `π0`, `π0.5`, `π0.6`, `π*0.6` 같은 general-purpose robotic foundation model이 이 gap을 줄일 수 있다고 주장한다.
+
+| software analogy | robotics에서 대응되는 문제 |
+| --- | --- |
+| LLM API | reusable physical intelligence layer |
+| prompt/fine-tune app | robot application adaptation |
+| model provider infrastructure | data collection, policy runtime, robot-specific interface |
+| app ecosystem | homes, hospitals, offices, warehouses, factories의 robot use case |
+
+## Partner Evidence
+
+Article은 두 partner deployment 사례를 통해 “research demo”가 아니라 real-world setting에서 model을 stress-test한다.
+
+| partner | domain | 공식 글에서 강조한 점 |
+| --- | --- | --- |
+| Weave | laundry folding, laundromat/customer setting | fold quality, fold time, remote specialist intervention 감소 등 performance improvement를 관찰 |
+| Ultra | e-commerce order packaging, live customer warehouses | π0 -> π0.5 -> π0.6 model generation마다 intelligence, throughput, reliability가 step up; π0.6에서 cycle time/success rate 개선 |
+
+Weave 사례는 deformable laundry가 long-horizon이고 garment size/fabric/color/shape variation이 크다는 점을 강조한다. Ultra 사례는 e-commerce packaging이 item type, deformable packaging, external machinery 때문에 traditional automation으로 hard long-tail problem이라고 설명한다.
+
+## PI Family 안에서의 위치
+
+이 글은 method detail이 아니라 “왜 PI가 model family를 layer로 부르는가”를 설명한다. OpenPI는 research community가 model을 fine-tune해보는 공개 software release이고, Physical Intelligence Layer는 partner robot/application 위에 모델을 연결해 실제 deployment loop를 만드는 방향이다.
+
+| 연구 축 | layer 관점에서의 의미 |
+| --- | --- |
+| [π0](../pi0-vla-flow-model/) | reusable low-level VLA foundation |
+| [π0.5](../pi05-open-world-generalization/) | unseen environment/generalization capability |
+| [Robot Olympics / π0.6](../moravec-robot-olympics/) | 새 physical skill fine-tuning capability |
+| [π*0.6 / RECAP](../pistar06-recap-learns-from-experience/) | autonomous experience/correction/RL로 deployment reliability 개선 |
+| [RLT](../rlt-efficient-online-rl/) | online RL로 throughput/speed를 올리는 adaptation mechanism |
+
+## 읽을 때 주의할 점
+
+- 이 문서는 논문이 아니라 partner/product article이다. 수치가 제한적이고 formal benchmark protocol이 아니다.
+- partner 인용은 deployment evidence지만, 독립 재현 benchmark와 같은 성격으로 쓰면 안 된다.
+- “layer”는 단일 model checkpoint가 아니라 model, data, policy runtime, robot interface, human intervention loop를 포함하는 platform abstraction이다.
+- OpenPI처럼 공개된 부분과 partner deployment에서 쓰인 내부 stack을 구분해야 한다.
+
+## 5-Pass 검증 메모
+
+| Pass | 결과 |
+| --- | --- |
+| 1. 구조/coverage | platform claim, software analogy, partner evidence, family 연결, caveat를 포함했다. |
+| 2. 사실/수치 | Weave/Ultra partner names, laundromat/customer warehouse context, π0 -> π0.5 -> π0.6 generation claim을 official article과 대조했다. |
+| 3. 코드 구현 | article note이므로 public code-level reproduction 대상이 아니며 OpenPI와 boundary를 분리했다. |
+| 4. 해석/연결 | PI research family를 deployment layer 관점으로 재배치했다. |
+| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |

@@ -1,0 +1,343 @@
+---
+title: π0
+description: π0 논문의 PDF figure/table을 기준으로 flow-matching VLA 구조, 데이터 recipe, 실험 결과, appendix를 정리한 Survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# π0
+
+<SectionFeedback page="π0" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | π0: A Vision-Language-Action Flow Model for General Robot Control |
+| 저자/그룹 | Kevin Black, Noah Brown, Danny Driess, Adnan Esmail, Michael Equi, Chelsea Finn, Niccolo Fusai, Lachy Groom, Karol Hausman, Brian Ichter, Szymon Jakubczak, Tim Jones, Liyiming Ke, Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Lucy Xiaoyang Shi, James Tanner, Quan Vuong, Anna Walling, Haohuan Wang, Ury Zhilinsky / Physical Intelligence |
+| 공개 | arXiv 2024-10-31, PDF 확인본 arXiv v4 2026-01-08 |
+| 링크 | https://arxiv.org/abs/2410.24164, https://arxiv.org/pdf/2410.24164, https://www.pi.website/blog/pi0 |
+| 코드/모델 | https://github.com/Physical-Intelligence/openpi, `gs://openpi-assets/checkpoints/pi0_base` |
+| 태그 | VLA, flow matching, action chunking, PaliGemma, cross-embodiment robot data |
+
+## 한 줄 요약
+
+π0는 PaliGemma 기반 VLM에 robotics-specific action expert를 붙이고, future continuous action chunk를 conditional flow matching으로 생성해 multi-robot dexterous manipulation을 학습한 Physical Intelligence의 기준 VLA 모델이다.
+
+## PDF Figure/Table Inventory
+
+이번 노트는 논문 PDF를 직접 렌더링하고, Figure 1-14와 Table I을 local asset으로 추출해 작성했다. 논문에 formal table은 Table I 하나이며, 나머지 정량 결과는 figure plot으로 제공된다.
+
+| 원문 항목 | Survey 반영 위치 | 읽어야 할 핵심 |
+| --- | --- | --- |
+| Figure 1 | Overview | cross-embodiment robot data, Internet-scale VLM prior, action expert, post-training recipe가 하나의 시스템으로 묶인다. |
+| Figure 2 | 문제의식/long-horizon 예시 | mobile laundry처럼 navigation, manipulation, folding이 이어지는 긴 task를 target으로 삼는다. |
+| Figure 3 | Method/Model Architecture | PaliGemma VLM backbone과 300M action expert가 분리되며, action chunk는 flow route로 생성된다. |
+| Figure 4 | Dataset | π dataset과 OXE subset의 size/mixture weight가 다르며, 데이터 양과 sampling weight를 구분해야 한다. |
+| Figure 5 | Robot Systems | single/dual arm, mobile manipulator, 6/7-DoF embodiment를 공동 학습한다. |
+| Figure 6 | Out-of-box evaluation setup | shirt folding, bussing, grocery bagging, toaster처럼 pre-training 후 직접 prompt하는 task suite다. |
+| Figure 7 | Out-of-box results | full π0와 compute-parity π0가 OpenVLA/Octo/π0-small보다 강하다. |
+| Figure 8 | Language evaluation setup | intermediate command를 따르는지 보기 위한 bussing/table setting/grocery bagging task다. |
+| Figure 9 | Language results | VLM initialization이 language following과 high-level VLM guidance 이득을 만든다. |
+| Figure 10 | Fine-tuning task setup | pre-training과 유사한 task부터 완전히 새로운 object/motion task까지 tier가 나뉜다. |
+| Figure 11 | Fine-tuning results | π0 architecture와 pre-training은 low-data와 hard task에서 특히 이득을 준다. |
+| Figure 12 | Complex task setup | laundry, box, eggs, to-go box처럼 deformable/long-horizon/semantic sequencing task를 평가한다. |
+| Figure 13 | Complex task results | full pre-training + post-training이 scratch/out-of-box ablation보다 대체로 우수하다. |
+| Figure 14 | Appendix method detail | flow timestep sampling은 uniform이 아니라 low/noisy timestep을 강조하는 shifted beta다. |
+| Table I | Appendix inference detail | RTX 4090 기준 on-board 73ms, off-board 86ms inference latency다. |
+
+## Overview
+
+![Figure 1: π0 framework teaser](/pi/pi0-paper/fig01-framework-teaser.png)
+
+Figure 1은 π0의 전체 주장을 압축한다. 핵심은 “VLM을 robot policy로 fine-tune했다”가 아니라, cross-embodiment robot dataset, Internet-scale pre-training, continuous action expert, post-training data가 함께 있어야 dexterous robot foundation model이 된다는 점이다.
+
+![Figure 2: mobile laundry long-horizon example](/pi/pi0-paper/fig02-mobile-laundry.png)
+
+Figure 2의 mobile laundry는 이 논문이 단순 pick-and-place benchmark를 겨냥하지 않는다는 신호다. 로봇은 dryer로 이동하고, laundry를 꺼내고, hamper에 담고, folding table로 가져가서 접는다. 이 task는 perception, semantic decomposition, mobile manipulation, bimanual folding이 이어지므로 “pre-trained base model만으로 충분한가”와 “post-training이 무엇을 보강하는가”를 동시에 보게 만든다.
+
+## 문제의식
+
+기존 VLA는 Internet-scale VLM의 semantic prior를 가져오지만, action을 discrete token으로 autoregressive하게 내보내는 방식이 high-DoF, high-frequency, contact-rich control에 맞지 않는다. π0는 이 병목을 두 가지로 나눈다.
+
+| 병목 | π0의 선택 | 해석 |
+| --- | --- | --- |
+| 데이터 부족 | 7 robot configurations, 68 PI tasks, OXE/Bridge/DROID를 섞은 pre-training mixture | pre-training은 task success strategy보다 recovery와 variation coverage를 키운다. |
+| action 표현 | H=50 continuous action chunk를 conditional flow matching으로 생성 | discrete action token보다 정밀하고, action chunking으로 high-frequency control 부담을 줄인다. |
+| semantic grounding | PaliGemma VLM 초기화 | object/category instruction과 high-level VLM subcommand를 low-level control로 연결한다. |
+| robot-specific control | 별도 action expert | VLM backbone을 그대로 망가뜨리지 않고 state/action token을 처리한다. |
+| long-horizon dexterity | post-training/fine-tuning | pre-training 지식만으로 fluent strategy가 나오지 않으므로 curated task data가 필요하다. |
+
+## 시스템 설정
+
+| 항목 | 논문 PDF 기준 |
+| --- | --- |
+| observation | 2개 또는 3개 RGB image, language command, proprioceptive state |
+| state | joint angles 중심의 low-dimensional robot configuration |
+| action | future action chunk `A_t = [a_t, ..., a_{t+H-1}]`, 논문 기본 `H=50` |
+| action/state padding | largest robot dimension 18에 맞춰 zero padding |
+| control frequency | open-source data는 2-10Hz가 많고, PI dexterous/mobile robot은 20Hz 또는 50Hz inference/execution regime |
+| robot systems | UR5e, Franka, bimanual UR5e/Trossen/ARX, mobile Trossen/ARX/Fibocom |
+| evaluation scoring | 대부분 binary success가 아니라 partial progress score이며, 10 trials 평균을 사용 |
+
+## Dataset
+
+![Figure 4: dataset mixture](/pi/pi0-paper/fig04-dataset-mixture.png)
+
+Figure 4는 두 가지를 구분해서 봐야 한다. 왼쪽은 dataset size를 timesteps로 본 상대 크기이고, 오른쪽은 training mixture weight다. 큰 데이터셋이 그대로 큰 sampling weight를 갖는 것이 아니라, task-robot combination을 `n^0.43`로 down-weighting해 imbalance를 완화한다.
+
+| 구성 | 논문 수치 |
+| --- | --- |
+| PI internal data | 903M timesteps |
+| single-arm portion | 106M timesteps |
+| dual-arm portion | 797M timesteps |
+| PI tasks | 68 tasks |
+| PI robot configurations | 7 configurations |
+| open-source portion | training mixture의 9.1% |
+| open-source sources | OXE Magic Soup, Bridge v2, DROID |
+| OXE source robots | 22 robots |
+
+논문에서 말하는 “task”는 기존 benchmark의 verb-noun 조합보다 넓다. 예를 들어 bussing은 다양한 dish, cup, utensil, trash를 올바른 receptacle로 분류하고 옮기는 behavior family다. 따라서 68 tasks라는 숫자는 실제 behavior diversity를 과소표현한다.
+
+![Figure 5: robot platforms](/pi/pi0-paper/fig05-robot-platforms.png)
+
+Figure 5는 π0가 single embodiment policy가 아님을 보여준다. 같은 model이 7/8-DoF single arm, 14-DoF bimanual arm, 16/17-DoF mobile manipulator action space를 처리한다. 이때 action/state vector는 largest dimension에 맞춰 padding되고, camera가 부족한 robot은 missing image slot을 mask한다.
+
+## Method
+
+![Figure 3: π0 model overview](/pi/pi0-paper/fig03-model-overview.png)
+
+π0의 모델 입력은 `o_t = [I^1_t, ..., I^n_t, l_t, q_t]`이고, 출력은 future action chunk `A_t = [a_t, ..., a_{t+H-1}]`다. Figure 3에서 중요한 점은 action expert가 VLM 옆에 단순 head로 붙는 것이 아니라, state와 noisy action token을 처리하는 별도 transformer expert라는 점이다.
+
+### Conditional Flow Matching
+
+논문은 action chunk distribution `p(A_t | o_t)`를 직접 regression하지 않고, clean action chunk와 Gaussian noise 사이의 vector field를 학습한다.
+
+| 요소 | 논문 정의 |
+| --- | --- |
+| clean action chunk | `A_t` |
+| random noise | `epsilon ~ N(0, I)` |
+| noisy action | `A^tau_t = tau A_t + (1 - tau) epsilon` |
+| target vector field | `u(A^tau_t | A_t) = A_t - epsilon` |
+| loss | `E || v_theta(A^tau_t, o_t) - u(A^tau_t | A_t) ||^2` |
+| inference | random noise에서 시작해 learned vector field를 `tau=0`에서 `tau=1`까지 Euler integration |
+| integration steps | 10 steps, `delta=0.1` |
+
+인사이트는 action chunk를 “다음 한 action”이 아니라 짧은 trajectory distribution으로 취급한다는 점이다. 이 덕분에 multimodal action sequence와 high-frequency action smoothness를 discrete token보다 자연스럽게 다룬다.
+
+![Figure 14: flow timestep sampling](/pi/pi0-paper/fig14-timestep-sampling.png)
+
+Appendix Figure 14는 작은 detail처럼 보이지만 중요하다. π0는 flow timestep을 uniform으로 뽑지 않고, noisier/lower timestep에 더 많은 학습 질량을 둔다. 논문은 image generation과 달리 robot observation이 action mean을 강하게 constrain하므로, low noise identity mapping보다 high noise action prediction이 더 중요하다고 해석한다. cutoff는 `s=0.999`다.
+
+### Inference Loop
+
+π0는 inference 때 image/language/state prefix를 매 flow step마다 다시 계산하지 않는다. observation token의 key/value를 cache하고, action suffix만 10번 forward한다. 이 구조가 없으면 3B급 VLM과 flow matching을 20-50Hz robot control에 쓰기 어렵다.
+
+![Table I: inference time](/pi/pi0-paper/table01-inference-time.png)
+
+| Model part | Inference time |
+| --- | --- |
+| image encoders | 14 ms |
+| observation forward pass | 32 ms |
+| x10 action forward pass (flow) | 27 ms |
+| network latency if off-board | 13 ms |
+| total on-board inference | 73 ms |
+| total off-board inference | 86 ms |
+
+Table I의 핵심은 flow matching 10 step이 전체 latency를 지배하지 않는다는 점이다. 오히려 image encoder와 observation forward가 크며, KV cache가 action flow 반복 비용을 27ms로 제한한다. 다만 action chunk는 open-loop로 실행한다. 논문은 temporal ensembling을 시도했지만 performance가 나빠져 사용하지 않았다고 밝힌다.
+
+## Model Architecture
+
+| 구성 | 역할 | 논문 detail |
+| --- | --- | --- |
+| image encoder | RGB image를 token embedding으로 변환 | PaliGemma/SigLIP 계열 |
+| VLM backbone | image/language prompt 처리 | PaliGemma 3B, Gemma 2B language model 기반 |
+| state projection | `q_t`를 transformer embedding으로 project | state는 별도 block으로 cache 가능 |
+| action token projection | noisy action chunk `A^tau_t`를 action tokens로 변환 | action horizon `H=50` |
+| timestep MLP | `tau` 정보를 action token embedding에 주입 | sinusoidal positional encoding + MLP |
+| action expert | state/action token 처리 | width 1024, MLP dim 4096, 약 300M parameters |
+| output projection | action token output을 vector field로 decode | action chunk velocity 예측 |
+
+Appendix B의 PaliGemma/Gemma 설정은 `width=2048`, `depth=18`, `mlp_dim=16384`, `num_heads=18`, `num_kv_heads=1`, `head_dim=256`이다. action expert는 VLM backbone보다 작게 설계되어 inference 반복 비용을 줄인다. 전체 모델은 PaliGemma 3B + action expert 300M, 약 3.3B parameter다.
+
+π0-small은 단순히 “작은 π0”가 아니다. VLM initialization이 없고, DistilBERT language encoder, R26-S-32 ResNet-ViT hybrid image encoder, observation encoder와 action expert 분리, DiT/AdaLN-Zero style action expert를 사용한다. 따라서 Figure 7/9에서 π0-small과 π0 차이는 parameter scale, VLM pre-training, architecture detail이 함께 섞인 ablation이다.
+
+## Training Recipe
+
+| Stage | 목적 | 데이터/학습 해석 |
+| --- | --- | --- |
+| pre-training | broad capability, recovery, generalization | large and diverse data를 사용하되 task별 fluent strategy는 보장하지 않는다. |
+| post-training/fine-tuning | downstream task fluency | curated high-quality task data로 원하는 execution style을 맞춘다. |
+| high-level policy 결합 | semantic decomposition | VLM이 intermediate language command를 내고 π0가 low-level execution을 수행한다. |
+
+논문이 반복해서 강조하는 것은 pre-training과 post-training의 역할 분리다. pre-training data는 더 지저분하고 다양해도 mistake recovery와 state coverage를 준다. post-training data는 좁지만 더 일관된 strategy를 주며, complex task에서는 이 둘 중 하나만으로 부족하다.
+
+## Experiments and Results
+
+논문 실험은 네 질문으로 구성된다.
+
+| 질문 | 관련 Figure | 실험 의미 |
+| --- | --- | --- |
+| pre-trained base model이 직접 prompt만으로 얼마나 되는가 | Figures 6, 7 | architecture/data scale의 out-of-box 효과 |
+| language command를 얼마나 잘 따르는가 | Figures 8, 9 | VLM initialization의 semantic grounding 효과 |
+| new dexterous task fine-tuning에서 얼마나 transfer되는가 | Figures 10, 11 | pre-training과 architecture의 downstream data efficiency |
+| complex multi-stage task를 post-training으로 해결하는가 | Figures 12, 13 | long-horizon, deformable, cluttered real task에서의 practical ceiling |
+
+### Out-of-Box Evaluation
+
+![Figure 6: out-of-box tasks](/pi/pi0-paper/fig06-out-of-box-tasks.png)
+
+Figure 6의 task들은 pre-training 후 base model을 직접 language prompt로 실행한다. shirt folding, bussing easy/hard, grocery bagging, toast out of toaster는 모두 단순 pose reaching이 아니라 semantic recognition, multi-stage manipulation, deformable/contact behavior가 섞여 있다.
+
+![Figure 7: out-of-box results](/pi/pi0-paper/fig07-out-of-box-results.png)
+
+Figure 7의 baseline 조건은 중요하다.
+
+| Model | 조건 | 해석 |
+| --- | --- | --- |
+| π0 full | 700k steps | 모든 task에서 가장 높은 성능 |
+| π0 parity | 160k steps | baseline update 수와 맞춘 조건인데도 모든 baseline보다 우수 |
+| π0-small | VLM initialization 없음 | OpenVLA/Octo보다 강하지만 full π0보다 낮음 |
+| OpenVLA | full mixture로 학습 | discrete autoregressive action route가 high-frequency chunk control에 불리 |
+| OpenVLA UR5e only | UR5e data만 fine-tuned | cross-embodiment보다 UR5e에 맞췄지만 π0보다 낮음 |
+| Octo | 93M diffusion-output model | action chunk는 가능하지만 representational capacity가 작음 |
+
+인사이트는 “π0가 3.3B라서 이겼다”가 아니다. π0 parity가 baseline보다 강하고, π0-small도 일부 baseline보다 강하므로 action chunk/flow/data recipe가 중요하다. 동시에 full π0가 π0-small을 크게 앞서므로 VLM initialization과 large backbone도 language-rich dexterous setting에서 필요하다.
+
+### Language Evaluation
+
+![Figure 8: language-conditioned tasks](/pi/pi0-paper/fig08-language-tasks.png)
+
+Figure 8의 language task는 bussing, table setting, grocery bagging이다. 각 task는 약 2초 단위의 language-labeled segment로 구성되고, object를 어디로 옮길지에 대한 intermediate instruction을 따른다.
+
+![Figure 9: language results](/pi/pi0-paper/fig09-language-results.png)
+
+Figure 9는 두 가지를 동시에 보여준다.
+
+| 비교 | 결과 해석 |
+| --- | --- |
+| π0 vs π0-small language following | π0가 language following accuracy에서 크게 앞선다. VLM pre-training이 object/category instruction을 실제 action으로 연결하는 데 중요하다. |
+| flat vs human intermediate command | π0는 intermediate command를 받으면 task performance가 오른다. 즉, instruction을 이해할 수 있을 때 high-level decomposition이 low-level success로 전환된다. |
+| human vs high-level VLM policy | high-level VLM guidance도 autonomous performance를 올리지만 human expert만큼 안정적이지는 않다. |
+| π0-small + high-level expert | language following이 약하면 더 좋은 subcommand를 줘도 성능 이득이 제한된다. |
+
+이 결과는 π0를 단순 end-to-end policy로만 읽으면 놓치는 부분이다. π0는 high-level planner와 결합될 때 저수준 executor 역할을 하며, 이때 language grounding이 실제 task progress를 좌우한다.
+
+### Fine-Tuning New Dexterous Tasks
+
+![Figure 10: fine-tuning tasks](/pi/pi0-paper/fig10-finetune-tasks.png)
+
+Figure 10은 fine-tuning task를 pre-training과의 similarity에 따라 나눈다. stack bowls와 towel folding은 비교적 pre-training과 비슷하고, Tupperware in microwave는 unseen microwave를 포함하며, paper towel replacement와 Franka items in drawer는 object/motion/robot setting이 더 새롭다.
+
+![Figure 11: fine-tuning results](/pi/pi0-paper/fig11-finetune-results.png)
+
+Figure 11은 평균만 보면 π0가 강하다는 결론으로 끝나지만, 세부적으로는 더 조심해서 읽어야 한다.
+
+| 관찰 | 인사이트 |
+| --- | --- |
+| Average across all tasks에서 π0가 DP보다 높고 scratch π0보다 높다. | architecture와 pre-training이 모두 평균 성능을 올린다. |
+| Paper towel replacement는 pretrained π0가 scratch보다 큰 차이로 높다. | 새로운 object/motion task에서 broad pre-training이 recovery와 manipulation prior를 준다. |
+| Items in drawer는 pretrained와 scratch가 거의 붙는다. | 모든 task에서 pre-training gap이 큰 것은 아니며, target data가 충분하면 architecture 자체가 주된 요인일 수 있다. |
+| Towel folding은 5h에서 거의 포화되지만 10h에서 scratch가 떨어진다. | data amount가 많다고 monotonic하게 좋아진다고 해석하면 안 된다. real robot fine-tuning은 data quality/coverage 영향을 크게 받는다. |
+| Tupperware in microwave는 π0, scratch, ACT/DP가 비교적 가까운 구간이 있다. | prior method가 완전히 무력한 것이 아니라, task와 data regime에 따라 strong scratch baseline이 여전히 경쟁적이다. |
+| OpenVLA/Octo는 일부 task/setting에서만 찍혀 있다. | real-world evaluation cost 때문에 모든 point가 dense하지 않다. plot의 missing baseline을 0으로 해석하면 안 된다. |
+
+논문 결론은 “pre-training이 항상 압도적으로 이긴다”가 아니라, π0 recipe가 평균적으로 강하고 특히 low-data/hard/similar-transfer regime에서 이득이 크다는 쪽에 가깝다.
+
+### Complex Multi-Stage Tasks
+
+![Figure 12: complex tasks](/pi/pi0-paper/fig12-complex-tasks.png)
+
+Figure 12의 complex task는 laundry folding, mobile laundry, lunch table bussing, box assembly, egg packing, to-go box packing이다. 이 task들은 5-20분 길이까지 가며, deformable cloth, flexible cardboard, fragile/slippery eggs, dense clutter, multi-object sequencing을 포함한다.
+
+![Figure 13: complex task results](/pi/pi0-paper/fig13-complex-results.png)
+
+Figure 13은 task를 pre-training에 있던 task와 없던 task로 나눠 보여준다.
+
+| Task group | 결과 해석 |
+| --- | --- |
+| Laundry folding / mobile laundry / dryer unloading | pre-training에 있던 task도 out-of-box만으로 충분하지 않고, fine-tuning된 π0가 가장 높다. pre-training은 base capability를 주지만 fluent strategy는 post-training이 만든다. |
+| Table bussing | scratch도 어느 정도 높지만 full π0가 더 높다. semantic classification과 dense clutter sequencing에서 pre-training이 도움을 준다. |
+| Box building / to-go box | pre-training에 없는 task에서 full π0가 scratch보다 큰 차이로 높다. 양손 coordination과 flexible object handling prior가 transfer된 것으로 볼 수 있다. |
+| Packing eggs | scratch가 full π0와 비슷하거나 더 높은 구간이 보인다. 이 task는 task-specific fine-tuning data와 narrow skill이 매우 중요할 수 있다. |
+
+중요한 caveat는 scoring이 partial progress라는 점이다. Figure 13에서 0.5 이상은 “절반 이상 stage를 진행했다”는 뜻이지, 모든 rollout이 완전 성공했다는 뜻이 아니다. 따라서 이 결과는 robot foundation model의 가능성을 보여주지만, 실사용 안정성을 완전히 증명하는 결과는 아니다.
+
+## Appendix Notes
+
+| Appendix | 반영 내용 |
+| --- | --- |
+| A. Contributions | data/ops, evaluation, model design, post-training, pre-training, hardware/software, infra 역할이 분리되어 있다. |
+| B. Model Architecture Details | state/action projection, timestep MLP, blockwise causal attention, action expert size, flow timestep sampling을 제공한다. |
+| C. Non-VLM Baseline Architecture | π0-small의 DistilBERT, R26-S-32, DiT/AdaLN-Zero 차이를 설명한다. |
+| D. Inference | KV cache, 10-step flow inference, open-loop chunk execution, latency Table I를 제공한다. |
+| E. Evaluation Details | 모든 score가 어떤 partial credit rubric인지 task별로 정의한다. |
+
+Evaluation rubric은 결과 해석에 직접 필요하다.
+
+| Evaluation | Rubric 핵심 |
+| --- | --- |
+| Shirt folding | binary success, 4 small + 1 medium shirt, item당 2 eval, 최대 15000 steps 또는 약 5분 |
+| Bussing easy | 7 objects, correctly sorted object당 1점 |
+| Bussing hard/table bussing | 12 objects, chopstick-on-trash 같은 challenging setting 포함 |
+| Grocery bagging | 7 grocery items, bag에 넣은 item당 1점 |
+| Toast out of toaster | toast 2개 기준 pick + plate placement stage 점수 |
+| Stack bowls | 3점 만점, bowl stacking과 final neatness |
+| Towel folding | 3점 만점, two half-folds와 neatness |
+| Tupperware in microwave | 4점 만점, open, pick, place, close |
+| Paper towel replacement | 4점 만점, old roll remove와 new roll place |
+| Items in drawer | 5점 만점, drawer open, 3 items, drawer close |
+| Laundry/mobile laundry | 4점 만점, pick, flatten, fold, stack/place |
+| Box building | 5점 만점, pick, fold, right flap, left flap, centering |
+| Packing eggs | 7점 만점, 6 eggs + lid close |
+| Packing food/to-go box | 5점 만점, plate pick, 3 food items, close |
+| Dryer unloading | 5점 만점, approach, basket placement, dryer open, unload, close |
+
+## Code-Level Check
+
+공식 openpi 구현은 논문 전체 training mixture를 공개 재현하는 repo라기보다, π0/π0.5 모델과 fine-tuning/checkpoint 사용을 제공하는 repo로 봐야 한다.
+
+| 경로 | 확인할 내용 |
+| --- | --- |
+| `src/openpi/models/pi0.py` | `Pi0.compute_loss`, `Pi0.sample_actions`, prefix/suffix embedding, KV cache inference |
+| `src/openpi/models/pi0_config.py` | `Pi0Config`, action dimension/horizon, `pi05` flag |
+| `src/openpi/transforms.py` | image resize, prompt tokenization, state/action padding, normalization transform |
+| `src/openpi/policies/policy_config.py` | checkpoint load, norm stats, transform chain, JAX/PyTorch policy creation |
+| `src/openpi/training/config.py` | base/fine-tuning configs |
+
+주의할 점은 논문 수식과 공개 코드의 flow convention이다. 논문은 `A^tau_t = tau A_t + (1 - tau) epsilon`, target `A_t - epsilon`, inference `tau=0 -> 1`로 설명한다. 공개 구현은 diffusion convention에 맞춰 `t=1` noise, `t=0` target을 쓰고 negative `dt`로 update한다. 수학적으로 대응되지만, sign과 time direction을 섞어 쓰면 loss 해석을 틀리기 쉽다.
+
+## 한계와 주의
+
+- 논문은 dataset composition/weighting을 완전히 해결된 문제로 보지 않는다. 어떤 data를 얼마나 넣어야 하는지는 open problem이다.
+- Figure 7/11/13은 partial progress score 기반이다. binary task success처럼 읽으면 성능을 과대평가한다.
+- π0-small ablation은 VLM pre-training만 분리한 controlled ablation이 아니다. scale, language encoder, image encoder, expert architecture 차이가 함께 있다.
+- complex task 결과는 매우 강하지만 perfect autonomy가 아니다. task별 absolute score 차이가 크고, packing eggs처럼 scratch와 gap이 작거나 역전될 수 있는 task도 있다.
+- tactile/force feedback은 중심 modality가 아니다. contact-rich correction은 후속 tactile/multirate architecture와 별도로 봐야 한다.
+- openpi 공개 checkpoint와 논문 내부 large data/training recipe는 공개 범위가 다르다. 공개 코드만으로 paper-scale training을 그대로 재현한다고 쓰면 안 된다.
+
+## Citation Trail
+
+| 연결 논문/모델 | π0 안에서의 역할 |
+| --- | --- |
+| PaliGemma / Gemma | VLM backbone initialization |
+| Flow Matching / Rectified Flow | continuous action chunk vector field objective |
+| Transfusion | discrete/continuous token objective를 한 transformer 안에 결합하는 설계 배경 |
+| Open X-Embodiment / RT-X | cross-embodiment robot data와 VLA baseline |
+| OpenVLA | discrete autoregressive VLA baseline |
+| Octo | smaller diffusion-output robot foundation model baseline |
+| ACT / Diffusion Policy | task-specific dexterous imitation learning baseline |
+| Mobile ALOHA / ALOHA | bimanual/mobile robot platform lineage |
+| π0-FAST / π0.5 | 이후 PI family에서 action representation과 open-world household generalization을 확장 |
+
+## 검증 메모
+
+| Pass | 결과 |
+| --- | --- |
+| 1. 구조/coverage | 문제의식, 시스템, dataset, method, architecture, training, result, appendix, code-level check를 유지했다. |
+| 2. PDF figure/table pass | `https://arxiv.org/pdf/2410.24164` PDF를 확보하고, `pdftotext` caption search로 Figure 1-14와 Table I을 전수 확인했다. |
+| 3. image asset pass | PDF 17페이지를 임시 렌더링해 위치를 확인한 뒤, 최종 저장소에는 Figure 1-14/Table I crop asset 15개만 남겨 본문에 배치했다. |
+| 4. result interpretation pass | Figure 7, 9, 11, 13을 각각 out-of-box, language, fine-tuning, complex task 결과로 분리해 baseline 조건과 caveat를 적었다. |
+| 5. build pass | Docker Node 24 `npm run build`로 MDX와 image link를 확인한다. |

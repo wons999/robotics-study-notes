@@ -1,0 +1,175 @@
+---
+title: π0-FAST
+description: FAST action tokenizer와 π0-FAST autoregressive VLA 구현을 정리한 Survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# π0-FAST
+
+<SectionFeedback page="π0-FAST" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | FAST: Efficient Action Tokenization for Vision-Language-Action Models |
+| 저자/그룹 | Karl Pertsch, Kyle Stachowicz, Brian Ichter, Danny Driess, Suraj Nair, Quan Vuong, Oier Mees, Chelsea Finn, Sergey Levine |
+| 공개 | arXiv 2025-01-16 |
+| 링크 | https://arxiv.org/abs/2501.09747, https://www.pi.website/research/fast |
+| 코드/모델 | https://github.com/Physical-Intelligence/openpi, `gs://openpi-assets/checkpoints/pi0_fast_base` |
+| 태그 | VLA, action tokenization, DCT, autoregressive policy, high-frequency control |
+
+## 한 줄 요약
+
+π0-FAST는 continuous robot action sequence를 DCT 기반 frequency-space token으로 압축해 autoregressive VLA가 high-frequency dexterous action을 학습할 수 있게 만든 PI 계열의 token-action route다.
+
+## Official Visual Evidence
+
+| FAST qualitative task example |  |  |
+| --- | --- | --- |
+| ![FAST folding example 1](/pi/fast-fold-shirt-1.jpg) | ![FAST folding example 2](/pi/fast-fold-shirt-2.jpg) | ![FAST folding example 3](/pi/fast-fold-shirt-3.jpg) |
+
+공식 FAST article이 π0/π0-FAST 계열의 high-dexterity task 예시로 사용하는 folding visual이다. FAST의 핵심 figure는 DCT/BPE tokenization diagram이 React-rendered graphic이므로, 본문에서는 공식 설명의 token 길이와 압축률을 표로 전사하고 대표 qualitative visual을 함께 둔다.
+
+## Family 안에서의 위치
+
+`π0`가 continuous action chunk를 flow matching으로 직접 생성한다면, `π0-FAST`는 action chunk를 token sequence로 바꾸어 language-model style next-token prediction을 쓴다. FAST paper의 핵심은 “기존 per-dimension/per-timestep discretization은 high-frequency dexterous skill에서 깨지지만, frequency-space compression은 fidelity와 token budget 사이 trade-off를 훨씬 낫게 만든다”는 것이다.
+
+| 비교 축 | π0 | π0-FAST |
+| --- | --- | --- |
+| output | continuous action chunk | discrete action tokens |
+| objective | flow matching MSE | autoregressive CE |
+| inference cost | multiple denoising steps | left-to-right token decoding |
+| 장점 | precise multimodal continuous action | VLM language modeling route와 자연스럽고 training time 감소 |
+| 단점 | sampling 반복 필요 | tokenization fidelity와 decoding length가 병목 |
+
+## 문제의식
+
+기존 VLA의 action tokenization은 보통 action dimension과 timestep을 각각 binning한다. 이 방식은 낮은 주파수/낮은 DoF task에서는 동작할 수 있지만, bimanual dexterity나 50 Hz action sequence에서는 token 수가 커지고 reconstruction error가 task failure로 이어진다.
+
+FAST는 action sequence를 time domain 그대로 token화하지 않는다. action trajectory가 시간적으로 smooth하고 저주파 성분이 많다는 점을 이용해 frequency domain에서 압축한다. 공식 pi.website 글은 action chunk가 crude system에서는 3-5 actions, high-frequency dexterous robot에서는 20-50 actions 범위가 될 수 있고, 기존 dimension/timestep binning은 이 구간에서 빠르게 깨진다고 설명한다.
+
+## Method
+
+### FAST Tokenization
+
+FAST의 절차는 다음처럼 읽을 수 있다.
+
+1. action sequence를 fixed-length chunk로 본다.
+2. action dimension별 sequence를 frequency basis로 변환한다.
+3. 중요한 frequency coefficient를 quantize/tokenize한다.
+4. BPE류 compression을 적용해 variable-length token sequence를 만든다.
+5. autoregressive VLA는 image/language/state prompt 뒤에 FAST action tokens를 next-token objective로 예측한다.
+6. inference 후 tokenizer가 token sequence를 다시 continuous action chunk로 복원한다.
+
+공식 글 기준 FAST token sequence는 보통 action chunk당 30-60 tokens로 압축된다. 이는 prior action tokenization 대비 약 10x compression이라고 설명된다. FAST+는 universal robot action tokenizer로, 1M real robot action sequences로 훈련된 버전을 공개했다. 다양한 action space/control frequency를 흡수하기 위해 action을 32 dimension으로 padding하는 strategy가 appendix에 나온다.
+
+### π0-FAST Model
+
+openpi 구현에서 `Pi0FAST`는 flow head를 쓰지 않는다.
+
+| 구성 | 구현 내용 |
+| --- | --- |
+| config | `Pi0FASTConfig`, 기본 `action_dim=32`, `action_horizon=32`, `max_token_len=250` |
+| image encoder | SigLIP `So400m/14`, 224 x 224 image |
+| language/action backbone | `gemma_fast` PaliGemma-style autoregressive LLM |
+| input transform | `TokenizeFASTInputs`가 prompt, state, optional actions를 token sequence로 변환 |
+| loss | target token의 next-token cross entropy |
+| output transform | `ExtractFASTActions`가 generated tokens를 continuous actions로 복원 |
+
+openpi `Pi0FAST.compute_loss`는 input token embeddings를 만들고, `token_loss_mask`가 켜진 target token에 대해서만 CE loss를 계산한다. `sample_actions`는 prefix를 KV cache로 prefill한 뒤 token을 autoregressive로 생성하고, EOS 또는 max decoding step에서 멈춘다.
+
+## Dataset
+
+FAST tokenizer appendix는 universal tokenizer training mixture를 dataset/morphology/action space/control frequency/mixture weight로 공개한다.
+
+| 데이터 축 | 내용 |
+| --- | --- |
+| morphology | single arm, bi-manual, mobile |
+| action space | joint, end-effector, camera-frame end-effector |
+| frequency | 5 Hz, 15 Hz, 20 Hz, 50 Hz, mixed |
+| 포함 dataset | PI internal robot datasets, ALOHA, DROID, Bridge V2, Open X-Embodiment |
+| preprocessing | action은 tokenizer 전 32 dimension으로 padding |
+
+이 설계의 목적은 tokenizer 자체가 특정 robot action dimension에 과적합하지 않게 하는 것이다. action representation이 다른 dataset도 같은 tokenizer vocabulary를 공유하게 만든다.
+
+## Training Recipe
+
+| 항목 | FAST paper / openpi 기준 |
+| --- | --- |
+| tokenizer | DCT/frequency-space compression + token vocabulary |
+| policy backbone | FAST paper는 π0와 OpenVLA backbone 실험, openpi는 `Pi0FAST` |
+| image input | task별 2개 또는 3개 image, openpi spec은 base/wrist views |
+| state input | openpi FAST path는 state를 prompt/action token sequence 쪽으로 넣는다. |
+| objective | autoregressive next-token CE |
+| fine-tuning | openpi `pi0_fast_libero`, `pi0_fast_droid`, `pi0_fast_full_droid_finetune` configs 제공 |
+| checkpoint | `pi0_fast_base`, `pi0_fast_droid` |
+
+openpi DROID full fine-tuning config는 `action_dim=8`, `action_horizon=16`, `max_token_len=180`, `num_train_steps=100_000`, `batch_size=256`으로 되어 있고, 주석은 8 x H100에서 약 2일 정도를 언급한다. 이 값은 paper 전체 training recipe가 아니라 공개 repo의 DROID fine-tuning 예시다.
+
+## Experiments and Results
+
+FAST paper의 실험은 tokenizer 자체와 VLA policy 성능을 함께 본다.
+
+| 실험 | 질문 | 결론 |
+| --- | --- | --- |
+| compression-reconstruction | 같은 token budget에서 action reconstruction fidelity가 충분한가 | FAST는 높은 fidelity 영역에서 naive discretization이나 일부 VQ-style tokenizer보다 유리하다. |
+| dexterous skill learning | high-frequency task에서 AR VLA가 action을 배울 수 있는가 | 기존 discretization은 실패하는 setting에서도 FAST는 학습 가능하게 만든다. |
+| π0와 결합 | flow VLA와 비교해 성능/효율이 어떤가 | paper abstract는 10k hours robot data scale에서 diffusion VLA와 성능을 맞추면서 training time을 up to 5x 줄였다고 요약한다. |
+| universal tokenizer | action space와 control frequency가 다른 robot에 일반화되는가 | 1M real robot trajectories 기반 FAST+를 black-box tokenizer로 제시한다. |
+| DROID zero-shot | full DROID dataset으로 새 환경 language command를 따를 수 있는가 | pi.website article은 UC Berkeley, Stanford, University of Washington 협력 환경에서 out-of-box simple manipulation을 수행했다고 설명한다. |
+| standard discretization ablation | 기존 binning route가 dexterous suite를 풀 수 있는가 | 공식 article은 standard discretization methods가 experimental repertoire의 dexterous tasks를 하나도 해결하지 못했다고 말한다. |
+
+Appendix B의 compression-reconstruction trade-off는 이 논문의 핵심이다. tokenizer는 단순히 “압축률이 높다”가 아니라, fine-grained control에 필요한 reconstruction fidelity가 충분한 영역에서 token 수를 줄여야 한다. FAST는 low-fidelity 영역에서는 VQ류가 더 효율적일 수 있지만, high-fidelity dexterous control 영역에서는 scaling이 더 좋다고 해석한다.
+
+π0-FAST는 π0와 같은 backbone 및 training dataset을 쓰는 autoregressive generalist policy로 소개된다. 공식 article의 실험 메시지는 세 가지다.
+
+| 주장 | 근거 |
+| --- | --- |
+| dexterity 유지 | folding laundry, bussing tables, packing grocery bags 같은 high-dexterity task를 해결한다. |
+| 학습 효율 | π0 대비 up to 5x faster training을 보고한다. |
+| language route 강화 | action도 token으로 다루므로 VLM/LM pretraining route와 더 자연스럽게 이어지고 language instruction following이 개선될 수 있다고 설명한다. |
+
+OpenPI article은 별도 caveat도 제공한다. `π0-FAST base`는 language following이 somewhat better인 반면, PI 경험상 inference cost가 about 4-5x higher라고 설명한다. 따라서 “훈련은 빠르지만 runtime은 항상 싸다”라고 쓰면 틀린다.
+
+## Code-Level Check
+
+| 경로 | 확인 내용 |
+| --- | --- |
+| `src/openpi/models/pi0_fast.py` | `Pi0FASTConfig`, `Pi0FAST.compute_loss`, AR decoding loop |
+| `src/openpi/transforms.py` | `TokenizeFASTInputs`, `ExtractFASTActions` |
+| `src/openpi/training/config.py` | `pi0_fast_droid`, `pi0_fast_libero`, `pi0_fast_full_droid_finetune` |
+| `src/openpi/models/model.py` | `ModelType.PI0_FAST`, FAST-specific `token_ar_mask`, `token_loss_mask` |
+| `src/openpi/policies/policy_config.py` | generated tokens를 policy output transform에서 action으로 복원 |
+
+구현에서 특히 중요한 점은 `Pi0FAST.sample_actions`의 출력이 처음에는 token sequence라는 것이다. 실제 continuous action은 policy output transform의 `ExtractFASTActions`를 거친 뒤 얻어진다. 따라서 raw model output과 robot action을 혼동하면 안 된다.
+
+## 한계와 주의
+
+- tokenization이 좋아져도 AR decoding length가 길어지면 latency가 증가한다.
+- FAST tokenizer의 reconstruction fidelity는 action chunk length, action dimension, control frequency에 따라 달라진다.
+- flow matching route와 비교할 때 성능, language-following, training cost를 같은 task/data/robot 조건에서 비교해야 한다.
+- openpi PyTorch support README는 현재 `π0-FAST`가 PyTorch implementation feature list에서 제외되어 있다고 설명한다. JAX path 중심으로 보는 것이 안전하다.
+
+## Citation Trail
+
+| 연결 논문 | 연결 이유 |
+| --- | --- |
+| RT-2 / OpenVLA | discrete action token VLA의 기존 route |
+| π0 | continuous flow action route와 직접 비교 |
+| DCT / compression tokenizer | action sequence를 frequency-space로 압축하는 기반 |
+| Open X-Embodiment, DROID, Bridge | universal tokenizer data mixture |
+| BEAST / later action tokenizer papers | action tokenization 계열 후속 비교 |
+
+## 검증 메모
+
+| Pass | 결과 |
+| --- | --- |
+| 1. 구조/coverage | FAST tokenizer, π0-FAST model, dataset mixture, experiments, code path를 분리했다. |
+| 2. 사실/수치 | pi.website FAST article의 30-60 tokens/chunk, 10x compression, 1M sequences, 5x training speed, DROID zero-shot, OpenPI 4-5x inference caveat를 대조했다. |
+| 3. 코드 구현 | `pi0_fast.py`, `transforms.py`, `training/config.py`, `model.py`를 확인했다. |
+| 4. 해석/연결 | π0 flow route, OpenVLA/RT-2 token route, PI family 안의 위치를 정리했다. |
+| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |

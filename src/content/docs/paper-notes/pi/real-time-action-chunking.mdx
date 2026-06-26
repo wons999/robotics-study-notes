@@ -1,0 +1,97 @@
+---
+title: Real-Time Action Chunking
+description: chunked VLA action을 실시간 feedback과 inpainting으로 이어 붙이는 Real-Time Action Chunking Survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# Real-Time Action Chunking
+
+<SectionFeedback page="Real-Time Action Chunking" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문/글 | Real-Time Action Chunking with Large Models |
+| 공개 | pi.website research, 2025-06-09 |
+| 링크 | https://www.pi.website/research/real_time_chunking |
+| 연결 모델 | π0, π0-FAST, π0.5, flow/diffusion VLA |
+| 태그 | action chunking, real-time control, latency, inpainting, flow policy |
+
+## 한 줄 요약
+
+Real-Time Action Chunking, RTC는 VLA가 예측한 action chunk를 synchronous pause 없이 실행하면서도 chunk 간 discontinuity를 피하기 위해, 새 chunk의 overlap 구간을 inpainting constraint처럼 처리하는 training-free real-time inference algorithm이다.
+
+## Official Visual Evidence
+
+![Real-Time Action Chunking official overview image](/pi/rtc-og.png)
+
+공식 RTC article의 overview visual이다. action chunk를 한 번에 내보내는 VLA에서 latency와 real-time correction 문제가 어디서 생기는지 확인하는 자료로 둔다.
+
+## 문제의식
+
+PI VLA는 action chunking으로 inference latency를 amortize한다. 공식 글에 따르면 π 계열 VLA는 chunk size 50 actions를 사용하며 이는 1초 real time에 해당한다. 하지만 chunking만으로는 real-time system이 되지 않는다.
+
+| 기존 실행 방식 | 문제 |
+| --- | --- |
+| synchronous execution | chunk 실행 후 inference를 기다리므로 pause가 생김 |
+| naive real-time switching | 이전 chunk와 새 chunk가 불일치해 discontinuity/unsafe acceleration 발생 |
+| temporal ensembling smoothing | high latency에서 valid action 보장이 없고 실패 가능 |
+
+π0, π0-FAST, π0.5의 quantitative results에서는 synchronous execution을 사용했다고 명시한다. RTC는 이 한계를 해결하기 위한 runtime layer다.
+
+## Method: Chunk Inpainting
+
+새 observation을 보고 새 chunk를 생성하는 동안 robot은 이전 chunk를 계속 실행한다. 따라서 새 chunk가 도착했을 때 chunk의 앞부분은 이미 지나간 timestep이다.
+
+RTC의 핵심 아이디어:
+
+1. 이미 실행된 timestep의 action은 이전 chunk 값으로 freeze한다.
+2. 일부 overlap 구간은 이전 chunk와 consistency를 유지하도록 partial attention/conditioning을 준다.
+3. 나머지 미래 구간은 diffusion/flow model이 새 observation을 반영해 inpaint한다.
+
+이는 image inpainting을 action chunk에 적용한 것으로 볼 수 있다. 중요한 점은 π0/π0.5 같은 diffusion/flow 기반 VLA에 training-time change 없이 붙일 수 있다는 것이다.
+
+## Experiments and Results
+
+공식 글은 RTC를 synchronous inference, temporal ensembling과 비교한다.
+
+| 실험 조건 | 내용 |
+| --- | --- |
+| latency | normal latency, +100 ms, +200 ms artificial latency |
+| total delay | +200 ms 조건에서 mobile manipulator total inference delay가 1/3초 이상 |
+| tasks | candle lighting with match, Ethernet cable insertion, longer-horizon tasks |
+| metric | throughput = completed substeps proportion / episode duration |
+| sample | 6 tasks x 10 episodes = 60 episodes per latency point |
+
+결론:
+
+- synchronous inference는 latency가 커질수록 throughput이 크게 떨어진다.
+- RTC는 +200 ms artificial latency까지 throughput이 거의 변하지 않는다고 설명한다.
+- Temporal ensembling은 +100 ms/+200 ms에서 작동하지 않는다고 보고한다.
+- RTC는 match striking, Ethernet insertion 같은 dynamic/precise tasks도 300 ms+ inference delay에서 수행한다.
+
+공식 글은 controller steps 기준으로 보면 synchronous도 final score가 비슷해 보일 수 있지만, RTC가 episode 초반 progress를 더 빠르게 만들고 mistake가 적다는 해석을 제시한다.
+
+## PI Family 안에서의 위치
+
+RTC는 model architecture가 아니라 deployment/runtime layer다. `π0`와 `π0.5`가 action chunk를 생성하고, RTC가 chunk를 실시간으로 이어 붙인다. T-Rex의 tactile expert가 high-frequency correction module이라면, RTC는 modality-specific expert 없이 chunk consistency와 latency를 다루는 general inference algorithm이다.
+
+## 한계와 주의
+
+- RTC는 diffusion/flow action chunk model에 잘 맞는다. π0-FAST처럼 autoregressive token output인 경우 같은 방식으로 바로 적용되는지 별도 확인이 필요하다.
+- latency resilience가 있어도 very high-level planning delay는 다른 계층의 문제다.
+- action safety는 chunk consistency뿐 아니라 low-level controller limits와 함께 봐야 한다.
+
+## 5-Pass 검증 메모
+
+| Pass | 결과 |
+| --- | --- |
+| 1. 구조/coverage | latency problem, inpainting method, experiment, metric, PI 연결 포함 |
+| 2. 사실/수치 | chunk 50 actions=1 sec, +100/+200 ms, 6 tasks x 10 episodes, 300 ms+ delay 확인 |
+| 3. 코드 구현 | 공개 code 미확인 |
+| 4. 해석/연결 | π0/π0.5 deployment layer, T-Rex correction과 비교 |
+| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |

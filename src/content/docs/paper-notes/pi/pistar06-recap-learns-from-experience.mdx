@@ -1,0 +1,114 @@
+---
+title: π*0.6 / RECAP
+description: VLA가 autonomous experience, correction, RL로 개선되는 π*0.6와 RECAP Survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# π*0.6 / RECAP
+
+<SectionFeedback page="π*0.6 / RECAP" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 글/논문 | π*0.6: a VLA that Learns from Experience |
+| 방법 | RECAP, RL with Experience & Corrections via Advantage-conditioned Policies |
+| 공개 | pi.website blog, 2025-11-17 |
+| 링크 | https://www.pi.website/blog/pistar06, https://www.pi.website/download/pistar06.pdf |
+| 연결 모델 | π0.6, π*0.6 |
+| 태그 | RL from experience, corrections, value function, advantage conditioning, throughput |
+
+## 한 줄 요약
+
+RECAP은 demonstration으로 시작한 VLA를 expert correction과 autonomous experience/RL로 개선하고, value-change advantage를 conditioning signal로 넣어 π0.6을 더 높은 success/throughput의 π*0.6으로 만드는 PI의 experience-learning recipe다.
+
+## Official Visual Evidence
+
+![π*0.6 / RECAP official overview image](/pi/pistar06-og.png)
+
+공식 π*0.6 article의 overview visual이다. RECAP이 demonstration 이후 autonomous experience와 correction을 policy improvement로 연결하는 축임을 보여준다.
+
+## 문제의식
+
+Imitation만으로는 robot이 task를 “가끔” 성공하게 만들 수 있지만, 실제 application은 reliably and quickly가 필요하다. Robot policy는 환경과 계속 상호작용하기 때문에 작은 mistake가 distribution shift를 만들고, 이 상태에서 더 큰 mistake가 이어지는 compounding error가 발생한다.
+
+| 문제 | RECAP의 대응 |
+| --- | --- |
+| demo data만으로는 failure recovery 부족 | 현재 best policy를 실행하다가 사람이 takeover/correction |
+| bad experience를 그대로 imitation하면 실패를 복사 | outcome/reward 기반 value function으로 좋은 행동과 나쁜 행동을 구분 |
+| long-horizon credit assignment | value change를 advantage로 사용 |
+| large VLA policy extraction | VLA를 advantage-conditioned policy로 학습 |
+
+## Method
+
+RECAP은 세 단계로 이해하면 된다.
+
+1. Demonstration으로 기본 behavior를 만든다.
+2. Expert correction으로 policy가 실제로 만든 mistake state에서 recovery supervision을 얻는다.
+3. Autonomous experience와 reward로 value function을 학습하고, value 변화량을 advantage signal로 policy에 조건화한다.
+
+### Value Function과 Advantage Conditioning
+
+RECAP의 핵심은 task outcome에서 long-horizon credit assignment를 푸는 것이다. 예를 들어 espresso portafilter 삽입 실패가 마지막 insertion이 아니라 처음 grasp에서 시작되었을 수 있다. RECAP은 상황의 value를 예측하고, action 전후 value 변화가 positive면 좋은 action, negative면 피해야 할 action으로 본다.
+
+Training 때는 good/bad data를 버리지 않고 모두 사용하되, advantage annotation을 input condition으로 넣는다. Execution 때는 “high-advantage action”을 수행하도록 conditioning한다. 그래서 policy는 bad experience도 “이런 상황에서 이렇게 하면 좋지 않다”는 형태로 사용할 수 있다.
+
+## π0.6와 π*0.6
+
+공식 글은 π0.6을 π0.5의 refinement로 설명한다. π0.6은 5B-parameter VLM backbone과 action expert를 가지며, textual command뿐 아니라 execution quality, RECAP advantage 같은 heterogeneous conditioning 정보를 받을 수 있다.
+
+| 모델 | 의미 |
+| --- | --- |
+| π0.6 | π0.5 이후 더 큰 backbone과 heterogeneous prompt를 지원하는 base VLA |
+| π*0.6 offline RL pretrain | RECAP의 offline RL pretraining stage |
+| π*0.6 + SFT | task-specific demonstration fine-tuning |
+| π*0.6 ours | on-robot experience, corrections, reward feedback까지 포함한 final model |
+
+## Experiments and Results
+
+공식 글의 application은 세 가지다.
+
+| Application | 어려운 점 |
+| --- | --- |
+| espresso drinks | long horizon, liquid, grinder/espresso wait time, machine cleaning |
+| diverse laundry folding | item/fabric variation, initial condition variation |
+| box assembly/labeling | flap folding, repeated factory-like packaging, edge cases |
+
+주요 결과:
+
+- espresso, laundry, box assembly에서 throughput이 크게 개선된다.
+- hard tasks에서는 on-robot experience를 포함했을 때 throughput과 success rate가 2배 이상 개선될 수 있다.
+- 최종 π*0.6은 espresso drinks를 하루 종일 만들고, 새로운 집에서 50개 novel laundry items를 folding하며, real factory packaging에 쓰이는 59 boxes를 assemble/label하는 데모를 보여준다.
+- espresso task는 90%+ success rate를 달성한다고 설명한다.
+
+중요한 점은 RECAP이 단순히 더 많은 human demonstration을 넣는 방법이 아니라, robot이 만든 실패 state와 autonomous outcome을 학습 signal로 바꾸는 방법이라는 것이다.
+
+## PI Family 안에서의 위치
+
+| 항목 | 연결 |
+| --- | --- |
+| π0.5 | open-world household VLA base |
+| π0.6 | 더 큰 backbone, heterogeneous prompt/conditioning |
+| π*0.6 | RECAP으로 experience/RL 개선된 specialist |
+| RLT | RECAP보다 더 작은 actor-critic layer로 precise phase online RL |
+| π0.7 | RECAP experience를 strategy metadata로 distill해 single generalist가 specialist 수준 성능에 접근 |
+
+## 한계와 주의
+
+- RECAP은 reward/value design과 task-specific rollout collection이 필요하다.
+- autonomous experience가 많아질수록 safety, reset, failure handling cost가 중요해진다.
+- π0.6/π*0.6 model card와 full PDF를 봐야 architecture/training hyperparameter를 완전히 확정할 수 있다.
+
+## 5-Pass 검증 메모
+
+| Pass | 결과 |
+| --- | --- |
+| 1. 구조/coverage | correction, value function, advantage conditioning, 3 applications, π0.6/π*0.6 구분 포함 |
+| 2. 사실/수치 | 5B VLM, 2x+ improvement, 50 laundry items, 59 boxes, 90%+ espresso success 확인 |
+| 3. 코드 구현 | 공식 code 미확인 |
+| 4. 해석/연결 | RLT와 π0.7로 이어지는 RL/experience 축 정리 |
+| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |

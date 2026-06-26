@@ -1,0 +1,95 @@
+---
+title: PI Model Family
+description: pi.website의 research paper와 article 전체를 PI 모델/방법론 흐름으로 연결하는 overview.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# PI Model Family
+
+<SectionFeedback page="PI Model Family" section="Overview" />
+
+## 역할
+
+이 문서는 Physical Intelligence의 `pi.website`에 올라온 research paper와 article을 한 번에 잡기 위한 family overview다. 개별 논문은 Survey로, 제품/파트너/해설성 글은 Article note로 분리해 정리한다.
+
+PI 계열의 중심 질문은 “pretrained VLM의 semantic prior를 유지하면서 robot이 실제 환경에서 계속 더 잘 행동하게 만들 수 있는가”다. 초기 축은 `π0`의 flow-matching action generation과 `π0-FAST`의 action tokenization이었고, 이후 `π0.5`, Knowledge Insulation, Real-Time Action Chunking, `π*0.6`/RECAP, MEM, RLT, `π0.7`로 이어지면서 open-world generalization, execution-time correction, experience learning, memory, online RL, steerable behavior까지 확장된다.
+
+## pi.website 전체 지도
+
+| 항목 | pi.website 분류 | Survey / note |
+| --- | --- | --- |
+| [π0](./pi0-vla-flow-model/) | Research paper | flow matching 기반 general robot control VLA |
+| [FAST / π0-FAST](./pi0-fast-action-tokenization/) | Research paper | efficient action tokenization과 autoregressive VLA |
+| [OpenPI](./openpi-release/) | Article / open-source release | PI 모델, training, fine-tuning, deployment stack 공개 |
+| [HI Robot](./hirobot-listen-think-harder/) | Research paper | real-time feedback + hierarchical inner-voice reasoning |
+| [π0.5](./pi05-open-world-generalization/) | Research paper | open-world household generalization |
+| [Knowledge Insulation](./knowledge-insulation/) | Research paper | VLA의 robot skill 학습과 VLM knowledge 보존 |
+| [Real-Time Action Chunking](./real-time-action-chunking/) | Research paper | chunked action의 open-loop 실행 문제와 real-time correction |
+| [π*0.6 / RECAP](./pistar06-recap-learns-from-experience/) | Research paper | experience와 RL을 통한 autonomous improvement |
+| [Learning from Human Videos](./human-to-robot-transfer/) | Research paper | human video에서 robot policy로 transfer |
+| [Robot Olympics / π0.6](./moravec-robot-olympics/) | Article | π0.6 기반 Moravec's Paradox style robot olympics |
+| [Physical Intelligence Layer](./physical-intelligence-layer/) | Article | robot foundation model을 제품/플랫폼 관점에서 설명 |
+| [MEM](./mem-multiscale-embodied-memory/) | Research paper | multi-scale embodied memory for VLA |
+| [RLT](./rlt-efficient-online-rl/) | Research paper | RL token으로 online RL을 효율화 |
+| [π0.7](./pi07-steerable-model/) | Research paper | text prompt로 steering 가능한 generalist robot policy |
+
+## 모델/방법론 흐름
+
+| 단계 | 대표 항목 | 핵심 변화 |
+| --- | --- | --- |
+| Base VLA | π0 | PaliGemma 기반 VLM + flow matching action expert |
+| Token action route | FAST / π0-FAST | continuous action을 frequency-space token으로 압축 |
+| Open-source stack | OpenPI | PI 모델, training/fine-tuning/inference recipe 공개 |
+| Interactive reasoning | HI Robot | complex prompt와 real-time feedback을 high-level VLM이 language substep으로 분해 |
+| Open-world household | π0.5 | unseen home/object/task generalization |
+| Knowledge retention | Knowledge Insulation | action learning 중 VLM knowledge 붕괴를 줄이는 recipe |
+| Runtime control | Real-Time Action Chunking | precomputed chunk를 real-time으로 수정 |
+| Experience learning | π*0.6 / RECAP | 실패와 trial experience를 policy improvement로 전환 |
+| Human data transfer | Learning from Human Videos | human videos를 robot policy 학습으로 연결 |
+| π0.6 deployment signal | Robot Olympics | π0.6이 다양한 physical skill benchmark에서 쓰임 |
+| Memory | MEM | VLA가 task/episode memory를 구조적으로 활용 |
+| Online RL | RLT | VLA action head를 RL token/actor-critic 경로로 fine-tune |
+| Steerability | π0.7 | 사용자가 natural-language로 policy style을 steering |
+
+## 공개 구현 기준 inventory
+
+공식 `openpi` repository README 기준 공개 checkpoint는 `π0`, `π0-FAST`, `π0.5`가 중심이다. `pi.website`의 더 최신 research 글들은 아직 모두 같은 형태의 openpi checkpoint로 공개되어 있지는 않으므로, paper/article 기준과 openpi 구현 기준을 분리해서 읽어야 한다.
+
+| 모델 | 공개 checkpoint | openpi 모델 타입 | 구현상 읽을 파일 |
+| --- | --- | --- | --- |
+| `π0` | `gs://openpi-assets/checkpoints/pi0_base` | `ModelType.PI0` | `src/openpi/models/pi0.py`, `src/openpi/models/pi0_config.py` |
+| `π0-FAST` | `gs://openpi-assets/checkpoints/pi0_fast_base` | `ModelType.PI0_FAST` | `src/openpi/models/pi0_fast.py`, `src/openpi/models/tokenizer.py`, `src/openpi/transforms.py` |
+| `π0.5` | `gs://openpi-assets/checkpoints/pi05_base` | `ModelType.PI05` | `src/openpi/models/pi0.py`, `src/openpi/models/pi0_config.py`, `src/openpi/training/config.py` |
+
+Fine-tuned checkpoint는 DROID, ALOHA, LIBERO 등으로 나뉜다. README는 base model이 10k+ hours robot data로 pre-trained 되었고, downstream robot/data에 fine-tune해서 쓰는 실험적 release라고 명시한다.
+
+## 큰 흐름
+
+| 축 | π0 | π0-FAST | π0.5 이후 |
+| --- | --- | --- | --- |
+| action representation | continuous action chunk | FAST/FAST+ action tokens | flow matching head 중심, openpi에서는 flow head 지원 |
+| objective | conditional flow matching MSE | autoregressive next-token cross entropy | flow matching + co-training/hybrid multimodal examples |
+| action horizon 기본값 | paper는 task별 chunk, openpi 기본 `50` | openpi 기본 `32`, task config에서 `10`/`16` 등 | openpi 기본은 `50`, DROID/LIBERO config는 `15`/`10` 등 |
+| state 처리 | continuous state suffix token | prompt/state/action token sequence | state를 discrete token input으로 넣을 수 있고 AdaRMSNorm으로 timestep 주입 |
+| 강점 | dexterous high-frequency continuous control | training efficiency, AR language-following route | open-world generalization, memory, online RL, steering |
+| 약점/주의 | sampling step 비용, data recipe 의존 | tokenizer fidelity와 token budget trade-off | 최신 article/research 일부는 공개 코드/체크포인트가 제한적 |
+
+## 연결해서 읽을 Survey
+
+| Survey | 연결 이유 |
+| --- | --- |
+| [Flow Matching](../flow-matching-generative-modeling/) | `π0`와 `π0.5` action expert의 objective 기반 |
+| [Open X-Embodiment / RT-X](../open-x-embodiment-rt-x/) | cross-embodiment robot data mixture의 대표 배경 |
+| [GR00T Model Family](../groot/) | continuous action VLA를 humanoid data pyramid/dual-system 구조로 확장한 비교 축 |
+| [T-Rex](../t-rex-tactile-reactive-dexterous-manipulation/) | `π0.5` baseline이 tactile-reactive expert와 비교되는 contact-rich setting |
+
+## 작성 원칙
+
+- `π0`와 `π0.5`는 paper Survey로 읽는다. 논문 수식, 데이터 mixture, 실험 protocol, appendix를 기준으로 정리한다.
+- `π0-FAST`는 FAST paper와 openpi `pi0_fast` 구현을 같이 읽는다. FAST 자체는 tokenizer paper이고, `π0-FAST`는 그 tokenizer를 PI VLA에 붙인 model/release 성격이 섞여 있다.
+- article은 논문처럼 수식/appendix가 없을 수 있으므로 “Article note”로 분리하되, 모델 이름, 공개 근거, 연결되는 paper, 구현 공개 여부를 반드시 적는다.
+- 논문 결과와 openpi README/config 값을 섞지 않는다. 예를 들어 paper의 action chunk/hardware task와 openpi fine-tuning config의 horizon은 별도 출처로 표기한다.
+- 공식 visual asset은 `/public/pi`에 저장하고, 각 개별 Survey의 `Official Visual Evidence` 섹션에서 model/method/result/qualitative evidence로 첨부한다.

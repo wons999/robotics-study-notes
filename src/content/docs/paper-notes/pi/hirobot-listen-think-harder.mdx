@@ -1,0 +1,112 @@
+---
+title: HI Robot
+description: Hierarchical Interactive Robot의 System 1/System 2 구조, synthetic interaction data, 실험 결과를 정리한 Survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# HI Robot
+
+<SectionFeedback page="HI Robot" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | HI Robot: Open-Ended Instruction Following with Hierarchical Vision-Language-Action Models |
+| pi.website 제목 | HI Robot: Listen to Humans and Think Harder |
+| 공개 | arXiv 2025-02-17, pi.website research 2025-03-04 |
+| 링크 | https://www.pi.website/research/hirobot, https://arxiv.org/abs/2502.19417 |
+| 연결 모델 | π0 low-level policy, high-level VLM policy |
+| 태그 | instruction following, ambiguity, hierarchy, synthetic interaction data, human feedback |
+
+## 한 줄 요약
+
+HI Robot은 π0를 reactive low-level “System 1”로 두고, 같은 VLM backbone 계열의 high-level “System 2”가 scene, prompt, 실시간 feedback을 해석해 intermediate language command를 속삭이듯 생성하는 hierarchical VLA system이다.
+
+## Official Visual Evidence
+
+| HI Robot sandwich prompt examples |  |  |
+| --- | --- | --- |
+| ![HI Robot sandwich poster 1](/pi/hirobot-sandwich-poster-1.png) | ![HI Robot sandwich poster 2](/pi/hirobot-sandwich-poster-2.png) | ![HI Robot sandwich poster 3](/pi/hirobot-sandwich-poster-3.png) |
+
+공식 article의 sandwich-making video poster다. complex prompt를 high-level VLM이 substep으로 나누고 low-level π0가 실행하는 qualitative example로 사용한다.
+
+| High-level visual observations |  |  |
+| --- | --- | --- |
+| ![HI Robot observation 1](/pi/hirobot-sandwich-1.png) | ![HI Robot observation 2](/pi/hirobot-sandwich-2.png) | ![HI Robot observation 3](/pi/hirobot-sandwich-3.png) |
+
+공식 HI Robot diagram에 포함된 scene observation images다. high-level policy가 base/wrist image와 user prompt/interjection을 함께 처리한다는 구조를 확인하는 데 쓴다.
+
+## 문제의식
+
+실제 사용자는 robot에게 완성된 low-level command를 주지 않는다. “테이블을 정리하되 저건 버리지 마”, “샌드위치를 만들어줘”, “장 본 물건을 정리해줘”처럼 instruction은 multi-stage이고, 중간에 correction이 들어오며, object reference가 현재 scene에 ground되어야 한다. Flat VLA가 이 모든 것을 바로 action chunk로 내면 prompt constraint를 잊거나, 이미 잘 학습된 autopilot behavior로 돌아갈 위험이 있다.
+
+## Method: System 1 / System 2
+
+| 구성 | 공식 글 기준 역할 |
+| --- | --- |
+| low-level π0 | images, robot state, language subcommand를 받아 motor action을 출력하는 reactive System 1 |
+| high-level VLM policy | complex prompt와 scene을 해석하고 next intermediate step을 language로 생성하는 System 2 |
+| shared backbone idea | high-level policy도 π0와 같은 VLM backbone을 사용한다고 설명된다. |
+| whisper interface | “pick up one piece of whole wheat bread”처럼 low-level π0가 실행 가능한 bite-sized command를 생성한다. |
+| feedback handling | “that’s not trash” 같은 real-time contextual feedback을 scene object와 현재 manipulation target에 ground한다. |
+
+공식 글의 핵심은 “hierarchy가 planning을 멋있게 보이게 한다”가 아니다. Web-scale VLM pretraining은 이미지와 text context를 보고 textual answer를 생성하는 데 강하다. High-level policy가 먼저 language step을 생성하게 하면, 이 semantic reasoning 능력을 motor action으로 직접 압축하지 않고 사용할 수 있다.
+
+## Training: Synthetic Interaction Data
+
+HI Robot은 단순 atomic command demonstration만으로는 rich multi-step interaction이 부족하다고 본다. 그래서 robot observations와 human-labeled skills를 hypothetical prompts 및 human interjections와 pairing하는 synthetic labeling recipe를 사용한다.
+
+| synthetic label | 필요한 이유 |
+| --- | --- |
+| complex prompt | 여러 constraint를 한 번에 받은 상황을 학습 |
+| human interjection | 중간 correction, 금지, 우선순위 변경을 학습 |
+| skill label | high-level step이 low-level π0 command로 이어지게 함 |
+| scene-grounded response | “that”, “not trash” 같은 지시어를 현재 image context에 연결 |
+
+이 data recipe는 HI Robot이 user와 대화하는 chatbot이 되기 위한 것이 아니라, open-ended instruction을 physical action sequence로 안정적으로 분해하기 위한 supervision이다.
+
+## Experiments and Results
+
+공식 pi.website 글은 table bussing, sandwich making, grocery shopping을 real-world evaluation task로 든다. 비교 대상은 GPT-4o high-level baseline과 flat VLA policy다.
+
+| 실험 축 | 결과 해석 |
+| --- | --- |
+| instruction-following accuracy | HI Robot이 GPT-4o보다 40% higher instruction-following accuracy를 보인다고 article이 설명한다. |
+| flat VLA 비교 | flat VLA보다 multi-stage instruction, real-time correction, constraint respecting에서 강하다고 설명한다. |
+| table bussing | base π0가 “trash는 garbage, dishes는 bin” autopilot을 하려는 상황에서 user constraint를 반영해야 한다. |
+| sandwich making | recipe-like multi-step sequence를 high-level policy가 language substep으로 분해한다. |
+| grocery shopping | object choice, destination, order를 scene과 instruction에 맞춰 유지해야 한다. |
+
+결과를 해석할 때 GPT-4o comparison은 “GPT-4o가 robot action model보다 못하다”가 아니라, physical scene/action context에 맞춘 hierarchical VLA policy가 generic VLM high-level controller보다 instruction following을 더 잘 맞춘다는 의미로 읽어야 한다.
+
+## PI Family 안에서의 위치
+
+HI Robot은 `π0.5`의 high-level/low-level inference와 강하게 연결된다. `π0.5`가 open-world home에서 semantic subtask를 “스스로 말하고” low-level flow action을 실행한다면, HI Robot은 그 구조를 human interaction, prompt constraint, correction handling까지 확장한다.
+
+| 연결 문서 | 연결점 |
+| --- | --- |
+| [π0](../pi0-vla-flow-model/) | low-level motor action policy |
+| [π0.5](../pi05-open-world-generalization/) | high-level semantic inference + low-level action expert |
+| [π0.7](../pi07-steerable-model/) | multimodal prompt/metadata로 behavior를 steer하는 후속 흐름 |
+| [MEM](../mem-multiscale-embodied-memory/) | 장기 task에서 memory와 high-level reasoning이 필요한 축 |
+
+## 한계와 주의
+
+- 공개 article은 high-level policy의 full architecture/training hyperparameter를 모두 노출하지 않는다.
+- HI Robot의 성공은 low-level π0가 subcommand를 충분히 수행할 수 있다는 전제에 의존한다.
+- synthetic interaction label은 다양성과 품질이 중요하며, 잘못된 hypothetical prompt는 model behavior를 왜곡할 수 있다.
+- ambiguity를 다루는 system이므로 success metric과 instruction-following metric을 분리해 봐야 한다.
+
+## 5-Pass 검증 메모
+
+| Pass | 결과 |
+| --- | --- |
+| 1. 구조/coverage | 문제의식, System 1/System 2, synthetic data, experiments, family 연결을 포함했다. |
+| 2. 사실/수치 | 40% higher instruction-following accuracy, table bussing/sandwich/grocery tasks, GPT-4o/flat VLA 비교를 official article과 대조했다. |
+| 3. 코드 구현 | OpenPI 수준의 public checkpoint/code가 확인되지 않아 code-level reproduction은 미확인으로 명시했다. |
+| 4. 해석/연결 | π0.5 high-level inference와 π0.7 steering 흐름에 연결했다. |
+| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |

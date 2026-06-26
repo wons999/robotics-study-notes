@@ -1,0 +1,101 @@
+---
+title: MEM
+description: multi-scale embodied memory를 VLA에 넣는 MEM 논문 Survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# MEM
+
+<SectionFeedback page="MEM" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문/글 | VLAs with Long and Short-Term Memory |
+| 방법 이름 | Multi-Scale Embodied Memory, MEM |
+| 공개 | pi.website research, 2026-03-03 |
+| 링크 | https://www.pi.website/research/memory |
+| 연결 모델 | π0.6 + MEM |
+| 태그 | memory, VLA, long-horizon robot tasks, in-context adaptation, partial observability |
+
+## 한 줄 요약
+
+MEM은 VLA에 short-term video memory와 long-term language memory를 함께 넣어, 최대 15분 길이의 task, partial observability, failure 후 in-context strategy adaptation을 가능하게 하는 PI 계열의 memory system이다.
+
+## Official Visual Evidence
+
+![MEM official overview image](/pi/memory-og.webp)
+
+공식 MEM article의 overview visual이다. long/short-term memory를 결합해 longer-horizon household task를 처리하는 방향을 보여준다.
+
+## 문제의식
+
+현재 frame과 instruction만 보고 행동하는 VLA는 긴 job을 수행하기 어렵다. kitchen cleanup이나 cooking처럼 multi-stage task에서는 이미 수행한 단계, 물건 위치, 실패했던 접근, 기다려야 하는 시간 등을 기억해야 한다. 모든 과거 frame을 context로 넣는 것은 token/latency 때문에 불가능하고, 잘못 설계된 memory는 causal confusion을 만들어 imitation learning을 해칠 수 있다.
+
+| memory 필요성 | 예 |
+| --- | --- |
+| task progress | 이미 어떤 dish를 씻었는지 |
+| object location | 재료가 어느 drawer/cabinet에 있었는지 |
+| recent failure | chopstick을 같은 방식으로 계속 잡으려다 실패했는지 |
+| timing | grilled cheese sandwich를 얼마나 구웠는지 |
+
+## Method
+
+MEM은 두 scale의 memory를 분리한다.
+
+| Memory | 표현 | 역할 |
+| --- | --- | --- |
+| short-term memory | raw observation/video history를 efficient video encoder로 압축 | 최근 motion, occlusion, timing, 실패 직후 context |
+| long-term memory | natural-language note | task progress, summary, object/location, 다음 high-level subtask |
+
+Short-term encoder는 standard ViT를 video로 확장하되, sparse spatial attention과 causal temporal attention을 interleave하고 upper layer에서 history token을 drop해 VLA backbone에 넘기는 token 수를 줄인다.
+
+Long-term memory는 π0.6의 high-level subtask inference process와 결합된다. 모델은 “pick up the plate” 같은 subtask를 저주파로 선택하고, 동시에 미래 inference에 넣을 textual memory를 생성한다. 예를 들어 “green plate를 집고 yellow plate를 집음”을 “plates를 집었다”처럼 요약할 수 있다.
+
+## Training / Data
+
+공식 페이지는 MEM VLA가 robot and non-robot data, single frames and video를 포함한 diverse corpus로 학습된다고 설명한다. 핵심은 memory supervision이 단일 형태가 아니라, short-term raw observation과 long-term text abstraction을 함께 학습한다는 점이다.
+
+## Experiments and Results
+
+MEM page는 세 가지 성능 축을 보여준다.
+
+| 축 | 실험 | 결론 |
+| --- | --- | --- |
+| in-context adaptation | flat chopstick pickup | memory가 없으면 같은 실패를 반복하지만, MEM은 실패 후 다른 grasp strategy를 시도 |
+| partial observability | refrigerator door direction | 처음 잘못된 방향을 시도한 뒤 반대 방향으로 적응 |
+| long-horizon task | grilled cheese, recipe ingredients, kitchen cleanup | 최대 15분 scale task에서 progress/timing/location memory 사용 |
+
+Long-horizon examples:
+
+| Task | memory가 필요한 이유 |
+| --- | --- |
+| grilled cheese sandwich | grilling time과 flip/plating progress 추적 |
+| retrieve ingredients for recipe | ingredient location, retrieved items, cabinet/drawer closure |
+| clean entire kitchen | fridge/cabinet stowing, dish washing, countertop wiping progress |
+
+공식 설명은 MEM이 tasks up to 15 minutes length를 처리하고, short-term/long-term memory를 함께 쓰며, in-context adaptation을 보여준다고 요약한다.
+
+## PI Family 안에서의 위치
+
+MEM은 π0.5의 open-world household generalization 이후 자연스럽게 필요한 기능이다. π0.5가 새 집에서 high-level/low-level chain-of-thought style inference를 한다면, MEM은 그 inference가 여러 분 동안 유지되도록 task memory를 공급한다. RLT/RECAP이 experience로 policy를 업데이트하는 축이라면, MEM은 현재 episode 안에서 경험을 기억하고 즉시 전략을 바꾸는 축이다.
+
+## 한계와 주의
+
+- memory가 항상 성능을 올리는 것은 아니다. 공식 글도 causal confusion을 명시적으로 경고한다.
+- long-term textual memory는 무엇을 기억할지 잘못 고르면 stale context가 될 수 있다.
+- 공개 page만으로는 memory labeling/training objective 전체를 재현하기 어렵다. PDF/코드 공개 여부 추가 확인이 필요하다.
+
+## 5-Pass 검증 메모
+
+| Pass | 결과 |
+| --- | --- |
+| 1. 구조/coverage | short/long memory, architecture, tasks, in-context adaptation 포함 |
+| 2. 사실/수치 | 15분 task, three long-horizon scenarios, chopstick/refrigerator examples 확인 |
+| 3. 코드 구현 | 공식 openpi 구현 미확인 |
+| 4. 해석/연결 | π0.5, RECAP, RLT, π0.7과 연결 |
+| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |

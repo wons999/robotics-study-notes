@@ -1,0 +1,86 @@
+---
+title: Robot Olympics / π0.6
+description: π0.6 fine-tuning으로 Moravec's Paradox challenge task를 수행한 pi.website article 정리.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# Robot Olympics / π0.6
+
+<SectionFeedback page="Robot Olympics / π0.6" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 글 | Moravec's Paradox and the Robot Olympics |
+| 분류 | pi.website article |
+| 링크 | https://www.pi.website/blog/olympics |
+| 연결 모델 | π0.6 |
+| 태그 | robot skills, Moravec's paradox, evaluation, fine-tuning, physical intelligence |
+
+## 한 줄 요약
+
+Robot Olympics article은 Benjie Holson의 everyday manipulation challenge를 π0.6 fine-tuning으로 풀어보며, large-scale robot pretraining이 없으면 hard physical skill fine-tuning이 거의 되지 않는다는 메시지를 보여준다.
+
+## Official Visual Evidence
+
+![Robot Olympics official overview image](/pi/olympics-og.png)
+
+공식 Robot Olympics article의 overview visual이다. Moravec's Paradox를 everyday manipulation challenge로 바꿔 평가한다는 framing을 보여준다.
+
+## 왜 중요한가
+
+이 글은 formal paper가 아니라 capability/evaluation article이다. 그래도 PI survey에서 중요하다. `π0.6`이라는 중간 model generation이 명시되고, `π0.5` 이후 `π*0.6`/RECAP 및 `π0.7`로 가는 사이에 “새 physical skill을 짧은 task data로 fine-tune한다”는 흐름을 보여주기 때문이다.
+
+## Challenge Setup
+
+공식 글은 Holson의 Robot Olympics task를 bronze/silver/gold 난이도 framing으로 가져온다. PI는 task를 직접 고른 것이 아니라 외부 proposed challenge에서 가져왔고, 대부분 task에서 9시간 미만 data를 수집했다고 설명한다.
+
+| 항목 | 공식 article 기준 |
+| --- | --- |
+| model | latest model based on π0.6 |
+| 학습 방식 | 각 task에 fine-tuning |
+| data | 대부분 task에서 under 9 hours data |
+| 결과 | 5개 category 중 3개 gold task initial solution, 나머지 2개 silver task |
+| 평균 | success rate 52%, task progress 72% |
+| baseline | π0.6 pretraining 없이 standard VLM을 fine-tune한 baseline은 어떤 task도 성공하지 못했고 average task progress 9% |
+
+여기서 task progress와 success rate를 구분해야 한다. success는 완전 성공이고, progress는 task 일부를 얼마나 수행했는지 보는 partial measure다.
+
+## Events
+
+| event | 다룬 task | 해석 |
+| --- | --- | --- |
+| full body / door | self-closing lever-handle door를 열고 통과 | mobile/full-body coordination과 door interaction |
+| laundry | sock inside-out, inside-out t-shirt folding | deformable object, gripper geometry limitation |
+| basic tool use | key use, peanut butter sandwich | fine manipulation, reorientation, tool force control |
+| finger tips | dog poop bag, orange peeling | bag edge separation, force balance, gripper limitation |
+| slippery when wet | greasy pan cleaning, peanut butter off fingers, counter wiping | liquid/wet sponge/grease interaction |
+
+Article은 gold task 중 일부가 현재 robot gripper로 물리적으로 불가능하다고 설명한다. 예를 들어 shirt sleeve 내부에 gripper가 들어가지 못하거나, orange peeling은 tool 사용이 필요해 rule violation으로 성공 카운트하지 않는다. 이 caveat는 capability를 과장하지 않기 위해 중요하다.
+
+## 해석
+
+Moravec's paradox의 핵심은 “사람에게 쉬운 physical behavior가 machine에게 어렵다”는 것이다. Article은 LLM/VLM이 web text/image에서 얻는 semantic knowledge만으로는 physical skill을 grounding할 수 없고, 실제 embodied data가 필요하다고 주장한다. π0.6 같은 VLA foundation model은 다양한 physical behavior basis를 pretraining으로 잡아 놓고, 새 task에는 비교적 작은 fine-tuning data로 적응한다.
+
+이 결과는 `π*0.6 / RECAP`과 직접 연결된다. Olympics article은 task별 fine-tuning capability를 보여주고, RECAP은 autonomous experience/correction/RL을 통해 reliability와 throughput을 올리는 방법을 제시한다.
+
+## 한계와 주의
+
+- formal benchmark paper가 아니므로 exact protocol, random seed, full failure distribution은 제한적이다.
+- policies are often not consistent라고 article이 직접 말한다. 평균 success 52%는 robust deployment level로 읽으면 안 된다.
+- physical impossibility/robot gripper limitation이 일부 task 결과를 제한한다.
+- baseline은 standard VLM fine-tuning으로, 비교 목적은 “robot foundation pretraining이 필요한가”에 가깝다.
+
+## 5-Pass 검증 메모
+
+| Pass | 결과 |
+| --- | --- |
+| 1. 구조/coverage | challenge setup, events, quantitative claims, baseline, caveat를 포함했다. |
+| 2. 사실/수치 | 3/5 gold, 2 silver, under 9h data, 52% success, 72% progress, baseline 9% progress/no success를 official article과 대조했다. |
+| 3. 코드 구현 | article note이므로 public code/checkpoint 재현은 확인 대상이 아님을 명시했다. |
+| 4. 해석/연결 | π0.6과 π*0.6/RECAP 사이의 중간 capability signal로 연결했다. |
+| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |

@@ -1,0 +1,98 @@
+---
+title: Knowledge Insulation
+description: VLA가 robot skill을 학습하면서 VLM knowledge를 잃지 않도록 하는 Knowledge Insulation Survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# Knowledge Insulation
+
+<SectionFeedback page="Knowledge Insulation" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문/글 | VLAs that Train Fast, Run Fast, and Generalize Better |
+| 방법/모델 | π0.5 + Knowledge Insulation, π0.5 + KI |
+| 공개 | pi.website research, 2025-05-28 |
+| 링크 | https://www.pi.website/research/knowledge_insulation |
+| 태그 | VLA, action expert, FAST token, flow matching, knowledge retention, semantic generalization |
+
+## 한 줄 요약
+
+Knowledge Insulation은 continuous action expert의 gradient가 pretrained VLM backbone을 망가뜨리는 문제를 막기 위해, action expert gradient를 backbone에 흘리지 않고 π0-FAST action token objective와 VLM/web/high-level robot tasks를 함께 학습해 “train fast, run fast, generalize better”를 달성하는 recipe다.
+
+## Official Visual Evidence
+
+![Knowledge Insulation official page screenshot](/pi/knowledge-insulation-page.png)
+
+공식 Knowledge Insulation page는 주요 method/result visual을 React-rendered component로 제공해 독립 이미지 URL이 없었다. Playwright full-page screenshot을 저장해 method diagram과 result visual을 함께 확인할 수 있게 했다.
+
+## 문제의식
+
+VLM은 web-scale knowledge와 language reasoning을 갖고 있지만 robot control을 위해 continuous motor cortex에 해당하는 action expert가 필요하다. π0 같은 second-generation VLA는 action expert/flow matching head를 붙여 복잡한 motor skill을 수행하지만, action expert gradient가 VLM backbone representation을 건드리면서 semantic knowledge와 language following을 해칠 수 있다.
+
+공식 글의 예시는 “spoon을 dish container에 넣으라”는 instruction에서 naive action expert model이 trash를 집는 실패다. 이는 motor loss가 language understanding보다 easier correlation에 과적합하게 만들 수 있음을 보여준다.
+
+## Method
+
+Knowledge Insulation은 단순히 backbone을 freeze하는 것이 아니다. Freeze만 하면 VLM representation이 robot control에 맞게 adaptation되지 않아 action expert가 쓸 수 있는 representation을 얻기 어렵다.
+
+π0.5 + KI의 핵심 구성:
+
+| 구성 | 역할 |
+| --- | --- |
+| Stop-gradient from action expert to VLM backbone | continuous action loss가 VLM knowledge를 훼손하지 않게 함 |
+| π0-FAST action token objective | backbone이 robot motor representation을 빠르게 배우도록 discrete token CE로 학습 |
+| continuous action expert | inference 때 fast continuous action을 flow matching으로 생성 |
+| VLM/web data co-training | pretrained semantic knowledge와 object/category generalization 유지 |
+| high-level robot commands | planning/subtask representation 강화 |
+
+학습 중에는 discrete FAST token objective와 continuous action expert objective를 같이 쓰지만, inference에서는 FAST token path를 버리고 action expert가 continuous action을 빠르게 생성한다.
+
+## 왜 FAST Token이 중요한가
+
+π0-FAST는 autoregressive라 inference가 느리지만, next-token CE objective는 VLM backbone을 망가뜨리지 않고 motor representation을 빠르게 학습시키는 데 유리하다. KI는 이 장점을 representation learning에만 사용하고, 실제 실행은 π0/π0.5류 flow action expert로 빠르게 수행한다.
+
+| 접근 | 장점 | 단점 |
+| --- | --- | --- |
+| π0 action expert | fast inference, continuous action | naive gradient는 VLM knowledge 손상 가능 |
+| π0-FAST | train fast, language following 유지 | autoregressive inference가 느림 |
+| π0.5 + KI | train fast + run fast + generalize | training recipe가 복합적 |
+
+## Experiments and Results
+
+공식 페이지의 주요 결과:
+
+| 실험 | 결과/해석 |
+| --- | --- |
+| shirt-folding | π0.5 + KI가 가장 높은 performance. 단순 backbone freeze는 task 수행 불가 수준 |
+| bussing training steps | π0 대비 7.5배 적은 training steps로 action expert 기반 fast inference 달성 |
+| object generalization | unseen objects / in-distribution objects in unseen environments에서 web-data co-training이 OOD object 성능에 가장 크게 기여 |
+| bussing single embodiment | π0.5 + KI가 highest performance, language following, low execution time을 동시에 보임 |
+| π0-FAST comparison | π0-FAST는 language following은 좋지만 task completion time이 약 2배 길다고 설명 |
+
+핵심 결과는 “continuous action expert를 쓰면 빠르지만 knowledge를 잃기 쉽고, FAST token은 지식을 잘 보존하지만 느리다”는 trade-off를 KI가 둘 다 활용해 깬다는 것이다.
+
+## π0.5와의 연결
+
+공식 글은 KI가 π0.5에서 사용한 method를 formalize하고 single-stage training recipe로 refined한 것이라고 설명한다. 따라서 π0.5 Survey를 읽을 때 “co-training으로 open-world generalization”만 보면 부족하고, KI 관점에서 action expert와 VLM backbone 사이 gradient/representation 문제가 핵심임을 같이 봐야 한다.
+
+## 한계와 주의
+
+- KI는 training recipe가 복합적이므로 ablation 없이 “web data가 좋다” 또는 “stop-gradient가 좋다”로 단순화하면 안 된다.
+- π0-FAST token objective는 inference에 남는 것이 아니라 representation learning objective로 쓰이는 점이 중요하다.
+- 공개 openpi가 이 full KI recipe를 그대로 제공하는지 별도 확인이 필요하다.
+
+## 5-Pass 검증 메모
+
+| Pass | 결과 |
+| --- | --- |
+| 1. 구조/coverage | 문제, stop-gradient, FAST objective, action expert, experiments 포함 |
+| 2. 사실/수치 | 7.5x fewer training steps, 2x π0-FAST time, OOD object/web-data 결과 확인 |
+| 3. 코드 구현 | 공식 code 미확인 |
+| 4. 해석/연결 | π0.5, π0-FAST, π0와 trade-off 연결 |
+| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |
