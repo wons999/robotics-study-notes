@@ -4058,6 +4058,64 @@ const slides = rawSlides.map((slide) => ({
     width: min(100%, calc(88rem + 2rem));
   }
 
+  .seminar-deck:fullscreen .slide[data-slide='1'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='5'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='15'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='16'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='17'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='18'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='19'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='21'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='22'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='23'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='27'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='29'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='33'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='45'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='1'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='5'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='15'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='16'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='17'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='18'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='19'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='21'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='22'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='23'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='27'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='29'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='33'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='45'] .slide-visual {
+    height: fit-content;
+    min-height: 0;
+    max-height: none;
+    align-self: center;
+    overflow: visible;
+  }
+
+  .seminar-deck:fullscreen .slide[data-slide='18'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='21'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='22'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='23'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='27'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='18'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='21'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='22'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='23'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='27'] .slide-visual {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    justify-self: center;
+  }
+
+  .seminar-deck:fullscreen .slide[data-slide='33'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='33'] .slide-visual {
+    width: fit-content;
+    max-width: 100%;
+    justify-self: center;
+  }
+
   .seminar-deck:fullscreen .slide-stack .slide-visual .compact-plot img,
   .seminar-deck.is-fullscreen .slide-stack .slide-visual .compact-plot img {
     position: static;
@@ -4472,18 +4530,20 @@ const slides = rawSlides.map((slide) => ({
   .seminar-deck.is-fullscreen .slide-stack[data-slide='16'] .slide-visual {
     display: grid;
     place-items: center;
-    height: 100%;
+    height: fit-content;
     min-height: 0;
-    padding: 0.32rem;
-    overflow: hidden;
+    max-height: none;
+    padding: 0.7rem;
+    align-self: center;
+    overflow: visible;
   }
 
   .seminar-deck:fullscreen .slide-stack[data-slide='15'] .slide-visual:has(.runtime-sequence.no-arrows),
   .seminar-deck:fullscreen .slide-stack[data-slide='16'] .slide-visual:has(.training-stages.compact-diagram.no-arrows),
   .seminar-deck.is-fullscreen .slide-stack[data-slide='15'] .slide-visual:has(.runtime-sequence.no-arrows),
   .seminar-deck.is-fullscreen .slide-stack[data-slide='16'] .slide-visual:has(.training-stages.compact-diagram.no-arrows) {
-    align-self: stretch;
-    height: 100%;
+    align-self: center;
+    height: fit-content;
     place-items: center;
   }
 
@@ -4494,8 +4554,8 @@ const slides = rawSlides.map((slide) => ({
   .seminar-deck.is-fullscreen .slide-stack[data-slide='15'] .compact-diagram,
   .seminar-deck.is-fullscreen .slide-stack[data-slide='16'] .compact-diagram {
     width: 100%;
-    height: 100%;
-    max-height: 100%;
+    height: auto;
+    max-height: none;
     gap: 0.24rem;
     align-content: center;
   }
@@ -4521,8 +4581,8 @@ const slides = rawSlides.map((slide) => ({
   .seminar-deck:fullscreen .slide-stack[data-slide='15'] .runtime-diagram:has(.runtime-sequence.no-arrows),
   .seminar-deck.is-fullscreen .slide-stack[data-slide='15'] .runtime-diagram:has(.runtime-sequence.no-arrows) {
     width: 100%;
-    height: 78%;
-    max-height: 78%;
+    height: auto;
+    max-height: none;
     place-self: center stretch;
     align-content: center;
   }
@@ -4530,15 +4590,15 @@ const slides = rawSlides.map((slide) => ({
   .seminar-deck:fullscreen .slide-stack[data-slide='15'] .runtime-sequence.no-arrows,
   .seminar-deck.is-fullscreen .slide-stack[data-slide='15'] .runtime-sequence.no-arrows {
     width: 100%;
-    height: 100%;
-    max-height: 100%;
+    height: auto;
+    max-height: none;
     align-items: stretch;
   }
 
   .seminar-deck:fullscreen .slide-stack[data-slide='16'] .training-stages.compact-diagram.no-arrows,
   .seminar-deck.is-fullscreen .slide-stack[data-slide='16'] .training-stages.compact-diagram.no-arrows {
-    height: 52%;
-    max-height: 52%;
+    height: auto;
+    max-height: none;
     place-self: center stretch;
     align-items: stretch;
   }
@@ -4602,6 +4662,50 @@ const slides = rawSlides.map((slide) => ({
   .seminar-deck:fullscreen .slide-stack[data-slide='16'] .training-stages b,
   .seminar-deck.is-fullscreen .slide-stack[data-slide='16'] .training-stages b {
     font-size: 1.9rem;
+  }
+
+  .seminar-deck:fullscreen .slide[data-slide='15'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='16'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='23'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='15'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='16'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='23'] .slide-visual {
+    height: fit-content;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .seminar-deck:fullscreen .slide[data-slide='33'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='33'] .slide-visual {
+    width: min(100%, calc(70rem + 1.4rem));
+    height: fit-content;
+    min-height: 0;
+    max-height: none;
+    justify-self: center;
+  }
+
+  .seminar-deck:fullscreen .slide[data-slide='33'] .slide-visual .small-figure,
+  .seminar-deck.is-fullscreen .slide[data-slide='33'] .slide-visual .small-figure {
+    position: static;
+    width: 70rem;
+    height: auto;
+    max-width: 100%;
+    max-height: none;
+  }
+
+  .seminar-deck:fullscreen .slide[data-slide='33'] .slide-visual .plot-frame.small-figure img,
+  .seminar-deck.is-fullscreen .slide[data-slide='33'] .slide-visual .plot-frame.small-figure img {
+    position: static;
+    width: 100%;
+    height: auto;
+    max-height: 22rem;
+  }
+
+  .seminar-deck:fullscreen .slide-stack[data-slide='23'] .slide-visual:has(.wide-table.compact-table),
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='23'] .slide-visual:has(.wide-table.compact-table) {
+    height: auto;
+    min-height: 0;
+    max-height: none;
   }
 
   @media (max-width: 760px) {
