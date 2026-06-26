@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import SectionFeedback from '../../../../components/SectionFeedback.astro';
+import PaperFigure from '../../../../components/PaperFigure.astro';
 import PublicImage from '../../../../components/PublicImage.astro';
 
 # HI Robot
@@ -27,6 +28,27 @@ import PublicImage from '../../../../components/PublicImage.astro';
 
 HI Robot은 π0를 reactive low-level “System 1”로 두고, 같은 VLM backbone 계열의 high-level “System 2”가 scene, prompt, 실시간 feedback을 해석해 intermediate language command를 속삭이듯 생성하는 hierarchical VLA system이다.
 
+## PDF Figure/Table Inventory
+
+이번 노트는 arXiv PDF `2502.19417`을 직접 확보하고 Figure 1-8을 local asset으로 crop해 반영했다. 논문 본문 기준 formal table은 확인되지 않았고, 정량 결과는 Figures 5, 7, 8의 bar chart로 제공된다.
+
+| 원문 항목 | Survey 반영 위치 | 읽어야 할 핵심 |
+| --- | --- | --- |
+| Figure 1 | 문제의식 | open-ended instruction following은 multi-stage prompt, 실시간 correction, user interruption을 모두 포함한다. |
+| Figure 2 | Method | high-level VLM policy가 user prompt/interjection과 scene을 보고 low-level language command와 verbal response를 생성한다. |
+| Figure 3 | Training | robot data collection, human annotation, synthetic data generation, high-level policy training의 네 단계 pipeline이다. |
+| Figure 4 | Experiments | table bussing, sandwich making, grocery shopping 세 domain에서 complex instruction, feedback, interruption을 평가한다. |
+| Figure 5 | Experiments and Results | HI Robot이 GPT-4o high-level baseline과 flat VLA보다 instruction accuracy/task progress에서 높다. |
+| Figure 6 | Qualitative Results | GPT-4o는 object misidentification, skipped subtasks, user intent 무시가 나타나고 HI Robot은 scene-grounded command를 유지한다. |
+| Figure 7 | Ablation | synthetic data가 open-ended prompt와 correction handling에 필수적임을 보인다. |
+| Figure 8 | Ablation | 같은 synthetic data를 써도 hierarchy가 flat VLA보다 feedback/partial instruction 통합에 유리하다. |
+
+<PaperFigure
+  src="/pi/hirobot-paper/fig01-open-ended-instruction-following.png"
+  alt="Figure 1: HI Robot open-ended instruction following examples"
+  caption="논문 Figure 1. HI Robot이 target으로 삼는 instruction setting은 multi-stage instruction, real-time correction, user interruption을 포함한다."
+/>
+
 ## Official Visual Evidence
 
 | HI Robot sandwich prompt examples |  |  |
@@ -45,7 +67,15 @@ HI Robot은 π0를 reactive low-level “System 1”로 두고, 같은 VLM backb
 
 실제 사용자는 robot에게 완성된 low-level command를 주지 않는다. “테이블을 정리하되 저건 버리지 마”, “샌드위치를 만들어줘”, “장 본 물건을 정리해줘”처럼 instruction은 multi-stage이고, 중간에 correction이 들어오며, object reference가 현재 scene에 ground되어야 한다. Flat VLA가 이 모든 것을 바로 action chunk로 내면 prompt constraint를 잊거나, 이미 잘 학습된 autopilot behavior로 돌아갈 위험이 있다.
 
+Figure 1의 예시는 이 문제를 세 가지 failure mode로 분해한다. 첫째, 사용자는 처음부터 여러 constraint가 섞인 instruction을 준다. 둘째, robot이 움직이는 중간에 “그건 trash가 아니야” 같은 correction이 들어온다. 셋째, 사용자가 기존 목표를 바꾸거나 추가 조건을 붙인다. HI Robot의 목표는 이 모든 것을 low-level action으로 직접 압축하지 않고, 먼저 scene-grounded language command로 분해하는 것이다.
+
 ## Method: System 1 / System 2
+
+<PaperFigure
+  src="/pi/hirobot-paper/fig02-hierarchical-vla-overview.png"
+  alt="Figure 2: HI Robot hierarchical VLA overview"
+  caption="논문 Figure 2. High-level policy는 user prompt/interjection과 multi-view image를 받아 robot verbal response와 low-level language command를 만들고, low-level π0 policy가 이를 motor action으로 실행한다."
+/>
 
 | 구성 | 공식 글 기준 역할 |
 | --- | --- |
@@ -57,7 +87,15 @@ HI Robot은 π0를 reactive low-level “System 1”로 두고, 같은 VLM backb
 
 공식 글의 핵심은 “hierarchy가 planning을 멋있게 보이게 한다”가 아니다. Web-scale VLM pretraining은 이미지와 text context를 보고 textual answer를 생성하는 데 강하다. High-level policy가 먼저 language step을 생성하게 하면, 이 semantic reasoning 능력을 motor action으로 직접 압축하지 않고 사용할 수 있다.
 
+논문 수식 관점에서는 high-level policy가 image history와 user language를 조건으로 robot speech와 skill label을 생성하고, low-level policy는 image/state/subcommand를 조건으로 action chunk를 생성한다. 두 policy 모두 VLM family를 쓰지만 역할은 다르다. high-level은 “무엇을 해야 하는가”와 “사용자에게 어떻게 응답할 것인가”를 담당하고, low-level은 π0 계열 flow-matching action policy로 실제 motor execution을 담당한다.
+
 ## Training: Synthetic Interaction Data
+
+<PaperFigure
+  src="/pi/hirobot-paper/fig03-data-generation-high-level-policy.png"
+  alt="Figure 3: HI Robot data generation for the high-level policy"
+  caption="논문 Figure 3. Teleoperated robot demonstrations를 short skill로 segment하고 human skill annotation을 붙인 뒤, data-generator VLM이 synthetic user prompt와 robot speech를 만들어 high-level policy를 학습한다."
+/>
 
 HI Robot은 단순 atomic command demonstration만으로는 rich multi-step interaction이 부족하다고 본다. 그래서 robot observations와 human-labeled skills를 hypothetical prompts 및 human interjections와 pairing하는 synthetic labeling recipe를 사용한다.
 
@@ -72,7 +110,19 @@ HI Robot은 단순 atomic command demonstration만으로는 rich multi-step inte
 
 ## Experiments and Results
 
+<PaperFigure
+  src="/pi/hirobot-paper/fig04-evaluation-task-domains.png"
+  alt="Figure 4: HI Robot evaluation task domains"
+  caption="논문 Figure 4. Table bussing, sandwich making, grocery shopping domain에서 complex instruction, intermediate feedback, user interruption을 평가한다."
+/>
+
 공식 pi.website 글은 table bussing, sandwich making, grocery shopping을 real-world evaluation task로 든다. 비교 대상은 GPT-4o high-level baseline과 flat VLA policy다.
+
+<PaperFigure
+  src="/pi/hirobot-paper/fig05-prior-method-comparison.png"
+  alt="Figure 5: HI Robot comparisons to GPT-4o and flat VLA"
+  caption="논문 Figure 5. HI Robot은 table bussing, sandwich making, grocery shopping 전반에서 GPT-4o high-level baseline과 flat VLA보다 높은 instruction accuracy와 task progress를 보인다."
+/>
 
 | 실험 축 | 결과 해석 |
 | --- | --- |
@@ -83,6 +133,31 @@ HI Robot은 단순 atomic command demonstration만으로는 rich multi-step inte
 | grocery shopping | object choice, destination, order를 scene과 instruction에 맞춰 유지해야 한다. |
 
 결과를 해석할 때 GPT-4o comparison은 “GPT-4o가 robot action model보다 못하다”가 아니라, physical scene/action context에 맞춘 hierarchical VLA policy가 generic VLM high-level controller보다 instruction following을 더 잘 맞춘다는 의미로 읽어야 한다.
+
+<PaperFigure
+  src="/pi/hirobot-paper/fig06-qualitative-command-comparisons.png"
+  alt="Figure 6: HI Robot qualitative command comparisons"
+  caption="논문 Figure 6. GPT-4o high-level controller는 object misidentification, skipped subtask, user intent 무시가 발생할 수 있고, HI Robot은 scene과 user feedback에 맞춘 low-level command를 유지한다."
+/>
+
+## Ablation Notes
+
+<PaperFigure
+  src="/pi/hirobot-paper/fig07-synthetic-data-ablation.png"
+  alt="Figure 7: HI Robot synthetic data ablation"
+  caption="논문 Figure 7. Synthetic interaction data를 제거하면 instruction accuracy와 task progress가 모두 하락한다. 특히 open-ended prompt와 clarification/correction을 처리하는 능력이 약해진다."
+/>
+
+<PaperFigure
+  src="/pi/hirobot-paper/fig08-hierarchy-vs-flat-ablation.png"
+  alt="Figure 8: HI Robot hierarchy versus flat VLA ablation"
+  caption="논문 Figure 8. 같은 synthetic data를 쓰더라도 hierarchical policy가 flat VLA보다 instruction accuracy와 task progress에서 높다. Hierarchy는 중간 feedback과 partial instruction을 다시 해석하는 데 직접적인 이점을 준다."
+/>
+
+| Ablation | 무엇을 검증하나 | 해석 |
+| --- | --- | --- |
+| without synthetic data | high-level policy가 human-labeled skill만으로 open-ended interaction을 처리할 수 있는가 | synthetic user prompt/robot speech가 없으면 clarification, constraint, compositional prompt 대응이 약해진다. |
+| flat VLA with synthetic data | hierarchy 없이 하나의 VLA가 user prompt를 바로 action으로 처리할 수 있는가 | 같은 data가 있어도 high-level language reasoning과 low-level action execution을 분리한 구조가 더 안정적이다. |
 
 ## PI Family 안에서의 위치
 
@@ -106,8 +181,8 @@ HI Robot은 `π0.5`의 high-level/low-level inference와 강하게 연결된다.
 
 | Pass | 결과 |
 | --- | --- |
-| 1. 구조/coverage | 문제의식, System 1/System 2, synthetic data, experiments, family 연결을 포함했다. |
-| 2. 사실/수치 | 40% higher instruction-following accuracy, table bussing/sandwich/grocery tasks, GPT-4o/flat VLA 비교를 official article과 대조했다. |
+| 1. 구조/coverage | 문제의식, System 1/System 2, synthetic data, experiments, ablation, family 연결을 포함했다. |
+| 2. 사실/수치 | arXiv PDF를 확보해 Figure 1-8을 inventory로 만들고, 40% higher instruction-following accuracy, table bussing/sandwich/grocery tasks, GPT-4o/flat VLA 비교를 official article 및 PDF Figure 5와 대조했다. |
 | 3. 코드 구현 | OpenPI 수준의 public checkpoint/code가 확인되지 않아 code-level reproduction은 미확인으로 명시했다. |
 | 4. 해석/연결 | π0.5 high-level inference와 π0.7 steering 흐름에 연결했다. |
-| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |
+| 5. 문서 품질/빌드 | PDF Figure 1-8을 `public/pi/hirobot-paper/` local asset으로 저장하고, base-aware `PaperFigure`로 연결한 뒤 build로 확인한다. |
