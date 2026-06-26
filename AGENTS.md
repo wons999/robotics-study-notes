@@ -35,6 +35,7 @@ When checking user/site feedback, check issues in `wons999/robotics-study-notes-
 - The host Node version can be older than Astro's supported range. For local serving and builds, prefer Docker Node 24, for example:
   `docker run --rm --user 1000:1000 -p 4322:4321 -v /home/wh/study/robotics-study-notes:/app -w /app node:24-alpine npm run dev -- --host 0.0.0.0`
 - If port 4321 is already allocated, expose the container on 4322 and open `http://127.0.0.1:4322/seminars/t-rex/`.
+- Astro dev server usually hot-reloads `.astro` and `.mdx` content changes. For localhost checks, first verify the running dev server reflects the change; restart it when Astro config, environment/base path, dependencies, container state, or visibly stale content is involved.
 - For seminar deck visual QA, use Playwright with the cached Chromium binary at `/home/wh/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome` and launch with `args: ['--no-sandbox']`. Check fullscreen-like viewports such as 1920x1080, 2560x1440, and 3840x2160 when changing slide layout, tables, figures, or typography.
 
 ## T-Rex Seminar Notes
