@@ -14,6 +14,34 @@ const toSlidePoint = (text: string) => {
   return normalized;
 };
 
+const inferVisualVariant = (slide: { visual?: string; layout?: string; variant?: string }) => {
+  const visual = slide.visual ?? '';
+  if (visual.includes('trex-apply-toothpaste')) return 'strip';
+  if (visual.includes('<img')) return 'figure';
+  if (visual.includes('plot-frame')) return 'plot';
+  if (
+    visual.includes('expert-spec-card') ||
+    visual.includes('vqvae-loss-map') ||
+    visual.includes('equation-panel') ||
+    visual.includes('runtime-cache')
+  ) {
+    return slide.variant === 'visual-tight' ? 'card-narrow' : 'card';
+  }
+  if (visual.includes('<table')) return visual.includes('wide-table') ? 'table-wide' : 'table';
+  if (
+    visual.includes('compact-diagram') ||
+    visual.includes('dataset-funnel') ||
+    visual.includes('setup-rubric-grid') ||
+    visual.includes('conditioning-flow') ||
+    visual.includes('principle-map') ||
+    visual.includes('two-column') ||
+    visual.includes('tactile-encoder-map')
+  ) {
+    return 'diagram';
+  }
+  return slide.layout === 'stack' ? 'wide' : 'medium';
+};
+
 const rawSlides = [
   {
     eyebrow: '1. Overview',
@@ -50,18 +78,18 @@ const rawSlides = [
   },
   {
     eyebrow: '2. Dataset',
-    title: '데이터셋에 기록되는 신호',
-    kicker: '각 episode는 vision, proprioception, tactile, action, language가 같은 시간축에서 정렬된 multimodal trajectory다.',
-    visual: '<table class="mini-table"><tr><th>Stream</th><th>내용</th></tr><tr><td>Vision</td><td>head RGB 1개, wrist RGB 2개</td></tr><tr><td>State</td><td>arm joint, hand joint, wrist pose</td></tr><tr><td>Tactile</td><td>10 fingertip deformation map + 6-axis wrench</td></tr><tr><td>Action</td><td>arm end-effector delta + hand joint command</td></tr><tr><td>Language</td><td><strong>episode당 1개 instruction</strong><br/>target object + motor primitive + sampled frames → VLM 생성 → human verification</td></tr></table>',
+    title: '데이터셋 episode는 어떤 학습 샘플인가?',
+    kicker: 'Survey 기준으로 보면 T-Rex Dataset은 RGB-action pair가 아니라 timestamp가 맞춰진 multimodal trajectory다.',
+    visual: '<table class="mini-table compact-table appendix-table table-center"><tr><th>Field</th><th>학습 샘플 관점</th><th>policy가 얻는 정보</th></tr><tr><td>head_rgb[t]</td><td>workspace 전체와 target/distractor</td><td>task context, object selection</td></tr><tr><td>wrist_rgb[t]</td><td>양손 주변 근접 시야</td><td>occlusion이 큰 contact 영역 보완</td></tr><tr><td>arm/hand state[t]</td><td>양팔 7-DoF와 양손 22-DoF state</td><td>현재 자세, grasp aperture, stability</td></tr><tr><td>wrist_pose[t]</td><td>양손 wrist SE(3) pose</td><td>object-relative manipulation geometry</td></tr><tr><td>tactile[t-k:t]</td><td>10 fingertips의 6D wrench history + deformation map</td><td>slip, force, contact location, local geometry</td></tr><tr><td>action[t:t+H]</td><td>arm delta + hand joint command chunk</td><td>flow matching target action</td></tr><tr><td>instruction</td><td>episode당 1개 imperative sentence</td><td>language-conditioned task grounding</td></tr></table>',
     body: [
-      'Appendix G는 각 episode가 time-aligned bundle로 저장되며, three monocular RGB streams, bimanual proprioception, wrist end-effector poses, per-fingertip tactile observations, natural-language instruction을 포함한다고 설명한다.',
-      'RGB stream은 head ZED X Mini 1개와 wrist-mounted ZED X One S wide-view camera 2개이며 30Hz high-level teleoperation cadence로 기록된다. tactile stream은 10개 fingertip의 single-channel deformation depth map과 6-axis net wrench를 포함한다.',
+      'Appendix G는 각 episode가 time-aligned bundle로 저장되며, vision, proprioception, wrist pose, tactile, action, language가 common timestamp 아래 묶인다고 설명한다.',
       'language instruction은 episode마다 정확히 1개가 붙는다. sampled head-camera frames 4-6장, target object name, motor-primitive name을 VLM에 제공해 single imperative sentence를 만들고, human annotator가 hallucination과 imprecise description을 검수한다.'
     ],
     bullets: [
-      'raw stream과 derived tactile representation을 함께 release할 계획이다.',
+      'RGB: head ZED X Mini 1개 + wrist ZED X One S 2개, 30Hz cadence',
+      'tactile: deformation depth map과 6-axis net wrench를 같이 기록',
       'instruction count: 1 natural-language instruction per episode',
-      'VLM 생성 후 human verification을 거쳐 instruction 품질을 관리한다.'
+      'raw stream, derived tactile representation, loader/preprocess script 공개 계획'
     ],
     insight: '여기서 language는 단순 caption보다 “object-primitive taxonomy를 policy condition으로 바꾸는 접착제”에 가깝다.'
   },
@@ -256,14 +284,15 @@ const rawSlides = [
     layout: 'stack',
     visual: '<div class="runtime-diagram compact-diagram"><h3>Runtime: slow cache를 만들고 fast tactile tick이 재사용한다</h3><div class="runtime-sequence no-arrows"><div class="runtime-step slow-step"><b>Slow tick</b><span>visual-language encode + action expert</span><strong>commit cached KV + x<sub>τ</sub></strong><small>execution lock protects shared state</small></div><div class="runtime-step fast-step"><b>Fast tick 1</b><span>fresh tactile tokens</span><strong>x<sub>τ</sub> → action update</strong></div><div class="runtime-step fast-step"><b>Fast tick 2</b><span>new tactile frame</span><strong>reuse same cache</strong></div><div class="runtime-step fast-step"><b>Fast tick 3</b><span>new tactile frame</span><strong>latest action to 300Hz controller</strong></div></div></div>',
     body: [
-      'Slow tick은 visual-language context와 xτ boundary state를 계산해 cache한다. Fast tick은 visual tower, latent expert, action expert를 다시 실행하지 않고 최신 tactile frame으로 cached state를 보정한다.',
-      'runtime에서는 slow stream이 무거운 vision-language computation을 담당하고, fast stream은 같은 cache를 여러 tactile frame에 재사용한다. 따라서 tactile feedback이 들어올 때마다 전체 VLA를 다시 돌리지 않아도 action chunk의 후반 denoising을 갱신할 수 있다.',
-      '논문은 이 비동기 구조에서 shared state가 꼬이지 않도록 execution lock을 사용하고, 학습 중 delay augmentation을 넣어 stale vision context와 fresh tactile frame 사이의 시간 차이에 견디도록 만든다.'
+      'Slow stream은 visual-language context, Gaussian noise에서 tau_split까지의 denoising, boundary state와 KV cache 저장을 담당한다.',
+      'Fast stream은 action chunk 내부 offset에서 real-time tactile stream을 읽고, cached KV와 boundary state를 clone한 뒤 K_fast Euler step으로 action chunk를 갱신한다.',
+      '논문은 fast tick이 slow tick의 cache commit 전에 시작하지 않도록 single-threaded request socket과 execution lock을 둔다. 학습 중 delay augmentation은 stale visual context와 fresh tactile frame 사이의 시간 차이를 미리 겪게 한다.'
     ],
     bullets: [
-      'slow cache: visual-language context + xτ',
-      'fast tactile tick: 최신 force/deformation token으로 action update',
-      'execution lock + delay augmentation: 실제 deploy mismatch 대응'
+      'slow stream: visual-language context + xτ boundary state + KV cache commit',
+      'fast stream: fresh tactile + cloned cache로 lower flow denoising',
+      'low-level controller: 300Hz target 추종',
+      'execution lock: slow cache가 commit되기 전 fast tick이 shared state를 읽지 않게 함'
     ]
   },
   {
@@ -334,19 +363,19 @@ const rawSlides = [
   },
   {
     eyebrow: '9. Experiment Setup',
-    title: 'Experiment Setup',
-    kicker: '평가는 contact-rich real-world task 12개에서 수행되며, task마다 object pose와 position을 randomize한다.',
+    title: 'System and Evaluation Setup',
+    kicker: 'Survey의 시스템 설정을 기준으로 보면, T-Rex 결과는 특정 bimanual tactile robot stack 위에서 해석해야 한다.',
     layout: 'stack',
-    visual: '<div class="setup-rubric-grid"><div class="plot-frame setup-figure"><img src="/trex/trex-setup.png" alt="T-Rex real-world setup" /></div><div class="rubric-note"><h3>Progress-based rubric</h3><p>multi-stage task에서 최종 성공/실패만 보지 않고, predefined stage hierarchy 중 어디까지 도달했는지로 partial completion을 점수화한다.</p><p>예: key grasp → key insertion → rotation/open처럼 뒤 단계가 앞 단계 성공을 전제로 하는 task에 적합하다.</p></div></div>',
+    visual: '<table class="mini-table compact-table appendix-table table-center"><tr><th>항목</th><th>Survey 기준 핵심 설정</th></tr><tr><td>Robot</td><td>fixed-base bimanual Dexmate Vega-1</td></tr><tr><td>Arms / hands</td><td>양쪽 7-DoF arm + 양쪽 22-DoF Sharpa Wave dexterous hand</td></tr><tr><td>Observation</td><td>head RGB, wrist RGB 2개, robot state, fingertip force, tactile deformation map, language instruction</td></tr><tr><td>Action</td><td>arm relative end-effector delta + absolute finger joint command</td></tr><tr><td>Control view</td><td>low-frequency visual action chunk + high-frequency tactile correction</td></tr><tr><td>Evaluation</td><td>12 tasks, 16 rollouts/task, pose randomization, success/progress rubric</td></tr></table>',
     body: [
-      '모든 real-world experiments는 fixed-base bimanual Dexmate Vega-1 robot과 두 개의 22-DoF Sharpa Wave dexterous hands에서 수행된다. Policy는 head RGB camera, two wrist RGB cameras, per-finger tactile force vectors, deformation maps를 관측한다.',
+      '모든 real-world experiments는 fixed-base bimanual Dexmate Vega-1 robot과 두 개의 22-DoF Sharpa Wave dexterous hands에서 수행된다.',
       '평가는 Appendix F에 정의된 12개 tactile-reactive tasks에서 수행된다. 각 task는 16 trials로 평가하며, object position과 rotation은 trial마다 randomize한다.',
-      '비교 baseline은 ViTacFormer, RDP, Tactile-VLA, EgoScale, pi_0.5, pi_0.5 + tactile이다. Appendix E는 모든 baseline이 같은 robot setup, action space, evaluation protocol을 사용하도록 adaptation되었다고 설명한다.'
+      'Appendix E는 모든 baseline이 같은 robot setup, action space, evaluation protocol을 사용하도록 adaptation되었다고 설명한다.'
     ],
     bullets: [
-      '12 tasks, 16 rollouts per task',
-      'object pose/position randomized',
-      'success rate + progress-based rubric: stage hierarchy에서 도달한 진행도를 반영'
+      'baseline 숫자는 off-the-shelf 결과가 아니라 T-Rex hardware에 맞춘 재현 결과다.',
+      'multi-stage task는 최종 성공뿐 아니라 predefined stage hierarchy의 진행도를 반영한다.',
+      'system setup 자체가 slow visual reasoning + fast tactile correction 문제를 만든다.'
     ]
   },
   {
@@ -389,11 +418,13 @@ const rawSlides = [
     visual: '<table class="mini-table result-table wide-table compact-table table-center"><tr><th>Method</th><th>Flip</th><th>Egg</th><th>Wipe</th><th>Paste</th><th>Cup</th><th>Mahjong</th><th>Lock</th><th>Tablet</th><th>Acid</th><th>Card</th><th>Poker</th><th>Bulb</th><th>Avg</th></tr><tr><td>ViTacFormer</td><td>9</td><td>0</td><td>4</td><td>1</td><td>4</td><td>7</td><td>0</td><td>0</td><td>0</td><td>2</td><td>2</td><td>1</td><td>3</td></tr><tr><td>RDP</td><td>12</td><td>8</td><td>18</td><td>2</td><td>6</td><td>9</td><td>2</td><td>0</td><td>0</td><td>1</td><td>2</td><td>7</td><td>6</td></tr><tr><td>Tactile-VLA</td><td>38</td><td>14</td><td>24</td><td>0</td><td>21</td><td>27</td><td>8</td><td>0</td><td>9</td><td>4</td><td>11</td><td>18</td><td>15</td></tr><tr><td>EgoScale</td><td>68</td><td>44</td><td>34</td><td>38</td><td>33</td><td>36</td><td>19</td><td>12</td><td>43</td><td>41</td><td>28</td><td>18</td><td>35</td></tr><tr><td>pi_0.5</td><td>36</td><td>17</td><td>28</td><td>13</td><td>18</td><td>32</td><td>5</td><td>1</td><td>24</td><td>8</td><td>9</td><td>11</td><td>17</td></tr><tr><td>pi_0.5 + tactile</td><td>8</td><td>9</td><td>27</td><td>2</td><td>4</td><td>14</td><td>2</td><td>0</td><td>7</td><td>3</td><td>0</td><td>0</td><td>6</td></tr><tr class="highlight-row"><td><strong>T-Rex</strong></td><td><strong>96</strong></td><td><strong>75</strong></td><td><strong>69</strong></td><td><strong>66</strong></td><td><strong>78</strong></td><td><strong>65</strong></td><td><strong>47</strong></td><td><strong>41</strong></td><td><strong>76</strong></td><td><strong>70</strong></td><td><strong>57</strong></td><td><strong>35</strong></td><td><strong>65</strong></td></tr></table>',
     body: [
       'Table 1은 12개 tactile-reactive manipulation tasks에서 success rate를 보고한다. 모든 task는 16 evaluation rollouts로 평가되고, multi-stage task는 progress-based rubric을 사용한다.',
-      'T-Rex는 Flip Page 96, Transfer Egg 75, Wipe Plate 69, Apply Paste 66, Split Cup 78, Sort Mahjong 65, Open Lock 47, Refill Tablet 41, Acid-Base Neutralization 76, Extract Card 70, Deal Poker 57, Screw Bulb 35, 평균 65를 기록한다.',
-      '결과 해석에서 중요한 점은 T-Rex가 쉬운 task만 잘한 것이 아니라, fragile grasp, deformable object pressure, sliding extraction처럼 tactile feedback이 action correction에 직접 필요한 task에서 baseline과 큰 차이를 만든다는 점이다. 반대로 Screw Bulb와 Open Lock은 여전히 낮아, tactile feedback만으로 long-horizon alignment와 torque control을 완전히 해결하지 못한다.'
+      'Baseline은 약한 비교군만 모은 것이 아니다. ViTacFormer/RDP/Tactile-VLA는 tactile-aware task-specific 계열이고, EgoScale/pi_0.5는 human/VLA foundation 계열이며, pi_0.5 + tactile은 tactile을 state에 단순 연결한 반례다.',
+      '결과 해석에서 중요한 점은 T-Rex가 fragile grasp, deformable pressure, sliding extraction처럼 tactile feedback이 action correction에 직접 필요한 task에서 baseline과 큰 차이를 만든다는 점이다.'
     ],
     bullets: [
       '가장 강한 baseline EgoScale 평균 35 대비 +30%p',
+      'Tactile-VLA/RDP/ViTacFormer: tactile을 쓰지만 foundation-scale slow/fast recipe는 약함',
+      'EgoScale/pi_0.5: foundation prior는 강하지만 tactile correction path가 없음',
       'pi_0.5 + tactile 평균 6은 visual-only pi_0.5 평균 17보다 낮다.',
       '논문은 naive tactile conditioning이 성능을 저하시킬 수 있다고 해석한다.'
     ],
@@ -436,32 +467,50 @@ const rawSlides = [
   },
   {
     eyebrow: '10. Data Efficiency',
-    title: 'Data efficiency와 mid-training 효과',
-    kicker: 'T-Rex Dataset mid-training은 downstream task demonstration 수를 줄이고, zero-shot transfer 가능성을 높이는 방향으로 작동한다.',
+    title: 'Figure 5: post-training data efficiency',
+    kicker: 'T-Rex Dataset mid-training은 downstream task demonstration 수를 줄이는 방향으로 작동한다.',
     layout: 'stack',
     visual: '<div class="plot-frame compact-plot"><img class="plot-figure" src="/trex/trex-data-efficiency.png" alt="T-Rex data efficiency" /></div>',
     body: [
       'Figure 5는 post-training demonstrations 수를 10에서 200까지 바꿨을 때 tactile-grounded T-Rex mid-training data가 low-data regime에서 성능을 높인다고 보고한다.',
-      'Figure 6은 제안한 100-hour tactile-grounded T-Rex Dataset과 11개 task에서 수집한 100-hour task-specific dataset을 비교한다. 논문은 T-Rex Dataset이 stronger generalization과 zero-shot transfer를 보인다고 설명한다.',
-      '결과적으로 mid-training corpus는 target task를 많이 외우게 하는 데이터라기보다, downstream fine-tuning이 적어도 쓸 수 있는 contact prior를 미리 형성하는 역할을 한다.'
+      'Apply Toothpaste, Split Cup, Extract Card에서 demo 수를 줄여도 T-Rex mid-training을 거친 모델이 no mid-training 조건보다 높은 curve를 보인다.',
+      '결과적으로 mid-training corpus는 downstream fine-tuning이 적어도 쓸 수 있는 contact prior를 미리 형성하는 역할을 한다.'
     ],
     bullets: [
-      'mid-training 없는 조건보다 성능이 높다.',
-      '100h data budget을 맞춘 task-specific dataset과 비교한다.',
-      'zero-shot task에서도 배운 motor primitive가 도움이 된다.'
+      '10, 20, 50, 100, 200 demos 구간을 비교',
+      'low-data regime에서 tactile-grounded mid-training 효과가 크다.',
+      'target task demo를 많이 모으는 것과 reusable prior를 만드는 것은 다른 문제다.'
     ],
     insight: '데이터 효율 결과는 “더 많은 task-specific demo”보다 “primitive-rich mid-training corpus”가 generalization에 더 유리할 수 있다는 논문 주장을 뒷받침한다.'
+  },
+  {
+    eyebrow: '10. Dataset Ablation',
+    title: 'Figure 6: mid-training dataset ablation',
+    kicker: 'Figure 6은 100시간 T-Rex Dataset이 같은 100시간 task-specific dataset보다 더 잘 일반화되는지 직접 비교한다.',
+    layout: 'stack',
+    visual: '<div class="plot-frame compact-plot"><img class="plot-figure" src="/trex/trex-midtraining-ablation.png" alt="T-Rex mid-training dataset ablation" /></div>',
+    body: [
+      'Figure 6은 mid-training 없음, 11개 task에서 모은 100-hour task-specific dataset, 그리고 100-hour tactile-grounded T-Rex Dataset을 비교한다.',
+      '평가는 6개 representative post-training tasks와 4개 easier zero-shot tasks로 나뉜다. zero-shot task는 T-Rex Dataset 안의 pick, slide, press, wipe motor primitive와 연결된다.',
+      '논문은 T-Rex Dataset이 task-specific 100시간보다 stronger generalization과 zero-shot transfer를 보인다고 해석한다.'
+    ],
+    bullets: [
+      '같은 100h data budget에서 dataset 구성의 차이를 검증',
+      'post-training task와 zero-shot task를 모두 보고한다.',
+      'primitive-rich tactile dataset이 task rehearsal보다 재사용 가능한 contact prior를 만든다.'
+    ],
+    insight: '이 결과가 빠지면 T-Rex Dataset의 핵심 주장, 즉 “평가 task를 많이 외운 것이 아니라 contact primitive coverage를 학습했다”는 주장이 약해진다.'
   },
   {
     eyebrow: '10. Training Recipe',
     title: 'Training Recipe Ablation: Table 3 전체 결과',
     kicker: 'Table 3는 human egocentric pre-training과 tactile-grounded mid-training이 각각 성능에 기여한다는 것을 6개 task로 검증한다.',
     layout: 'stack',
-    visual: '<table class="mini-table result-table compact-table table-center"><tr><th>Pre-training</th><th>Mid-training</th><th>Flip</th><th>Paste</th><th>Cup</th><th>Lock</th><th>Card</th><th>Bulb</th><th>Avg</th></tr><tr><td>-</td><td>-</td><td>46</td><td>16</td><td>20</td><td>6</td><td>14</td><td>5</td><td>18</td></tr><tr><td>✓</td><td>-</td><td>75</td><td>34</td><td>45</td><td>10</td><td>32</td><td>9</td><td>34</td></tr><tr><td>-</td><td>✓</td><td>88</td><td>40</td><td>52</td><td>22</td><td>46</td><td>20</td><td>45</td></tr><tr class="highlight-row"><td>✓</td><td>✓</td><td>96</td><td>66</td><td>78</td><td>47</td><td>70</td><td>35</td><td>65</td></tr></table>',
+    visual: '<table class="mini-table result-table compact-table table-center"><tr><th>Pre-training</th><th>Mid-training</th><th>Flip</th><th>Paste</th><th>Cup</th><th>Lock</th><th>Card</th><th>Bulb</th><th>Avg</th></tr><tr><td>-</td><td>-</td><td>46</td><td>16</td><td>20</td><td>6</td><td>14</td><td>5</td><td>18</td></tr><tr><td>-</td><td>✓</td><td>75</td><td>34</td><td>45</td><td>10</td><td>32</td><td>9</td><td>34</td></tr><tr><td>✓</td><td>-</td><td>88</td><td>40</td><td>52</td><td>22</td><td>46</td><td>20</td><td>45</td></tr><tr class="highlight-row"><td>✓</td><td>✓</td><td>96</td><td>66</td><td>78</td><td>47</td><td>70</td><td>35</td><td>65</td></tr></table>',
     body: [
       'Table 3는 Flip Page, Apply Toothpaste, Split Cup, Open Lock, Extract Card, Screw Lightbulb 6개 task에서 training recipe를 ablation한다.',
-      'Pre-training과 mid-training이 모두 없는 경우 평균 18, pre-training만 있는 경우 평균 34, mid-training만 있는 경우 평균 45, 둘 다 사용하는 full recipe는 평균 65다.',
-      '흥미로운 점은 mid-training만 있는 조건이 pre-training만 있는 조건보다 평균이 높다는 것이다. 논문 관점에서는 tactile-grounded robot data가 embodiment와 contact dynamics를 맞추는 데 직접적인 이득을 주고, human egocentric pre-training은 그 위에 semantic/visuomotor prior를 더해 full recipe에서 가장 큰 성능을 만든다.'
+      'Pre-training과 mid-training이 모두 없는 경우 평균 18, mid-training만 있는 경우 평균 34, pre-training만 있는 경우 평균 45, 둘 다 사용하는 full recipe는 평균 65다.',
+      '흥미로운 점은 pre-training만 있는 조건이 mid-training만 있는 조건보다 평균이 높지만, 둘 중 하나만으로는 full recipe에 크게 못 미친다는 것이다. 논문 관점에서는 human egocentric pre-training이 broad semantic/visuomotor prior를 주고, tactile-grounded mid-training이 그 prior를 robot-executable contact-rich control로 bridge한다.'
     ],
     bullets: [
       'human pre-training은 broad semantic grounding과 coarse visuomotor prior를 제공한다.',
@@ -763,12 +812,45 @@ const rawSlides = [
       'T-Rex의 차이: tactile을 lower flow segment의 high-frequency expert로 배치한다.'
     ],
     insight: '정리하면 T-Rex는 “touch를 input에 추가”한 논문이 아니라, human video foundation prior를 robot tactile contact dynamics에 접지시키고 control-frequency mismatch를 구조적으로 나눈 논문이다.'
+  },
+  {
+    eyebrow: '14. Citation Trail',
+    title: '직접 비교해야 할 tactile/VLA 논문',
+    kicker: 'Survey의 Citation Trail은 T-Rex를 단독 논문이 아니라 tactile-reactive policy 흐름 안에서 읽게 만든다.',
+    layout: 'stack',
+    visual: '<table class="mini-table compact-table appendix-table table-center"><tr><th>논문</th><th>T-Rex와의 연결</th><th>먼저 볼 포인트</th></tr><tr><td>Reactive Diffusion Policy</td><td>slow visual policy와 fast tactile correction 문제의식을 공유</td><td>action chunk 실행 중 tactile feedback 반영 방식</td></tr><tr><td>ViTacFormer</td><td>vision-touch cross-modal representation 계열의 가까운 비교군</td><td>future tactile prediction이 representation에 주는 역할</td></tr><tr><td>Tactile-VLA</td><td>VLA의 physical knowledge를 tactile feedback과 연결</td><td>tactile이 reasoning과 force control에 들어가는 방식</td></tr><tr><td>VLA-Touch</td><td>frozen VLA 주변에 tactile planning/execution module을 붙이는 modular approach</td><td>high-level tactile feedback과 low-level diffusion controller 분리</td></tr><tr><td>ForceVLA</td><td>force-aware MoE로 contact-rich VLA를 보강</td><td>force-torque signal과 fingertip tactile signal의 차이</td></tr></table>',
+    body: [
+      'T-Rex는 tactile signal을 쓰는 첫 논문이 아니다. 중요한 차이는 tactile을 action denoising 후반부의 high-frequency expert로 배치했다는 점이다.',
+      '직접 비교 논문들은 tactile feedback을 representation, controller, modular planner, force-aware MoE 중 어디에 넣는지 서로 다르게 답한다.'
+    ],
+    bullets: [
+      'RDP: slow-fast tactile correction의 가까운 선행 문제의식',
+      'ViTacFormer/Tactile-VLA: tactile-aware policy baseline 축',
+      'VLA-Touch/ForceVLA: modular tactile execution과 force-aware MoE 축'
+    ]
+  },
+  {
+    eyebrow: '14. Citation Trail',
+    title: '기반 방법론: T-Rex를 읽는 배경',
+    kicker: 'T-Rex의 novelty는 tactile sensor 하나가 아니라 flow matching, VQ-VAE, foundation VLA, data scaling이 결합되는 지점에 있다.',
+    layout: 'stack',
+    visual: '<table class="mini-table compact-table appendix-table table-center"><tr><th>기반</th><th>T-Rex에서 쓰이는 위치</th><th>먼저 볼 포인트</th></tr><tr><td>Flow Matching</td><td>action expert와 tactile expert가 하나의 denoising path를 나누어 처리</td><td>noise에서 action으로 가는 vector field 학습</td></tr><tr><td>VQ-VAE</td><td>fingertip force history를 discrete tactile token으로 압축</td><td>raw force를 token으로 바꿀 때 얻고 잃는 것</td></tr><tr><td>EgoScale</td><td>human egocentric data scaling과 dexterous prior 학습 기반</td><td>human video prior가 robot hand에 transfer되는 방식</td></tr><tr><td>pi_0 / pi_0.5</td><td>continuous action flow 기반 general robot control baseline</td><td>continuous action generation과 tactile feedback timing의 차이</td></tr><tr><td>Open X-Embodiment / RT-X</td><td>robot foundation model의 data scaling 배경</td><td>broad robot data와 tactile-rich data scaling의 차이</td></tr></table>',
+    body: [
+      'Flow Matching은 cascaded denoising의 수학적 기반이고, VQ-VAE는 temporal force history를 discrete contact vocabulary로 만드는 배경이다.',
+      'EgoScale과 pi_0 계열은 강한 foundation prior를 제공하지만, T-Rex는 그 prior를 robot tactile contact dynamics에 mid-training으로 접지하고 fast correction path를 따로 둔다.'
+    ],
+    bullets: [
+      'Flow Matching: 두 expert가 같은 action trajectory를 나누어 처리',
+      'VQ-VAE: noisy force history를 reusable tactile token으로 압축',
+      'EgoScale/pi_0: T-Rex가 넘어서야 하는 foundation baseline'
+    ]
   }
 ];
 
-const slides = rawSlides.map((slide) => ({
+const slides = rawSlides.map((slide: (typeof rawSlides)[number] & { visualVariant?: string }) => ({
   ...slide,
   body: slide.body?.map(toSlidePoint).slice(0, 2),
+  visualVariant: slide.visualVariant ?? inferVisualVariant(slide),
   visual: slide.visual ? withPublicAssetBase(slide.visual) : slide.visual
 }));
 ---
@@ -791,7 +873,7 @@ const slides = rawSlides.map((slide) => ({
 
     <div class="slides">
       {slides.map((slide, index) => (
-        <article class:list={['slide', slide.layout && `slide-${slide.layout}`, slide.variant && `slide-${slide.variant}`, index === 0 && 'is-active']} data-slide={index + 1}>
+        <article class:list={['slide', slide.layout && `slide-${slide.layout}`, slide.variant && `slide-${slide.variant}`, slide.visualVariant && `visual-${slide.visualVariant}`, index === 0 && 'is-active']} data-slide={index + 1}>
           <div class="slide-copy">
             <p class="eyebrow">{slide.eyebrow}</p>
             <h2>{slide.title}</h2>
@@ -1237,11 +1319,11 @@ const slides = rawSlides.map((slide) => ({
   }
 
   .slide-visual-tight {
-    grid-template-columns: minmax(0, 1.22fr) minmax(560px, 0.78fr);
+    grid-template-columns: minmax(0, 0.9fr) minmax(520px, 1.1fr);
   }
 
   .slide-visual-tight .slide-visual {
-    place-items: center end;
+    place-items: center;
   }
 
   .slide-wide .kicker {
@@ -1996,12 +2078,12 @@ const slides = rawSlides.map((slide) => ({
 
   .seminar-deck:fullscreen .slide-visual-tight,
   .seminar-deck.is-fullscreen .slide-visual-tight {
-    grid-template-columns: minmax(0, 1.22fr) minmax(660px, 0.78fr);
+    grid-template-columns: minmax(0, 0.9fr) minmax(520px, 1.1fr);
   }
 
   .seminar-deck:fullscreen .slide-visual-tight .slide-visual,
   .seminar-deck.is-fullscreen .slide-visual-tight .slide-visual {
-    place-items: center end;
+    place-items: center;
   }
 
   .seminar-deck:fullscreen .slide-visual-tight .slide-visual .expert-spec-card,
@@ -3672,7 +3754,6 @@ const slides = rawSlides.map((slide) => ({
     line-height: 1.23;
   }
 
-  .seminar-deck .slide-visual .two-column,
   .seminar-deck .slide-visual .funnel-row,
   .seminar-deck .slide-visual .pair-examples,
   .seminar-deck .slide-visual .expert-flow,
@@ -3684,6 +3765,10 @@ const slides = rawSlides.map((slide) => ({
   .seminar-deck .slide-visual .training-stages,
   .seminar-deck .slide-visual .principle-map {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  }
+
+  .seminar-deck .slide-visual .two-column {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .seminar-deck .slide-visual .runtime-sequence.no-arrows {
@@ -4069,6 +4154,7 @@ const slides = rawSlides.map((slide) => ({
   .seminar-deck:fullscreen .slide[data-slide='22'] .slide-visual,
   .seminar-deck:fullscreen .slide[data-slide='23'] .slide-visual,
   .seminar-deck:fullscreen .slide[data-slide='27'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='28'] .slide-visual,
   .seminar-deck:fullscreen .slide[data-slide='29'] .slide-visual,
   .seminar-deck:fullscreen .slide[data-slide='33'] .slide-visual,
   .seminar-deck:fullscreen .slide[data-slide='45'] .slide-visual,
@@ -4083,6 +4169,7 @@ const slides = rawSlides.map((slide) => ({
   .seminar-deck.is-fullscreen .slide[data-slide='22'] .slide-visual,
   .seminar-deck.is-fullscreen .slide[data-slide='23'] .slide-visual,
   .seminar-deck.is-fullscreen .slide[data-slide='27'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='28'] .slide-visual,
   .seminar-deck.is-fullscreen .slide[data-slide='29'] .slide-visual,
   .seminar-deck.is-fullscreen .slide[data-slide='33'] .slide-visual,
   .seminar-deck.is-fullscreen .slide[data-slide='45'] .slide-visual {
@@ -4098,11 +4185,13 @@ const slides = rawSlides.map((slide) => ({
   .seminar-deck:fullscreen .slide[data-slide='22'] .slide-visual,
   .seminar-deck:fullscreen .slide[data-slide='23'] .slide-visual,
   .seminar-deck:fullscreen .slide[data-slide='27'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='28'] .slide-visual,
   .seminar-deck.is-fullscreen .slide[data-slide='18'] .slide-visual,
   .seminar-deck.is-fullscreen .slide[data-slide='21'] .slide-visual,
   .seminar-deck.is-fullscreen .slide[data-slide='22'] .slide-visual,
   .seminar-deck.is-fullscreen .slide[data-slide='23'] .slide-visual,
-  .seminar-deck.is-fullscreen .slide[data-slide='27'] .slide-visual {
+  .seminar-deck.is-fullscreen .slide[data-slide='27'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='28'] .slide-visual {
     display: block;
     width: fit-content;
     max-width: 100%;
@@ -4706,6 +4795,283 @@ const slides = rawSlides.map((slide) => ({
     height: auto;
     min-height: 0;
     max-height: none;
+  }
+
+  .seminar-deck:fullscreen .slide[data-slide='30'] .slide-visual,
+  .seminar-deck:fullscreen .slide[data-slide='46'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='30'] .slide-visual,
+  .seminar-deck.is-fullscreen .slide[data-slide='46'] .slide-visual {
+    height: fit-content;
+    min-height: 0;
+    max-height: none;
+    align-self: center;
+    overflow: visible;
+  }
+
+  .seminar-deck:fullscreen .slide-stack[data-slide='34'] .slide-visual:has(.small-figure),
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='34'] .slide-visual:has(.small-figure) {
+    width: fit-content;
+    max-width: 100%;
+    height: fit-content;
+    min-height: 0;
+    max-height: none;
+    justify-self: center;
+  }
+
+  .seminar-deck:fullscreen .slide-stack[data-slide='34'] .slide-visual .small-figure,
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='34'] .slide-visual .small-figure {
+    position: static;
+    width: 70rem;
+    height: auto;
+    max-width: 100%;
+    max-height: none;
+  }
+
+  .seminar-deck:fullscreen .slide-stack[data-slide='34'] .slide-visual .plot-frame.small-figure img,
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='34'] .slide-visual .plot-frame.small-figure img {
+    position: static;
+    width: 100%;
+    height: auto;
+    max-height: 18rem;
+  }
+
+  .seminar-deck:fullscreen .slide-stack[data-slide='40'] .slide-visual:has(.task-table),
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='40'] .slide-visual:has(.task-table) {
+    height: fit-content;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .seminar-deck:fullscreen .slide-visual,
+  .seminar-deck.is-fullscreen .slide-visual {
+    --visual-frame-pad: clamp(12px, 0.65vw, 24px);
+    padding: var(--visual-frame-pad);
+  }
+
+  .seminar-deck:fullscreen .slide-visual:has(> img),
+  .seminar-deck:fullscreen .slide-visual:has(> table),
+  .seminar-deck:fullscreen .slide-visual:has(> .plot-frame),
+  .seminar-deck:fullscreen .slide-visual:has(> .setup-rubric-grid),
+  .seminar-deck:fullscreen .slide-visual:has(> .cascade-diagram),
+  .seminar-deck:fullscreen .slide-visual:has(> .runtime-diagram),
+  .seminar-deck:fullscreen .slide-visual:has(> .training-stages),
+  .seminar-deck:fullscreen .slide-visual:has(> .conditioning-flow),
+  .seminar-deck:fullscreen .slide-visual:has(> .principle-map),
+  .seminar-deck:fullscreen .slide-visual:has(> .two-column),
+  .seminar-deck:fullscreen .slide-visual:has(> .expert-spec-card),
+  .seminar-deck:fullscreen .slide-visual:has(> .vqvae-loss-map),
+  .seminar-deck:fullscreen .slide-visual:has(> .equation-panel),
+  .seminar-deck:fullscreen .slide-visual:has(> .tactile-encoder-map),
+  .seminar-deck:fullscreen .slide-visual:has(> .runtime-cache),
+  .seminar-deck.is-fullscreen .slide-visual:has(> img),
+  .seminar-deck.is-fullscreen .slide-visual:has(> table),
+  .seminar-deck.is-fullscreen .slide-visual:has(> .plot-frame),
+  .seminar-deck.is-fullscreen .slide-visual:has(> .setup-rubric-grid),
+  .seminar-deck.is-fullscreen .slide-visual:has(> .cascade-diagram),
+  .seminar-deck.is-fullscreen .slide-visual:has(> .runtime-diagram),
+  .seminar-deck.is-fullscreen .slide-visual:has(> .training-stages),
+  .seminar-deck.is-fullscreen .slide-visual:has(> .conditioning-flow),
+  .seminar-deck.is-fullscreen .slide-visual:has(> .principle-map),
+  .seminar-deck.is-fullscreen .slide-visual:has(> .two-column),
+  .seminar-deck.is-fullscreen .slide-visual:has(> .expert-spec-card),
+  .seminar-deck.is-fullscreen .slide-visual:has(> .vqvae-loss-map),
+  .seminar-deck.is-fullscreen .slide-visual:has(> .equation-panel),
+  .seminar-deck.is-fullscreen .slide-visual:has(> .tactile-encoder-map),
+  .seminar-deck.is-fullscreen .slide-visual:has(> .runtime-cache) {
+    width: fit-content;
+    max-width: 100%;
+    height: fit-content;
+    min-height: 0;
+    max-height: none;
+    justify-self: center;
+    align-self: center;
+    overflow: visible;
+  }
+
+  .seminar-deck:fullscreen .slide-visual > img,
+  .seminar-deck.is-fullscreen .slide-visual > img {
+    width: auto;
+    height: auto;
+    max-width: min(100%, calc(100vw - 4rem));
+    max-height: min(70vh, 42rem);
+    object-fit: contain;
+  }
+
+  .seminar-deck:fullscreen .slide-visual > table,
+  .seminar-deck:fullscreen .slide-visual > .plot-frame,
+  .seminar-deck:fullscreen .slide-visual > .setup-rubric-grid,
+  .seminar-deck:fullscreen .slide-visual > .cascade-diagram,
+  .seminar-deck:fullscreen .slide-visual > .runtime-diagram,
+  .seminar-deck:fullscreen .slide-visual > .training-stages,
+  .seminar-deck:fullscreen .slide-visual > .conditioning-flow,
+  .seminar-deck:fullscreen .slide-visual > .principle-map,
+  .seminar-deck:fullscreen .slide-visual > .two-column,
+  .seminar-deck:fullscreen .slide-visual > .expert-spec-card,
+  .seminar-deck:fullscreen .slide-visual > .vqvae-loss-map,
+  .seminar-deck:fullscreen .slide-visual > .equation-panel,
+  .seminar-deck:fullscreen .slide-visual > .tactile-encoder-map,
+  .seminar-deck:fullscreen .slide-visual > .runtime-cache,
+  .seminar-deck.is-fullscreen .slide-visual > table,
+  .seminar-deck.is-fullscreen .slide-visual > .plot-frame,
+  .seminar-deck.is-fullscreen .slide-visual > .setup-rubric-grid,
+  .seminar-deck.is-fullscreen .slide-visual > .cascade-diagram,
+  .seminar-deck.is-fullscreen .slide-visual > .runtime-diagram,
+  .seminar-deck.is-fullscreen .slide-visual > .training-stages,
+  .seminar-deck.is-fullscreen .slide-visual > .conditioning-flow,
+  .seminar-deck.is-fullscreen .slide-visual > .principle-map,
+  .seminar-deck.is-fullscreen .slide-visual > .two-column,
+  .seminar-deck.is-fullscreen .slide-visual > .expert-spec-card,
+  .seminar-deck.is-fullscreen .slide-visual > .vqvae-loss-map,
+  .seminar-deck.is-fullscreen .slide-visual > .equation-panel,
+  .seminar-deck.is-fullscreen .slide-visual > .tactile-encoder-map,
+  .seminar-deck.is-fullscreen .slide-visual > .runtime-cache {
+    max-width: 100%;
+    max-height: none;
+  }
+
+  .seminar-deck:fullscreen .slide-visual > .plot-frame,
+  .seminar-deck.is-fullscreen .slide-visual > .plot-frame {
+    height: auto;
+  }
+
+  .seminar-deck:fullscreen .slide-visual > .plot-frame img,
+  .seminar-deck.is-fullscreen .slide-visual > .plot-frame img {
+    position: static;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: min(40vh, 26rem);
+    object-fit: contain;
+  }
+
+  .seminar-deck:fullscreen .slide-visual:has(> img),
+  .seminar-deck.is-fullscreen .slide-visual:has(> img) {
+    display: grid;
+    place-items: center;
+    width: min(100%, 92rem);
+    height: fit-content;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .seminar-deck:fullscreen .slide-visual > img,
+  .seminar-deck:fullscreen .slide-stack .slide-visual > img,
+  .seminar-deck.is-fullscreen .slide-visual > img,
+  .seminar-deck.is-fullscreen .slide-stack .slide-visual > img {
+    position: static;
+    inset: auto;
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: min(64vh, 42rem);
+    margin: auto;
+    object-fit: contain;
+  }
+
+  .seminar-deck:fullscreen .slide-stack[data-slide='41'] .slide-visual:has(> img),
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='41'] .slide-visual:has(> img) {
+    width: min(100%, 92rem);
+    height: fit-content;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .seminar-deck:fullscreen .slide-stack[data-slide='2'] .slide-visual > img,
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='2'] .slide-visual > img {
+    max-height: min(50vh, 32rem);
+  }
+
+  .seminar-deck:fullscreen .slide-stack[data-slide='39'] .task-table,
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='39'] .task-table {
+    font-size: 1rem;
+  }
+
+  .seminar-deck:fullscreen .slide-stack[data-slide='39'] .slide-visual:has(> .task-table),
+  .seminar-deck.is-fullscreen .slide-stack[data-slide='39'] .slide-visual:has(> .task-table) {
+    height: fit-content;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .seminar-deck:fullscreen .slide-visual > .compact-principle-map,
+  .seminar-deck.is-fullscreen .slide-visual > .compact-principle-map {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: min(100%, 760px);
+    gap: clamp(10px, 0.7vw, 20px);
+    align-content: center;
+  }
+
+  .seminar-deck:fullscreen .slide-visual > .compact-principle-map div,
+  .seminar-deck.is-fullscreen .slide-visual > .compact-principle-map div {
+    min-height: clamp(96px, 10vh, 160px);
+    padding: clamp(10px, 0.7vw, 18px);
+  }
+
+  .seminar-deck:fullscreen .slide.visual-figure,
+  .seminar-deck.is-fullscreen .slide.visual-figure {
+    --visual-template-width: 64rem;
+  }
+
+  .seminar-deck:fullscreen .slide.visual-table,
+  .seminar-deck.is-fullscreen .slide.visual-table {
+    --visual-template-width: 56rem;
+  }
+
+  .seminar-deck:fullscreen .slide.visual-table-wide,
+  .seminar-deck.is-fullscreen .slide.visual-table-wide {
+    --visual-template-width: 88rem;
+  }
+
+  .seminar-deck:fullscreen .slide.visual-diagram,
+  .seminar-deck.is-fullscreen .slide.visual-diagram {
+    --visual-template-width: 56rem;
+  }
+
+  .seminar-deck:fullscreen .slide.visual-card,
+  .seminar-deck.is-fullscreen .slide.visual-card {
+    --visual-template-width: 46rem;
+  }
+
+  .seminar-deck:fullscreen .slide.visual-card-narrow,
+  .seminar-deck.is-fullscreen .slide.visual-card-narrow {
+    --visual-template-width: 40rem;
+  }
+
+  .seminar-deck:fullscreen .slide.visual-strip,
+  .seminar-deck.is-fullscreen .slide.visual-strip {
+    --visual-template-width: 92rem;
+  }
+
+  .seminar-deck:fullscreen .slide:not(.slide-stack) .slide-visual,
+  .seminar-deck.is-fullscreen .slide:not(.slide-stack) .slide-visual {
+    width: min(100%, var(--visual-template-width, 56rem));
+    justify-self: center;
+  }
+
+  .seminar-deck:fullscreen .slide:not(.slide-stack).visual-figure .slide-visual,
+  .seminar-deck.is-fullscreen .slide:not(.slide-stack).visual-figure .slide-visual {
+    height: fit-content;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .seminar-deck:fullscreen .slide.visual-card .slide-visual > *,
+  .seminar-deck:fullscreen .slide.visual-card-narrow .slide-visual > *,
+  .seminar-deck:fullscreen .slide.visual-diagram:not(.visual-strip) .slide-visual > *,
+  .seminar-deck.is-fullscreen .slide.visual-card .slide-visual > *,
+  .seminar-deck.is-fullscreen .slide.visual-card-narrow .slide-visual > *,
+  .seminar-deck.is-fullscreen .slide.visual-diagram:not(.visual-strip) .slide-visual > * {
+    width: 100%;
+  }
+
+  .seminar-deck:fullscreen .slide.visual-table .slide-visual > table,
+  .seminar-deck:fullscreen .slide.visual-table-wide .slide-visual > table,
+  .seminar-deck.is-fullscreen .slide.visual-table .slide-visual > table,
+  .seminar-deck.is-fullscreen .slide.visual-table-wide .slide-visual > table {
+    width: 100%;
   }
 
   @media (max-width: 760px) {
