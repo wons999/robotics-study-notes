@@ -41,6 +41,8 @@ N1.5는 별도 arXiv paper가 아니라 공개 checkpoint/model card 중심 rele
 | --- | --- | --- |
 | Hugging Face `nvidia/GR00T-N1.5-3B` model card | 메타데이터, 입력/출력 계약, architecture, license/use 조건 | N1.5가 paper result가 아니라 공개 checkpoint/release라는 점 |
 | Model card architecture image | 한 줄 요약, Architecture | Vision-language model과 diffusion transformer/action module의 연결 |
+| Model card architecture crop | Architecture, Flow Matching 학습 구조 | image/language/state condition path와 DiT action generation path를 분리해서 확인 |
+| Hugging Face `config.json` | Model Config Snapshot | action horizon, state/action max dim, DiT layer/head 수, inference timestep 등 구현 계약 |
 | NVIDIA Isaac-GR00T repository | 재현 체크리스트, N1.6/N1.7 차이 | current repository는 N1.7 중심이므로 N1.5 processor/checkpoint revision을 분리해야 함 |
 | GR00T N1 paper | Family 안에서의 위치, N1과의 연결 | N1.5가 계승하는 data pyramid/dual-system/flow matching 개념 |
 
@@ -79,6 +81,18 @@ N1.5 model card는 architecture type을 Vision Transformer, MLP, Flow Matching T
   caption="공식 model card의 구조도. 왼쪽의 image observation, language instruction, robot state가 vision-language model과 action transformer로 들어가며, 오른쪽에서 motor action을 생성한다."
 />
 
+<PaperFigure
+  src="/groot/n1-5-model-card/architecture-conditioning-path.png"
+  alt="GR00T N1.5 conditioning path crop"
+  caption="공식 architecture image 부분 crop. RGB image는 vision token으로, language instruction은 text token으로, robot state는 proprio token으로 변환된다. 이 세 조건이 shared action transformer가 쓸 context를 만든다."
+/>
+
+<PaperFigure
+  src="/groot/n1-5-model-card/architecture-action-transformer-path.png"
+  alt="GR00T N1.5 action transformer path crop"
+  caption="공식 architecture image 부분 crop. Diffusion/flow matching transformer는 VLM token과 proprio/action token을 condition으로 받아 denoising을 수행하고, continuous motor action을 복원한다."
+/>
+
 | 모듈 | 역할 | Survey에서 봐야 할 점 |
 | --- | --- | --- |
 | vision transformer | image observation을 visual token으로 변환 | view 수가 embodiment마다 달라도 token sequence로 concatenate하는 구조 |
@@ -104,6 +118,45 @@ N1.5 model card는 GR00T N1.X architecture diagram을 기준으로 더 구체적
 | MLP connector | N1.5에서 post-VLM connector가 sim benchmark 성능 개선을 위해 수정됨 | VLM feature와 DiT action head 사이의 bottleneck이 중요한 성능 요소였다는 뜻이다. |
 
 이 표에서 중요한 부분은 SigLip2/T5/DiT라는 이름 자체보다 “vision-language foundation model과 action diffusion transformer 사이에 connector와 embodiment-specific action interface가 있다”는 점이다. Survey나 세미나에서 GR00T를 단일 VLM처럼 설명하면 핵심을 놓친다.
+
+## Model Config Snapshot
+
+Hugging Face `config.json`에서 확인한 N1.5 checkpoint의 구조적 계약이다. model card의 개념 설명보다 구체적이므로, fine-tuning/serving을 생각할 때는 이 값을 먼저 본다.
+
+| 항목 | 값 | 의미 |
+| --- | --- | --- |
+| `model_type` | `gr00t_n1_5` | current N1.7 code path와 구분해야 하는 checkpoint family |
+| `architectures` | `GR00T_N1_5` | Transformers config가 기대하는 model class |
+| `hidden_size` | 2048 | backbone output/action head cross-attention dimension의 기준 |
+| `action_horizon` | 16 | 한 번에 예측하는 continuous action chunk 길이 |
+| `action_dim` / `max_action_dim` | 32 / 32 | N1.5 checkpoint가 처리하는 action vector padding 상한 |
+| `max_state_dim` | 64 | proprioception vector padding 상한 |
+| `num_inference_timesteps` | 4 | inference에서 velocity prediction을 적용하는 denoising step 수 |
+| `num_timestep_buckets` | 1000 | diffusion timestep embedding bucket 수 |
+| `noise_beta_alpha`, `noise_beta_beta`, `noise_s` | 1.5, 1.0, 0.999 | N1 paper의 Beta timestep sampling 계열과 같은 noise schedule family |
+| `num_target_vision_tokens` | 32 | action head 쪽으로 압축/선택되는 vision token 수 |
+
+Action head 세부는 다음과 같다.
+
+| 항목 | 값 | 해석 |
+| --- | --- | --- |
+| action head hidden size | 1024 | action/proprio token pathway 내부 width |
+| DiT layers | 16 | flow matching transformer depth |
+| DiT attention heads | 32 | action/proprio self-attention과 VL cross-attention의 head 수 |
+| DiT cross-attention dim | 2048 | VLM feature와 맞물리는 conditioning dimension |
+| DiT output dim | 1024 | action decoder로 이어지는 representation size |
+| dropout | 0.2 | model card에는 나오지 않는 regularization 설정 |
+| norm type | `ada_norm` | diffusion timestep conditioning이 AdaLN 계열로 들어간다는 model card 설명과 일치 |
+
+Backbone config도 사용 관점에서 중요하다.
+
+| 항목 | 값 | 해석 |
+| --- | --- | --- |
+| `select_layer` | 12 | VLM 중간 layer feature를 action head condition으로 쓰는 N1 paper 계열 선택 |
+| `tune_visual` | true | visual encoder는 fine-tuning 대상 |
+| `tune_llm` | false | language model은 frozen으로 두는 release 설정 |
+| `use_flash_attention` | true | GPU serving/training 최적화 전제 |
+| `torch_dtype` | `bfloat16` | 로딩/추론 dtype 기준 |
 
 ## Input/Output Contract
 
@@ -132,6 +185,8 @@ N1.5는 image resolution을 `224x224`로 명시한다. N1.6 model card의 “any
 | inference | Gaussian noise에서 시작해 velocity prediction을 반복 적용하여 continuous action을 재구성 |
 
 이 구조는 [Flow Matching](../../flow-matching-generative-modeling/)과 [PI Model Family](../../pi/) 계열 VLA와 직접 연결된다. 다만 N1.5 model card만으로는 timestep distribution, loss normalization, action mask 처리까지 확정할 수 없으므로, 그 세부는 N1.7 code-level Survey처럼 source가 있는 release에서 확인한다.
+
+N1.5 config를 함께 보면 “model card만으로는 확정할 수 없다”는 부분 중 일부가 좁혀진다. `num_inference_timesteps=4`, `noise_beta_alpha=1.5`, `noise_beta_beta=1.0`, `noise_s=0.999`는 N1 paper의 flow-matching/noise schedule과 직접 이어진다. 다만 loss mask, dataset sampling, world-modeling loss weight는 config만으로도 확정할 수 없으므로 여전히 구현 revision 확인 대상이다.
 
 ## World-Modeling Objective
 
@@ -219,7 +274,7 @@ GR00T N1.5의 핵심은 “새 논문 contribution”이 아니라 “N1 연구 
 | pass | 확인 내용 |
 | --- | --- |
 | 1. 구조/coverage | metadata, family 위치, architecture, input/output, flow matching, world-modeling, references, post-training, 차이, 재현 체크를 포함했다. |
-| 2. 사실/수치 | Hugging Face `nvidia/GR00T-N1.5-3B` model card의 224x224 input, SigLip2/T5, non-commercial license, architecture 설명을 대조했다. N1.5는 별도 PDF가 없으므로 PDF figure/table inventory 대신 공식 model card/source inventory를 남겼다. |
-| 3. 코드 구현 | current code가 N1.7 중심이라는 제약을 명시하고, N1.5 구현 detail은 checkpoint revision/branch 확인 대상으로 분리했다. |
+| 2. 사실/수치 | Hugging Face `nvidia/GR00T-N1.5-3B` model card의 224x224 input, SigLip2/T5, non-commercial license, architecture 설명과 `config.json`의 action horizon 16, max state/action dim, DiT 16 layers/32 heads, 4 denoising steps를 대조했다. N1.5는 별도 PDF가 없으므로 PDF figure/table inventory 대신 공식 model card/source inventory를 남겼다. |
+| 3. 코드 구현 | current code가 N1.7 중심이라는 제약을 명시하고, N1.5 구현 detail은 checkpoint revision/branch 확인 대상으로 분리했다. Hugging Face config는 checkpoint-level 구조 계약으로만 사용했다. |
 | 4. 해석/연결 | N1 paper, N1.6, N1.7, Flow Matching, pi_0와 연결했다. |
-| 5. 문서 품질/build | 공식 model card가 참조하는 GR00T N1.X architecture image를 `public/groot/n1-5-model-card/`에 저장하고, base-aware `PaperFigure`로 연결한 뒤 build로 확인한다. |
+| 5. 문서 품질/build | 공식 model card가 참조하는 GR00T N1.X architecture image와 부분 crop을 `public/groot/n1-5-model-card/`에 저장하고, base-aware `PaperFigure`로 연결한 뒤 로컬/base-path build로 확인한다. |
