@@ -26,11 +26,31 @@ import PaperFigure from '../../../../components/PaperFigure.astro';
 
 OpenPI는 PI 계열 VLA를 논문 아이디어가 아니라 실제 checkpoint, data transform, fine-tuning config, policy wrapper, inference server로 만져볼 수 있게 공개한 software layer다.
 
+## Source/Image Inventory
+
+OpenPI는 formal paper가 아니라 release article과 public repository가 authoritative source다. 따라서 이 노트는 PDF Figure/Table inventory 대신 article/source/code inventory를 남긴다.
+
+| Source | Local asset / code path | 본문 반영 위치 | 읽을 때 주의할 점 |
+| --- | --- | --- | --- |
+| Official article: `Open Sourcing π0` | `/pi/openpi-page.png` screenshot | Official Visual Evidence, 공개 범위 | 2025-02-04 초기 release 기준이다. π0/π0-FAST 중심 설명이므로 현재 README의 π0.5/PyTorch 업데이트와 분리해서 읽는다. |
+| Official GitHub README | `Physical-Intelligence/openpi` `README.md` | Release Timeline, Checkpoint Inventory, PyTorch Support | README는 이후 π0.5, full DROID training, PyTorch support가 추가된 현재 public entry point다. |
+| Official code: training/config | `src/openpi/training/config.py` | Fine-Tuning Config Snapshot | base checkpoint, action horizon, action dim, batch size, train steps가 config별로 다르다. |
+| Official code: policy runtime | `src/openpi/policies/policy_config.py`, `src/openpi/transforms.py` | Runtime Policy Contract | checkpoint load, norm stats, transforms, output unnormalization이 runtime policy 안에 묶인다. |
+| Official docs/examples | `docs/remote_inference.md`, `examples/libero/README.md`, `examples/droid/README_train.md` | Deployment / Dataset Notes | remote inference, LIBERO Docker eval, DROID RLDS training은 사용 경로가 서로 다르다. |
+
 ## Official Visual Evidence
 
 <PaperFigure src="/pi/openpi-page.png" alt="OpenPI official page screenshot" />
 
 공식 OpenPI article은 독립 figure image URL을 거의 제공하지 않아 Playwright로 page screenshot을 저장했다. 공개 범위, supported platform/checkpoint, release caveat를 확인하는 visual evidence로 사용한다.
+
+## Release Timeline
+
+| 시점 | 공개 자료 기준 변화 | 의미 |
+| --- | --- | --- |
+| 2025-02-04 article | π0 code/weights, π0-FAST, DROID/ALOHA/LIBERO demo checkpoint, fine-tuning code 공개 | “π0를 각자 robot/task에 fine-tune해 볼 수 있는 experimental release”가 OpenPI의 시작점이다. |
+| 2025-06 README update | full DROID training instructions 추가 | pi0-FAST-DROID training pipeline의 approximate open-source implementation이 공개됐다. |
+| 2025-09 README update | π0.5 release, DROID idle filter 개선, PyTorch support 추가 | 현재 repo는 초기 article보다 넓다. 다만 PyTorch path는 π0/π0.5 중심이고 π0-FAST는 아직 미지원이다. |
 
 ## 공개 범위
 
@@ -47,15 +67,65 @@ OpenPI는 PI 계열 VLA를 논문 아이디어가 아니라 실제 checkpoint, d
 
 ## Checkpoint Inventory
 
-| checkpoint | 공식 article 기준 의미 | 주의 |
+| checkpoint | 현재 README 기준 의미 | 주의 |
 | --- | --- | --- |
-| `π0 base` | paper의 표준 pre-trained π0. OXE와 PI의 7 robot platforms로 학습됨. | fine-tuning용이 기본 목적이며, pre-training에 있는 task는 zero-shot으로 될 수 있다. |
-| `π0-FAST base` | FAST tokenizer를 쓰는 autoregressive discretized control model. | language following은 somewhat better일 수 있지만 PI 경험상 inference cost가 about 4-5x higher. |
-| `π0 DROID`, `π0-FAST DROID` | DROID dataset 기반 Franka/DROID-like platform용 fine-tuned model. | article은 entirely new DROID environments에서 instruction following 가능하다고 설명한다. |
-| `π0 ALOHA` | towel folding, food scooping 등 ALOHA task용 demo checkpoint. | robot setup에 민감할 수 있지만 training에 없던 ALOHA station에서도 실행 사례가 있다. |
-| `π0 LIBERO` | LIBERO benchmark fine-tuned checkpoint. | simulation benchmark out-of-box evaluation용이다. |
+| `π0 base` | base VLA model for fine-tuning, `gs://openpi-assets/checkpoints/pi0_base` | article은 OXE + PI 7 robot platforms pretraining이라고 설명한다. |
+| `π0-FAST base` | FAST tokenizer 기반 autoregressive VLA, `gs://openpi-assets/checkpoints/pi0_fast_base` | language following은 더 좋을 수 있지만 article 기준 inference cost가 약 4-5x 높다. |
+| `π0.5 base` | open-world generalization을 개선한 π0.5 base, `gs://openpi-assets/checkpoints/pi05_base` | README 기준 추가 release다. repo에서는 π0.5 training/inference가 flow matching head 중심이다. |
+| `π0-FAST-DROID` | DROID dataset fine-tuned FAST model, `gs://openpi-assets/checkpoints/pi0_fast_droid` | DROID/DROID-like platform에서 simple table-top manipulation 0-shot demo용이다. |
+| `π0-DROID` | DROID fine-tuned π0, `gs://openpi-assets/checkpoints/pi0_droid` | π0-FAST-DROID보다 inference는 빠르지만 language command following은 약할 수 있다고 README가 설명한다. |
+| `π0-ALOHA-*` | towel, tupperware, pen-uncap 등 ALOHA task checkpoint | target robot setup에 민감할 수 있다. |
+| `π0.5-LIBERO` | LIBERO benchmark checkpoint, `gs://openpi-assets/checkpoints/pi05_libero` | README의 LIBERO example은 평균 96.85를 재현 기준으로 제시한다. |
+| `π0.5-DROID` | Knowledge Insulation 기반 DROID fine-tuned checkpoint, `gs://openpi-assets/checkpoints/pi05_droid` | inference / fine-tuning 둘 다 entry point로 쓰인다. |
 
 DROID demo는 University of Montreal, University of Washington, KAIST 등 training에 없던 여러 location에서 실행된 예를 article이 든다. ALOHA demo도 training에 없던 새 ALOHA station에서 실행됐다고 설명한다. 다만 “new location에서 예시가 있다”와 “모든 robot/site에서 robust하다”는 다르다.
+
+## Runtime Policy Contract
+
+OpenPI를 실제로 실행할 때 핵심 단위는 “model class”가 아니라 `policy_config.create_trained_policy(config, checkpoint_dir)`가 만드는 policy object다.
+
+| 단계 | 코드 기준 의미 |
+| --- | --- |
+| config 선택 | `_config.get_config("pi05_droid")`처럼 training/inference preset을 고른다. |
+| checkpoint download | `download.maybe_download()`가 `gs://openpi-assets/...` checkpoint를 local cache로 가져온다. |
+| backend detection | checkpoint directory 안에 `model.safetensors`가 있으면 PyTorch path, 없으면 JAX params path로 로드한다. |
+| model load | JAX는 `params`를 `bfloat16`으로 restore하고, PyTorch는 safetensors를 load한 뒤 selected params를 bfloat16으로 맞춘다. |
+| norm stats | checkpoint `assets` 아래 normalization statistics를 읽는다. robot/platform별 state/action scale이 여기서 맞춰진다. |
+| input transforms | optional repack, default prompt injection, dataset-specific input mapping, normalization, model tokenization/image resize 순서로 적용된다. |
+| output transforms | model output을 action transform, unnormalize, dataset-specific output mapping 순서로 robot action convention에 돌려놓는다. |
+| policy output | `policy.infer(example)["actions"]`는 `[action_horizon, action_dim]` action chunk를 반환한다. |
+
+remote inference 문서는 이 policy를 websocket server 뒤에 둔다. 서버는 기본 port `8000`에서 observation을 받고, robot/client 쪽은 image를 `224x224`로 resize/uint8 변환한 뒤 state와 prompt를 함께 보낸다. 문서가 강조하듯 state는 client에서 직접 normalize할 필요가 없고, normalization은 server-side policy transform이 처리한다.
+
+## Fine-Tuning Config Snapshot
+
+`training/config.py`의 preset은 “OpenPI가 무엇을 쉽게 바꿔 보라고 설계했는가”를 보여준다.
+
+| config | model config | data path | weight loader / steps |
+| --- | --- | --- | --- |
+| `pi0_libero` | `Pi0Config()` | `physical-intelligence/libero`, LeRobot | `pi0_base`, 30k steps |
+| `pi0_fast_libero` | `Pi0FASTConfig(action_dim=7, action_horizon=10, max_token_len=180)` | `physical-intelligence/libero`, LeRobot | `pi0_fast_base`, 30k steps |
+| `pi05_libero` | `Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False)` | `physical-intelligence/libero`, LeRobot | `pi05_base`, batch 256, 30k steps |
+| `pi0_aloha_pen_uncap` | `Pi0Config()` | `physical-intelligence/aloha_pen_uncap_diverse`, LeRobot | `pi0_base`, 20k steps |
+| `pi05_aloha_pen_uncap` | `Pi0Config(pi05=True)` | same ALOHA dataset | `pi05_base`, batch 64, 20k steps |
+| `pi0_fast_full_droid_finetune` | `Pi0FASTConfig(action_dim=8, action_horizon=16, max_token_len=180)` | full DROID RLDS | `pi0_fast_base`, batch 256, 100k steps |
+| `pi05_full_droid_finetune` | `Pi0Config(pi05=True, action_dim=32, action_horizon=16)` | full DROID RLDS | `pi05_base`, batch 256, 100k steps |
+| `pi05_droid_finetune` | `Pi0Config(pi05=True, action_dim=32, action_horizon=16)` | custom smaller DROID LeRobot dataset | `pi05_droid`, batch 32, 20k steps |
+
+특히 DROID에는 두 경로가 있다. full DROID는 RLDS loader를 쓰고, README는 DROID `1.0.1`이 complete language annotations 약 75k episodes를 포함하며 1.8TB storage가 필요하다고 적는다. 반면 custom DROID fine-tuning은 비교적 작은 dataset을 LeRobot format으로 변환해서 돌리는 경로다.
+
+## Model / Transform Boundary
+
+OpenPI에서 model config와 data transform은 분리되어 있다. 같은 `Pi0Config`라도 ALOHA/DROID/LIBERO에서 camera key, action convention, default prompt, delta action transform이 달라진다.
+
+| 층 | 대표 코드 | 역할 |
+| --- | --- | --- |
+| model config | `Pi0Config`, `Pi0FASTConfig` | backbone/action head, action horizon, action dim, token budget 같은 model-side shape를 정한다. |
+| data config | `LeRobotLiberoDataConfig`, `LeRobotAlohaDataConfig`, `RLDSDroidDataConfig` | dataset source, asset id, prompt source, robot-specific mapping을 정한다. |
+| model transforms | `ModelTransformFactory` | π0/π0.5는 Paligemma prompt tokenization + image resize + state/action padding, π0-FAST는 FAST tokenization/extraction을 붙인다. |
+| policy wrapper | `Policy` | transforms와 model sampling을 하나의 `infer()` API로 묶는다. |
+
+이 구조 때문에 checkpoint 이름만 바꿔서 모든 robot에 바로 적용할 수는 없다. observation key, camera layout, state/action dimension, normalization asset, action horizon이 맞아야 한다.
 
 ## 코드 레벨 확인
 
@@ -70,6 +140,20 @@ DROID demo는 University of Montreal, University of Washington, KAIST 등 traini
 | `scripts/serve_policy.py` / docs | policy server/client style deployment path |
 
 OpenPI를 읽을 때 가장 중요한 점은 paper system과 public repo boundary를 분리하는 것이다. π0/π0-FAST/π0.5의 core recipe와 일부 checkpoint는 공개되어 있지만, PI 내부의 최신 π*0.6, RLT, π0.7, partner deployment stack이 모두 같은 형태로 공개된 것은 아니다.
+
+## PyTorch Support
+
+현재 README는 PyTorch implementation을 제공한다고 설명한다. 단, 이것은 π0와 π0.5 중심이며 다음 caveat가 있다.
+
+| 항목 | README 기준 상태 |
+| --- | --- |
+| 지원 모델 | π0, π0.5 |
+| 미지원 | π0-FAST, FSDP training, LoRA training |
+| checkpoint 변환 | JAX checkpoint를 PyTorch format으로 변환하는 script 제공 |
+| inference API | `policy_config.create_trained_policy()` API는 JAX/PyTorch를 거의 동일하게 사용 |
+| precision | JAX는 inference 대부분 bfloat16 + 일부 float32, training mixed precision. PyTorch는 inference bfloat16 중심, training은 bfloat16 또는 float32 선택 |
+
+따라서 OpenPI를 PyTorch-only stack으로 읽으면 안 된다. 특히 FAST route를 보려면 여전히 JAX 구현과 tokenizer path를 확인해야 한다.
 
 ## PI Family 안에서의 위치
 
@@ -88,13 +172,15 @@ OpenPI는 PI family의 실험 재현 축이다. `π0`는 foundation action model
 - `π0-FAST base`는 training efficiency 장점과 runtime inference cost caveat를 같이 적어야 한다.
 - demo checkpoint는 subsequent fine-tuning용이라기보다 out-of-box demonstration 성격이 강하다고 article이 설명한다.
 - 최신 PI research article이 모두 OpenPI checkpoint로 공개된 것은 아니다.
+- PyTorch support가 추가되었지만 π0-FAST/FSDP/LoRA training은 README 기준 아직 미지원이다.
+- full DROID recipe는 1.8TB data, RLDS loader, 약 8x H100 규모의 compute assumption이 들어가므로 “가벼운 fine-tuning tutorial”과 같은 난이도로 보면 안 된다.
 
 ## 5-Pass 검증 메모
 
 | Pass | 결과 |
 | --- | --- |
-| 1. 구조/coverage | release 목적, 공개 범위, checkpoint inventory, code path, PI family 연결을 포함했다. |
-| 2. 사실/수치 | 1-20h fine-tuning data, DROID/ALOHA/LIBERO, OXE+7 platforms, π0-FAST 4-5x inference cost caveat를 official article과 대조했다. |
-| 3. 코드 구현 | openpi repo의 model/config/transform/policy/training 경로 기준으로 공개 구현 범위를 정리했다. |
+| 1. 구조/coverage | release 목적, source inventory, timeline, 공개 범위, checkpoint inventory, runtime policy contract, fine-tuning config, PyTorch caveat, PI family 연결을 포함했다. |
+| 2. 사실/수치 | 1-20h fine-tuning data, DROID/ALOHA/LIBERO, OXE+7 platforms, π0-FAST 4-5x inference cost caveat, 10k+ hours base checkpoint, DROID 1.0.1/75k annotations/1.8TB, LIBERO 96.85 average를 official article/README/docs와 대조했다. |
+| 3. 코드 구현 | `policy_config.py`, `training/config.py`, `transforms.py`, `pi0_config.py`, `docs/remote_inference.md`, `examples/libero/README.md`, `examples/droid/README_train.md`를 확인했다. |
 | 4. 해석/연결 | OpenPI를 논문 Survey가 아니라 research release/software layer로 분류했다. |
-| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |
+| 5. 문서 품질/빌드 | `npm run build`와 GitHub Pages base path build로 MDX와 route 생성을 확인한다. |
