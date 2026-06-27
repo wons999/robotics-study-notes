@@ -1,6 +1,6 @@
 ---
-title: Robot Olympics / π0.6
-description: π0.6 fine-tuning으로 Moravec's Paradox challenge task를 수행한 pi.website article 정리.
+title: "Moravec's Paradox and the Robot Olympics"
+description: π0.6 fine-tuning으로 Robot Olympics challenge tasks를 수행한 PI article의 수치, event, caveat, family 연결 정리.
 sidebar:
   hidden: true
 ---
@@ -8,80 +8,226 @@ sidebar:
 import SectionFeedback from '../../../../components/SectionFeedback.astro';
 import PaperFigure from '../../../../components/PaperFigure.astro';
 
-# Robot Olympics / π0.6
+# Moravec's Paradox and the Robot Olympics
 
-<SectionFeedback page="Robot Olympics / π0.6" section="메타데이터" />
+<SectionFeedback page="Moravec's Paradox and the Robot Olympics" section="메타데이터" />
 
 ## 메타데이터
 
 | 항목 | 내용 |
 | --- | --- |
 | 글 | Moravec's Paradox and the Robot Olympics |
-| 분류 | pi.website article |
-| 링크 | https://www.pi.website/blog/olympics |
+| 분류 | pi.website article / capability note |
+| 공개 | pi.website blog, 2025-12-22 |
+| 링크 | [official article](https://www.pi.website/blog/olympics), [Benjie Holson challenge](https://generalrobots.substack.com/p/benjies-humanoid-olympic-games) |
 | 연결 모델 | π0.6 |
-| 태그 | robot skills, Moravec's paradox, evaluation, fine-tuning, physical intelligence |
+| 태그 | Moravec's paradox, Robot Olympics, fine-tuning, physical skill, robot foundation model, evaluation |
 
 ## 한 줄 요약
 
-Robot Olympics article은 Benjie Holson의 everyday manipulation challenge를 π0.6 fine-tuning으로 풀어보며, large-scale robot pretraining이 없으면 hard physical skill fine-tuning이 거의 되지 않는다는 메시지를 보여준다.
+이 article은 외부에서 제안된 everyday manipulation challenge인 Robot Olympics를 π0.6 기반 모델에 task별로 fine-tuning해 시험한 capability note이며, 대부분 task에서 9시간 미만의 data로 평균 success `52%`, task progress `72%`를 얻었지만, π0.6 pretraining 없이 standard VLM을 fine-tune한 baseline은 어떤 task도 성공하지 못하고 progress `9%`에 그쳤다는 점을 강조한다.
+
+## Source / Video Inventory
+
+| Source | 본문 반영 위치 | 핵심 근거 |
+| --- | --- | --- |
+| Official article HTML | 메타데이터, Challenge Setup, Event Map, Interpretation | date, π0.6 link, 3/5 gold, 2 silver, 52% success, 72% progress, 9% baseline progress, under 9h data |
+| Official overview image | Official Visual Evidence | article의 overview/OG visual |
+| Official event videos | Event Evidence, Event Map | door, sock, T-shirt, key, mobile key, peanut butter, window cleaning, dog bag, orange, greasy pan, finger cleaning, countertop |
+| Benjie Holson challenge post | Challenge Setup, Citation Trail | task가 PI 내부 benchmark가 아니라 외부 challenge에서 온 것임을 확인 |
+| π0.6 / π*0.6 / human transfer articles | PI Family 안에서의 위치 | fine-tuning, RL reliability, human data transfer 흐름 연결 |
 
 ## Official Visual Evidence
 
-<PaperFigure src="/pi/olympics-og.png" alt="Robot Olympics official overview image" />
+<PaperFigure
+  src="/pi/olympics-og.png"
+  alt="Robot Olympics official overview image"
+  caption="공식 Robot Olympics article의 overview visual. 사람에게 일상적인 조작이 robot에게 왜 어려운지를 Moravec's paradox와 Robot Olympics framing으로 보여준다."
+/>
 
-공식 Robot Olympics article의 overview visual이다. Moravec's Paradox를 everyday manipulation challenge로 바꿔 평가한다는 framing을 보여준다.
+공식 article은 대부분의 qualitative evidence를 video로 제공한다. 아래 embed는 PI가 제공한 official video URL을 그대로 참조하며, 재생하지 않아도 event별 task 종류와 난이도 축을 확인할 수 있게 inventory와 함께 둔다.
+
+<video controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--sl-color-gray-5)' }}>
+  <source src="https://website.pi-asset.com/olympics/Olympics3.mp4" type="video/mp4" />
+</video>
 
 ## 왜 중요한가
 
-이 글은 formal paper가 아니라 capability/evaluation article이다. 그래도 PI survey에서 중요하다. `π0.6`이라는 중간 model generation이 명시되고, `π0.5` 이후 `π*0.6`/RECAP 및 `π0.7`로 가는 사이에 “새 physical skill을 짧은 task data로 fine-tune한다”는 흐름을 보여주기 때문이다.
+이 글은 formal paper가 아니고, exact protocol이나 full result table도 없다. 그래도 PI family에서 중요하다. 이유는 세 가지다.
+
+| 이유 | 의미 |
+| --- | --- |
+| π0.6의 중간 capability signal | π0.5 이후, π*0.6/RECAP과 π0.7 이전의 model generation이 실제 새 physical skill fine-tuning에 쓰인 사례다. |
+| external task selection | task를 PI가 고른 것이 아니라 Benjie Holson의 Robot Olympics challenge에서 가져왔기 때문에 cherry-picking 위험을 일부 줄인다. |
+| baseline contrast | standard VLM fine-tuning baseline이 no success / 9% progress였다는 비교로 robot foundation pretraining 필요성을 강조한다. |
+
+Moravec's paradox 관점에서 이 글의 메시지는 “semantic reasoning이 아니라 physical grounding이 병목”이라는 것이다. LLM/VLM은 task 설명을 이해할 수 있어도, key reorientation, wet sponge, grease, bag edge separation, deformable cloth처럼 몸으로 익혀야 하는 skill basis가 없으면 실행하지 못한다.
 
 ## Challenge Setup
 
-공식 글은 Holson의 Robot Olympics task를 bronze/silver/gold 난이도 framing으로 가져온다. PI는 task를 직접 고른 것이 아니라 외부 proposed challenge에서 가져왔고, 대부분 task에서 9시간 미만 data를 수집했다고 설명한다.
-
 | 항목 | 공식 article 기준 |
 | --- | --- |
-| model | latest model based on π0.6 |
-| 학습 방식 | 각 task에 fine-tuning |
-| data | 대부분 task에서 under 9 hours data |
-| 결과 | 5개 category 중 3개 gold task initial solution, 나머지 2개 silver task |
-| 평균 | success rate 52%, task progress 72% |
-| baseline | π0.6 pretraining 없이 standard VLM을 fine-tune한 baseline은 어떤 task도 성공하지 못했고 average task progress 9% |
+| challenge source | Benjie Holson의 Robot Olympics challenge |
+| task 선택 | PI가 직접 고른 내부 benchmark가 아니라 외부 proposed tasks |
+| model | latest model based on `π0.6` |
+| 학습 방식 | task별 fine-tuning |
+| data 규모 | 대부분 task에서 `under 9 hours`; sock inside-out은 약 `8 hours` |
+| 결과 요약 | 5개 category 중 3개에서 gold-medal task initial solution, 나머지 2개는 silver-medal task |
+| aggregate metric | success rate `52%`, task progress `72%` |
+| baseline | π0.6 없이 standard VLM fine-tuning. 어떤 task도 성공하지 못했고 average task progress `9%` |
+| caveat | policies are often not consistent. 높은 success rate를 위해 모든 optimization을 한 것은 아님 |
+| setup caveat | 일부 task는 original challenge가 mobile robot을 상정하지만 fixed non-mobile robot으로 수행 |
 
-여기서 task progress와 success rate를 구분해야 한다. success는 완전 성공이고, progress는 task 일부를 얼마나 수행했는지 보는 partial measure다.
+여기서 success와 task progress를 구분해야 한다. success는 완전 성공이고, progress는 task 일부를 얼마나 수행했는지 보는 partial measure다. article은 reliability/speed 최적화는 RECAP 같은 별도 work와 연결하고, 이 글 자체는 “π0.6 foundation model을 fine-tune하면 어디까지 되는가”를 보여주는 capability snapshot에 가깝다.
 
-## Events
+## Event Map
 
-| event | 다룬 task | 해석 |
+| Event | Medal level tackled | Task | 왜 어려운가 | 공식 caveat |
+| --- | --- | --- | --- | --- |
+| Full Body / Door | Gold | self-closing lever-handle door를 열고 통과 | door를 잡고 열어둔 채 body를 통과시켜야 하는 coordination | mobile/full-body challenge지만 article demo는 setup에 따라 fixed/non-mobile task도 포함 |
+| Laundry | Silver, Bronze | sock inside-out, inside-out T-shirt folding | deformable cloth, sleeve/sock topology, gripper shape limitation | gold task인 inside-out dress shirt hanging은 gripper가 sleeve 안에 들어가기 어려워 물리적으로 어렵다고 설명 |
+| Basic Tool Use | Gold, Silver, Bronze | key use, peanut butter sandwich, window cleaning | fine manipulation, key reorientation, knife force control, spray bottle/paper towel stages | key task는 original처럼 사람이 key를 건네지 않고 table에서 pick up |
+| Finger Tips | Silver, Gold attempted | dog poop bag, orange peeling | bag edge separation, bag inversion, force balance, orange peel tracking | orange peeling은 gripper로는 불가능해 tool을 사용했고, rule violation이라 success로 count하지 않음 |
+| Slippery When Wet | Gold, Silver, Bronze | greasy pan cleaning, peanut butter off fingers, countertop wiping | liquid, wet sponge, grease/peanut butter, deformable wiping contact | wet contact-rich task라 policy consistency와 force control이 중요 |
+
+## Event Evidence
+
+아래 video는 모든 event를 다 넣기보다, 각 category를 대표하는 official clip을 골라 task family를 빠르게 확인하도록 배치했다.
+
+| Event | Official video |
+| --- | --- |
+| Full Body / Door | `https://website.pi-asset.com/olympics/Door_Drivethrough.mp4` |
+| Laundry / Sock | `https://website.pi-asset.com/olympics/Sock_Insideout.mp4` |
+| Tool Use / Key | `https://website.pi-asset.com/olympics/Keyring.mp4` |
+| Finger Tips / Dog bag | `https://website.pi-asset.com/olympics/Dogbag_Insideout.mp4` |
+| Slippery / Greasy pan | `https://website.pi-asset.com/olympics/Wash_Sink.mp4` |
+
+### Door
+
+<video controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--sl-color-gray-5)' }}>
+  <source src="https://website.pi-asset.com/olympics/Door_Drivethrough.mp4" type="video/mp4" />
+</video>
+
+Door task는 단순 “handle을 누른다”가 아니라 self-closing door를 통과하는 동안 door state를 계속 유지해야 한다. 이 때문에 grasp, push/pull, base/body motion, timing이 서로 묶인다.
+
+### Sock
+
+<video controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--sl-color-gray-5)' }}>
+  <source src="https://website.pi-asset.com/olympics/Sock_Insideout.mp4" type="video/mp4" />
+</video>
+
+Sock inside-out은 약 `8 hours` data로 학습했다고 article이 밝힌다. deformable object가 한 번 접히면 state representation이 빠르게 복잡해지고, gripper geometry가 손가락처럼 fabric 내부를 추적하기 어렵다는 점이 병목이다.
+
+### Key
+
+<video controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--sl-color-gray-5)' }}>
+  <source src="https://website.pi-asset.com/olympics/Keyring.mp4" type="video/mp4" />
+</video>
+
+Key use는 fine manipulation과 in-hand-ish reorientation이 중요하다. article은 original task에서 사람이 key를 건네는 설정과 달리, robot이 table에서 key를 집도록 했다고 설명한다. 즉 grasp acquisition까지 포함되어 난도가 올라간다.
+
+### Dog Bag
+
+<video controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--sl-color-gray-5)' }}>
+  <source src="https://website.pi-asset.com/olympics/Dogbag_Insideout.mp4" type="video/mp4" />
+</video>
+
+Dog poop bag task는 edge separation이 핵심 병목이다. 봉투 입구를 벌려 gripper에 씌우고, 물체를 집은 뒤 bag을 뒤집어야 한다. tactile 없이 vision/action만으로 bag 상태를 안정적으로 추적하기 어려운 contact-rich deformable task다.
+
+### Greasy Pan
+
+<video controls muted playsInline preload="metadata" style={{ width: '100%', borderRadius: '8px', border: '1px solid var(--sl-color-gray-5)' }}>
+  <source src="https://website.pi-asset.com/olympics/Wash_Sink.mp4" type="video/mp4" />
+</video>
+
+Greasy pan은 sponge, water, grease가 얽히는 wet contact task다. 단순 trajectory replay로는 sponge compression, surface contact, water/grease state 변화가 맞지 않기 쉽다. 이 task family는 후속 RECAP/RLT처럼 reliability와 force/contact refinement가 왜 필요한지를 잘 보여준다.
+
+## Quantitative Claims
+
+| Claim | 해석 |
+| --- | --- |
+| 3 out of 5 categories에서 gold task initial solution | π0.6 fine-tuning으로 외부 challenge의 최상위 task 일부를 처음 풀었다는 capability claim |
+| 나머지 2 categories는 silver task | gold task 두 개는 hardware/gripper constraint 때문에 직접 성공으로 count하지 않음 |
+| most tasks under 9 hours data | task별 대규모 teleoperation 없이도 foundation model fine-tuning으로 initial solution을 얻었다는 주장 |
+| average success 52% | robust deployment 성능이라기보다 initial policies의 완전 성공률 |
+| task progress 72% | partial completion까지 보면 더 높은 진행률 |
+| standard VLM baseline 0 success / 9% progress | generic VLM fine-tuning만으로는 physical skill basis가 부족하다는 비교 |
+
+article이 직접 “policies are often not consistent”라고 제한을 둔 점을 중요하게 봐야 한다. 이 글은 π0.6이 이미 production-grade로 안정적이라는 주장이 아니라, physical foundation pretraining이 없으면 시작조차 어려운 task를 작은 task data로 어느 정도 열 수 있다는 evidence다.
+
+## Model / Training Interpretation
+
+공식 article은 architecture diagram이나 optimizer/hyperparameter를 제공하지 않는다. 따라서 여기서는 π0.6 family context를 기준으로 해석을 제한한다.
+
+| 축 | article에서 확인되는 것 | 확인되지 않는 것 |
 | --- | --- | --- |
-| full body / door | self-closing lever-handle door를 열고 통과 | mobile/full-body coordination과 door interaction |
-| laundry | sock inside-out, inside-out t-shirt folding | deformable object, gripper geometry limitation |
-| basic tool use | key use, peanut butter sandwich | fine manipulation, reorientation, tool force control |
-| finger tips | dog poop bag, orange peeling | bag edge separation, force balance, gripper limitation |
-| slippery when wet | greasy pan cleaning, peanut butter off fingers, counter wiping | liquid/wet sponge/grease interaction |
+| base | π0.6 기반 latest model | exact checkpoint/config |
+| downstream | task별 fine-tuning | optimizer, batch size, step count, data split |
+| data | 대부분 task under 9h, sock ~8h | episode count, success/failure distribution |
+| baseline | standard VLM fine-tuning without π0.6 | baseline architecture/config detail |
+| evaluation | success rate, task progress | per-task full table, confidence intervals |
 
-Article은 gold task 중 일부가 현재 robot gripper로 물리적으로 불가능하다고 설명한다. 예를 들어 shirt sleeve 내부에 gripper가 들어가지 못하거나, orange peeling은 tool 사용이 필요해 rule violation으로 성공 카운트하지 않는다. 이 caveat는 capability를 과장하지 않기 위해 중요하다.
+이 때문에 이 페이지는 paper survey가 아니라 article note로 둔다. π0.6의 architecture와 RECAP의 RL/fine-tuning loop는 각각 [π*0.6 / RECAP](../pistar06-recap-learns-from-experience/)과 다른 PI survey에서 확인하는 것이 맞다.
 
-## 해석
+## Interpretation
 
-Moravec's paradox의 핵심은 “사람에게 쉬운 physical behavior가 machine에게 어렵다”는 것이다. Article은 LLM/VLM이 web text/image에서 얻는 semantic knowledge만으로는 physical skill을 grounding할 수 없고, 실제 embodied data가 필요하다고 주장한다. π0.6 같은 VLA foundation model은 다양한 physical behavior basis를 pretraining으로 잡아 놓고, 새 task에는 비교적 작은 fine-tuning data로 적응한다.
+이 article의 핵심 해석은 Moravec's paradox를 data sparsity 관점으로 바꾸는 것이다.
 
-이 결과는 `π*0.6 / RECAP`과 직접 연결된다. Olympics article은 task별 fine-tuning capability를 보여주고, RECAP은 autonomous experience/correction/RL을 통해 reliability와 throughput을 올리는 방법을 제시한다.
+| 관점 | 설명 |
+| --- | --- |
+| LLM/VLM knowledge | web text/image는 “task가 무엇인지”를 설명할 수 있지만, sponge를 어느 힘으로 누르고 key를 어떻게 돌릴지는 직접 담지 않는다. |
+| Physical skill basis | diverse robot behavior pretraining은 downstream task를 위한 low-level physical prior를 제공한다. |
+| Fine-tuning | 새 task마다 모든 것을 처음부터 배우는 것이 아니라, 기존 physical prior를 task-specific data로 조정한다. |
+| 후속 병목 | low-level skill basis가 좋아질수록 bottleneck은 reliability, speed, higher-level instruction, autonomous experience로 이동한다. |
+
+이 관점은 바로 다음 흐름과 연결된다. [Human-to-Robot Transfer](../human-to-robot-transfer/)는 task-specific data source를 human video로 넓히고, [π*0.6 / RECAP](../pistar06-recap-learns-from-experience/)은 autonomous rollout/correction/RL로 reliability와 throughput을 끌어올린다.
+
+## PI Family 안에서의 위치
+
+| 연결 문서 | 연결점 |
+| --- | --- |
+| [π0.5](../pi05-open-world-generalization/) | household/open-world generalization과 verbal instruction/high-level protocol의 전 단계 |
+| [Learning from Human Videos](../human-to-robot-transfer/) | 새 task를 배우는 data source를 robot teleoperation에서 human egocentric video로 확장 |
+| [π*0.6 / RECAP](../pistar06-recap-learns-from-experience/) | Olympics가 “task별 fine-tuning으로 initial solution”이라면 RECAP은 on-robot experience로 reliability/speed를 최적화 |
+| [RLT](../rlt-efficient-online-rl/) | precise contact phase를 online RL로 개선하는 후속 축 |
+| [π0.7](../pi07-steerable-model/) | specialist/fine-tuned behavior와 strategy metadata를 single generalist steering으로 이어가는 흐름 |
 
 ## 한계와 주의
 
-- formal benchmark paper가 아니므로 exact protocol, random seed, full failure distribution은 제한적이다.
-- policies are often not consistent라고 article이 직접 말한다. 평균 success 52%는 robust deployment level로 읽으면 안 된다.
-- physical impossibility/robot gripper limitation이 일부 task 결과를 제한한다.
-- baseline은 standard VLM fine-tuning으로, 비교 목적은 “robot foundation pretraining이 필요한가”에 가깝다.
+| 한계 | 의미 |
+| --- | --- |
+| formal benchmark paper가 아님 | exact protocol, task split, per-task success table, seed, statistical analysis가 없다. |
+| consistency 부족 | average success 52%이며 article도 policies are often not consistent라고 직접 제한한다. |
+| hardware limitation | gripper width, tool availability, mobile/fixed setup 차이가 일부 medal result를 제한한다. |
+| baseline detail 부족 | standard VLM baseline이 무엇인지 full config가 공개되지 않는다. |
+| video evidence 중심 | qualitative demo가 많고, exhaustive failure distribution은 공개되지 않는다. |
+| public reproducibility 제한 | π0.6 exact checkpoint와 task data/fine-tuning code가 공개 자료에서 확인되지 않는다. |
+
+## Citation Trail
+
+| 흐름 | 이 article에서의 역할 | 읽을 포인트 |
+| --- | --- | --- |
+| Moravec's Paradox | 문제 framing | cognition보다 everyday physical interaction이 machine에 어렵다는 역설. |
+| Benjie Holson Robot Olympics | external challenge source | task가 PI 내부에서만 고른 것이 아니라 외부 제안 challenge라는 점. |
+| Robot foundation models / VLA | solution framing | semantic prior와 physical behavior prior를 결합해야 small task fine-tuning이 가능하다. |
+| π0.5 | 이전 model generation | verbal instruction/high-level training과 household generalization이 후속 π0.6 capability의 배경. |
+| π*0.6 / RECAP | reliability/speed route | Olympics initial solution을 더 안정적이고 빠르게 만드는 방향. |
+| Human-to-Robot Transfer | data source route | 새 task를 위한 human egocentric data 활용 가능성. |
+
+## Study Takeaways
+
+1. Robot Olympics는 π0.6의 “새 physical skill fine-tuning” capability를 보여주는 article note다.
+2. 성공률 52%는 좋은 신호지만 robust deployment로 읽으면 안 된다. consistency 문제는 article이 직접 인정한다.
+3. baseline no-success / 9% progress는 generic VLM만으로 physical skill을 grounding하기 어렵다는 근거다.
+4. Gold task를 풀지 못한 category는 failure라기보다 hardware/task-rule caveat까지 함께 읽어야 한다.
+5. 이 글은 RECAP, RLT, human-to-robot transfer가 왜 필요한지 보여주는 중간 연결고리다.
 
 ## 5-Pass 검증 메모
 
 | Pass | 결과 |
 | --- | --- |
-| 1. 구조/coverage | challenge setup, events, quantitative claims, baseline, caveat를 포함했다. |
-| 2. 사실/수치 | 3/5 gold, 2 silver, under 9h data, 52% success, 72% progress, baseline 9% progress/no success를 official article과 대조했다. |
-| 3. 코드 구현 | article note이므로 public code/checkpoint 재현은 확인 대상이 아님을 명시했다. |
-| 4. 해석/연결 | π0.6과 π*0.6/RECAP 사이의 중간 capability signal로 연결했다. |
-| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |
+| 1. 구조/coverage | metadata, source/video inventory, challenge setup, event map, video evidence, quantitative claims, model/training boundary, interpretation, family connection, limitations를 포함했다. |
+| 2. 사실/수치 | official article 기준으로 2025-12-22, π0.6, 3/5 gold, 2 silver, under 9h, sock ~8h, 52% success, 72% task progress, baseline no success / 9% progress를 대조했다. |
+| 3. 시각 근거 | 공식 OG image와 article의 official video URLs를 embed/inventory로 반영했다. PDF나 static figure는 공개되지 않았다. |
+| 4. 코드 구현 | article note이므로 paper-specific code/checkpoint는 공개 확인 불가로 분리했다. |
+| 5. 문서 품질/빌드 | `npm run build`와 `BASE_PATH=/robotics-study-notes SITE_URL=https://wons999.github.io npm run build`를 모두 통과했다. |
