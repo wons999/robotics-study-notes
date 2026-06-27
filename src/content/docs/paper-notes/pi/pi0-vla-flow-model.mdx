@@ -49,6 +49,14 @@ import PaperFigure from '../../../../components/PaperFigure.astro';
 | Figure 14 | Appendix method detail | flow timestep sampling은 uniform이 아니라 low/noisy timestep을 강조하는 shifted beta다. |
 | Table I | Appendix inference detail | RTX 4090 기준 on-board 73ms, off-board 86ms inference latency다. |
 
+## Source/Image Inventory
+
+| Source | Local asset / code path | 본문 반영 위치 | 읽을 때 주의할 점 |
+| --- | --- | --- | --- |
+| arXiv PDF `2410.24164` | `/pi/pi0-paper/fig01-...fig14...`, `/pi/pi0-paper/table01-inference-time.png` | Overview, Dataset, Method, Experiments, Appendix | PDF figure/table은 논문 실험과 수식 기준이다. 공개 OpenPI config와 수치가 다르면 PDF 기준과 code 기준을 분리한다. |
+| PI website π0 article | `/pi/pi0-og.png`, `/pi/pi0-hero-video-poster.jpg`, `/pi/pi0-robot-*.png` | PI family overview와 article-level visual context | article visual은 release identity/qualitative context이며, 논문 result figure를 대체하지 않는다. |
+| Official OpenPI repository | `src/openpi/models/pi0.py`, `src/openpi/models/pi0_config.py`, `src/openpi/training/config.py`, `src/openpi/transforms.py`, `src/openpi/policies/policy_config.py` | Code-Level Check, OpenPI Config Snapshot | 공개 repo는 checkpoint 사용/fine-tuning 중심이다. paper-scale internal training mixture를 그대로 재현한다고 쓰면 안 된다. |
+
 ## Overview
 
 <PaperFigure src="/pi/pi0-paper/fig01-framework-teaser.png" alt="Figure 1: π0 framework teaser" />
@@ -164,6 +172,36 @@ Table I의 핵심은 flow matching 10 step이 전체 latency를 지배하지 않
 Appendix B의 PaliGemma/Gemma 설정은 `width=2048`, `depth=18`, `mlp_dim=16384`, `num_heads=18`, `num_kv_heads=1`, `head_dim=256`이다. action expert는 VLM backbone보다 작게 설계되어 inference 반복 비용을 줄인다. 전체 모델은 PaliGemma 3B + action expert 300M, 약 3.3B parameter다.
 
 π0-small은 단순히 “작은 π0”가 아니다. VLM initialization이 없고, DistilBERT language encoder, R26-S-32 ResNet-ViT hybrid image encoder, observation encoder와 action expert 분리, DiT/AdaLN-Zero style action expert를 사용한다. 따라서 Figure 7/9에서 π0-small과 π0 차이는 parameter scale, VLM pre-training, architecture detail이 함께 섞인 ablation이다.
+
+## OpenPI Config Snapshot
+
+아래 값은 2026년 현재 공식 `Physical-Intelligence/openpi` repository의 `Pi0Config`와 model transform 기준이다. 논문 내부 구현과 공개 repo의 checkpoint/fine-tuning 구현은 같은 계열이지만, 공개 repo는 다양한 downstream robot에 맞추기 위해 padding dimension과 transform 기본값이 다르게 잡혀 있다.
+
+| 항목 | OpenPI 기본값 | 의미 |
+| --- | --- | --- |
+| `model_type` | `ModelType.PI0` | `pi05=False`일 때의 기본 모델 타입 |
+| `dtype` | `bfloat16` | 모델 embedding/연산 기본 dtype |
+| `paligemma_variant` | `gemma_2b` | PaliGemma/Gemma 쪽 VLM backbone anchor |
+| `action_expert_variant` | `gemma_300m` | 별도 action expert의 scale |
+| `action_dim` | 32 | 공개 repo의 state/action padding dimension. 논문 PDF의 largest robot dimension 18과 구분해야 한다. |
+| `action_horizon` | 50 | 논문 기본 `H=50`과 일치하는 public config default |
+| `max_token_len` | 48 | π0 prompt token 길이 default. π0.5는 `200`으로 달라진다. |
+| `pi05` | false | true가 되면 state를 discrete language token 쪽에 넣고 timestep을 AdaRMSNorm으로 주입한다. |
+| image transform | `ResizeImages(224, 224)` | public OpenPI transform 기준. 논문 figure의 robot camera 원본 해상도와 별도 preprocessing 계약이다. |
+| tokenizer | `PaligemmaTokenizer(max_token_len)` | prompt를 tokenized prompt/mask로 변환한다. |
+| state/action transform | `PadStatesAndActions(action_dim)` | state와 action을 32차원으로 zero-pad한다. |
+
+공개 OpenPI의 `inputs_spec`는 세 camera slot을 기본으로 둔다.
+
+| 입력/출력 | Shape |
+| --- | --- |
+| `base_0_rgb`, `left_wrist_0_rgb`, `right_wrist_0_rgb` | `[B, 224, 224, 3]` |
+| image masks | `[B]` per camera |
+| state | `[B, action_dim=32]` |
+| tokenized prompt | `[B, max_token_len=48]` |
+| actions | `[B, action_horizon=50, action_dim=32]` |
+
+이 표는 논문 수치와 모순되는 것이 아니라 출처가 다르다. 논문은 PI internal robot mixture에서 largest robot dimension 18에 맞춘다고 설명하고, 공개 OpenPI는 broader checkpoint/fine-tuning interface를 위해 32차원 padding을 사용한다.
 
 ## Training Recipe
 
@@ -310,6 +348,39 @@ Evaluation rubric은 결과 해석에 직접 필요하다.
 
 주의할 점은 논문 수식과 공개 코드의 flow convention이다. 논문은 `A^tau_t = tau A_t + (1 - tau) epsilon`, target `A_t - epsilon`, inference `tau=0 -> 1`로 설명한다. 공개 구현은 diffusion convention에 맞춰 `t=1` noise, `t=0` target을 쓰고 negative `dt`로 update한다. 수학적으로 대응되지만, sign과 time direction을 섞어 쓰면 loss 해석을 틀리기 쉽다.
 
+### OpenPI Loss / Sampling Contract
+
+`Pi0.compute_loss`와 `Pi0.sample_actions` 기준으로 공개 구현의 runtime contract는 다음처럼 읽을 수 있다.
+
+| 단계 | 공개 코드 기준 |
+| --- | --- |
+| prefix embedding | image tokens와 tokenized prompt를 concat하고, prefix-LM attention mask를 만든다. |
+| suffix embedding | π0에서는 state token 1개와 noisy action token `H=50`개를 만든다. π0.5에서는 state가 discrete prompt 쪽으로 이동한다. |
+| time sampling | `time ~ Beta(1.5, 1) * 0.999 + 0.001` |
+| noising convention | `x_t = time * noise + (1 - time) * actions` |
+| velocity target | `u_t = noise - actions` |
+| prediction | suffix output의 마지막 `action_horizon` token을 `action_out_proj`로 action dimension에 투영한다. |
+| loss | `mean((v_t - u_t)^2, action_dim)` |
+| sampling start | `x_t`를 Gaussian noise로 초기화하고 `time=1.0`에서 시작한다. |
+| sampling update | `dt=-1/num_steps`, `x_t <- x_t + dt * v_t`, 기본 `num_steps=10` |
+| KV cache | prefix image/language token은 먼저 forward해 cache하고, suffix state/action token만 반복 업데이트한다. |
+
+논문 표기와 공개 코드 표기를 연결하면, 논문은 clean action으로 가는 방향을 `A_t - epsilon`으로 쓰고, 공개 코드는 diffusion convention에서 noise에서 clean으로 내려오는 방향을 `noise - actions`와 negative `dt`로 표현한다. 즉 부호와 시간 방향은 다르지만, “noise와 clean action 사이의 vector field를 학습하고 Euler integration으로 action chunk를 복원한다”는 구조는 같다.
+
+### Public Training / Checkpoint Boundary
+
+OpenPI README와 `training/config.py` 기준 공개 checkpoint와 training config는 사용 목적별로 나뉜다.
+
+| 구분 | 공개 코드 기준 의미 |
+| --- | --- |
+| `gs://openpi-assets/checkpoints/pi0_base` | 10k+ hours robot data로 pre-trained된 base checkpoint. 새 robot/task fine-tuning의 출발점이다. |
+| `pi0_aloha`, `pi0_aloha_towel`, `pi0_aloha_tupperware` | ALOHA 계열 inference/fine-tuning config. 기본 `Pi0Config()`를 사용한다. |
+| `pi0_droid` | DROID inference config. `Pi0Config(action_horizon=10)`으로 override한다. |
+| `pi0_libero` | LIBERO fine-tuning example. `pi0_base/params`를 불러오고 `num_train_steps=30_000`으로 설정된다. |
+| transform boundary | `ResizeImages(224,224)`, prompt tokenization, state/action padding, norm stats loading이 model 앞단에서 일어난다. |
+
+따라서 paper의 internal pretraining/post-training 결과와 OpenPI의 public fine-tuning config를 같은 실험 수치처럼 합치면 안 된다. Survey에서는 paper result는 PDF 기준으로, 사용법과 재현 가능 구현은 OpenPI 기준으로 분리한다.
+
 ## 한계와 주의
 
 - 논문은 dataset composition/weighting을 완전히 해결된 문제로 보지 않는다. 어떤 data를 얼마나 넣어야 하는지는 open problem이다.
@@ -340,5 +411,5 @@ Evaluation rubric은 결과 해석에 직접 필요하다.
 | 1. 구조/coverage | 문제의식, 시스템, dataset, method, architecture, training, result, appendix, code-level check를 유지했다. |
 | 2. PDF figure/table pass | `https://arxiv.org/pdf/2410.24164` PDF를 확보하고, `pdftotext` caption search로 Figure 1-14와 Table I을 전수 확인했다. |
 | 3. image asset pass | PDF 17페이지를 임시 렌더링해 위치를 확인한 뒤, 최종 저장소에는 Figure 1-14/Table I crop asset 15개만 남겨 본문에 배치했다. |
-| 4. result interpretation pass | Figure 7, 9, 11, 13을 각각 out-of-box, language, fine-tuning, complex task 결과로 분리해 baseline 조건과 caveat를 적었다. |
-| 5. build pass | `PaperFigure`로 PDF crop asset을 base-aware local image로 연결하고, `npm run build`와 GitHub Pages base path build로 확인한다. |
+| 4. code/config pass | 공식 OpenPI `pi0.py`, `pi0_config.py`, `training/config.py`, `transforms.py`, `policy_config.py`를 확인해 public `action_dim=32`, `action_horizon=50`, `max_token_len=48`, flow convention, KV-cache sampling path, checkpoint/fine-tuning boundary를 반영했다. |
+| 5. result interpretation/build pass | Figure 7, 9, 11, 13을 각각 out-of-box, language, fine-tuning, complex task 결과로 분리해 baseline 조건과 caveat를 적고, `npm run build`와 GitHub Pages base path build로 확인한다. |
