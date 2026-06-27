@@ -1,114 +1,379 @@
 ---
-title: Learning from Human Videos
-description: human video를 VLA fine-tuning data로 쓰는 PI 연구의 method, scaling result, representation analysis 정리.
+title: Emergence of Human to Robot Transfer
+description: egocentric human video를 π0.5 VLA fine-tuning data로 흡수할 때 human-to-robot transfer가 어떻게 scale과 함께 나타나는지 정리한 Survey.
 sidebar:
   hidden: true
 ---
 
 import SectionFeedback from '../../../../components/SectionFeedback.astro';
 import PaperFigure from '../../../../components/PaperFigure.astro';
-import PublicImage from '../../../../components/PublicImage.astro';
 
-# Learning from Human Videos
+# Emergence of Human to Robot Transfer
 
-<SectionFeedback page="Learning from Human Videos" section="메타데이터" />
+<SectionFeedback page="Emergence of Human to Robot Transfer" section="메타데이터" />
 
 ## 메타데이터
 
 | 항목 | 내용 |
 | --- | --- |
-| 논문 | Learning Vision-Language-Action Models from Human Videos |
-| pi.website 제목 | Learning from Human Videos |
-| 공개 | arXiv 2025-10-09, pi.website research 2025-10-09 |
-| 링크 | https://www.pi.website/research/human_to_robot, https://arxiv.org/abs/2510.13898 |
-| 연결 모델 | π0.5 |
-| 태그 | human video, egocentric data, co-finetuning, emergent transfer, scaling |
+| 논문 | Emergence of Human to Robot Transfer in Vision-Language-Action Models |
+| 저자/그룹 | Simar Kareer, Karl Pertsch, James Darpinian, Judy Hoffman, Danfei Xu, Sergey Levine, Chelsea Finn, Suraj Nair / Physical Intelligence, Georgia Tech |
+| 공개 | pi.website research article 2025-12-16, arXiv 2025-12-27 |
+| 링크 | [official article](https://www.pi.website/research/human_to_robot), [official PDF](https://www.pi.website/download/human_to_robot.pdf), [arXiv 2512.22414](https://arxiv.org/abs/2512.22414) |
+| 연결 모델 | π0.5, π0.5 + ego |
+| 태그 | egocentric human video, human-to-robot transfer, co-finetuning, cross-embodiment, π0.5, FAST, flow matching |
 
 ## 한 줄 요약
 
-이 연구는 egocentric human video를 3D hand-position action이 있는 또 하나의 embodiment처럼 co-finetune하면, 별도 transfer mechanism 없이도 π0.5 scale에서 human-to-robot transfer가 나타나고, human-only scenario generalization에서 약 2배 성능 향상을 얻는다는 결과다.
+이 논문은 egocentric human video를 별도 hand-to-robot 변환 모듈 없이 또 하나의 embodiment data처럼 `π0.5`에 50:50 co-finetune하면, 충분히 다양한 robot pretraining 이후 human-only scenario의 scene/object/task 정보를 robot policy가 활용할 수 있고 평균 성능이 거의 2배로 좋아진다는 것을 보인다.
+
+## Source/Image Inventory
+
+| Source | Local asset / code path | 본문 반영 위치 | 주의 |
+| --- | --- | --- | --- |
+| Official article | `/pi/human-to-robot-og.png`, `/pi/human-transfer-hand.png`, `/pi/human-transfer-robot-arm.png` | Official Visual Evidence | article은 2025-12-16 공개. 올바른 arXiv ID는 `2512.22414`다. |
+| Official/arXiv PDF | `/pi/human-to-robot-paper/fig01-...`부터 `/fig13-...` | Figure Inventory, Method, Results, Appendix | 13 pages, Figure 1-13. 별도 table은 없다. |
+| PI family context | [π0.5](../pi05-open-world-generalization/), [FAST](../pi0-fast-action-tokenization/) | Model Architecture, Citation Trail | 이 논문은 π0.5를 base로 쓰며 action objective는 FAST token + flow matching action expert를 이어받는다. |
+| Code boundary | [OpenPI](../openpi-release/) | Code-Level Check | 공개 OpenPI는 π0/π0.5 계열 구현 참고 자료다. 이 논문의 human-video pipeline/checkpoint는 별도 공개 구현으로 확인되지 않는다. |
+
+## Figure / Table Inventory
+
+| 원문 항목 | Survey 반영 위치 | 핵심으로 읽을 내용 |
+| --- | --- | --- |
+| Fig. 1 | Overview | pretraining diversity가 커질수록 human data gain이 나타나는 emergence claim. |
+| Fig. 2 | Scaling result | human data 추가 이득이 0/25%에서는 거의 없고 75/100/100+X-emb에서 커진다. |
+| Fig. 3 | Benchmark / mixture | human data가 새 concept을 제공하고 nearest-neighbor robot data와 50:50 mixture로 fine-tune된다. |
+| Fig. 4 | Model architecture | π0.5 기반, high-level subtask prediction과 low-level action prediction을 human/robot 모두에 적용한다. |
+| Fig. 5 | Representation analysis | VLM final-layer embedding TSNE에서 pretraining diversity가 human/robot representation overlap을 키운다. |
+| Fig. 6 | Human data apparatus | head camera + left/right wrist cameras, SLAM, hand keypoints 기반 human trajectory collection. |
+| Fig. 7 | Main result | Bussing/Spice/Dresser/Eggs 4 tasks에서 π0.5+ego가 π0.5보다 크게 개선된다. |
+| Fig. 8 | Eggs scaling | robot-only는 Sort Eggs에서 plateau하지만 human+robot은 pretraining scale과 함께 개선된다. |
+| Fig. 9 | Target robot comparison | Eggs/Dresser는 human data가 target robot data와 비슷하게 도움을 주지만 Bussing은 target robot data가 더 강하다. |
+| Fig. 10 | Cross-embodiment comparison | UR5 robot data와 human data 모두 ARX transfer에 lift를 주지만 target robot data에는 못 미친다. |
+| Fig. 11 | HL vs LL transfer | human data는 high-level subtask와 low-level action prediction 모두에 영향을 준다. |
+| Fig. 12 | Wrist camera ablation | Dresser/Bussing은 wrist camera 이득이 있고 Spice/Eggs는 큰 추가 이득이 없다. |
+| Fig. 13 | Per-task scaling | task별로 zero-shot improvement와 human transferability가 반드시 같이 움직이지 않는다. |
 
 ## Official Visual Evidence
 
-<PaperFigure src="/pi/human-to-robot-og.png" alt="Learning from Human Videos official overview image" />
+<PaperFigure
+  src="/pi/human-to-robot-og.png"
+  alt="Official overview image for human to robot transfer"
+  caption="공식 article overview. human video, robot data, scaled VLA pretraining이 만나면서 human-to-robot transfer가 나타난다는 메시지를 시각화한다."
+/>
 
-공식 article의 overview visual이다. human video와 robot execution 사이의 domain gap을 이 연구가 직접 겨냥한다는 점을 보여준다.
-
-| Human-to-robot transfer visual |  |
-| --- | --- |
-| <PublicImage src="/pi/human-transfer-hand.png" alt="Human hand example" /> | <PublicImage src="/pi/human-transfer-robot-arm.png" alt="Robot arm example" /> |
-
-공식 transfer section의 hand/robot visual이다. human data를 별도 transfer mechanism 없이 3D hand-position action이 있는 embodiment처럼 co-finetune한다는 설정을 시각적으로 확인한다.
+<PaperFigure
+  src="/pi/human-to-robot-paper/fig01-emergent-transfer-overview.png"
+  alt="Figure 1 emergent human to robot transfer overview"
+  caption="Fig. 1. pretraining robot dataset의 diversity가 커질수록, human embodiment data를 함께 fine-tuning했을 때의 성능 lift가 커진다."
+/>
 
 ## 문제의식
 
-Robot trajectory는 비싸고 느리며, task/site마다 새로 모으기 어렵다. 반대로 human egocentric video는 쉽게 모을 수 있지만 robot과 morphology/action space가 다르다. 기존 연구는 image masking, human hand를 robot hand로 바꾸는 generative conversion, humanoid hardware alignment 같은 별도 transfer mechanism을 쓰기도 한다. PI 연구의 질문은 더 단순하다.
+Robot data는 비싸고 느리며 embodiment와 site가 바뀔 때마다 새로 모으기 어렵다. 반대로 human egocentric video는 wearable camera로 쉽게 모을 수 있고 real-world task variation을 많이 담을 수 있지만, robot과 morphology, camera viewpoint, action space가 다르다.
 
-> robot foundation model을 충분히 크게 pretrain하면, human video를 특별한 alignment 없이도 fine-tuning data source로 흡수할 수 있는가?
+이 논문의 질문은 다음처럼 단순하다.
 
-## Method: Simple Human-Robot Co-Finetuning
-
-| 구성 | 공식 글 기준 내용 |
+| 질문 | 의미 |
 | --- | --- |
-| base model | full π0.5 |
-| human data | egocentric wearable-camera human videos |
-| human action label | 3D hand positions |
-| robot data | task와 관련된 robot demonstrations |
-| recipe | human video를 기존 robot embodiment 중 하나처럼 취급해 robot data와 mixture fine-tuning |
-| special mechanism | masking/conversion/humanoid matching 없이 진행했다고 설명 |
+| human video를 robot policy 학습에 직접 넣을 수 있는가? | hand masking, robot-hand generation, humanoid hardware alignment 같은 명시적 transfer mechanism 없이 가능한지 본다. |
+| 어떤 조건에서 가능한가? | model 자체보다 pretraining robot data의 scene/task/embodiment diversity가 transferability를 만든다는 가설을 검증한다. |
+| human data는 무엇을 주는가? | low-level action만이 아니라 scene rule, object category, task semantic concept을 제공한다. |
 
-이 접근의 포인트는 “human video에서 robot action을 직접 복원했다”가 아니다. Human video는 object ordering, affordance, task-specific arrangement, scene strategy를 제공하고, scaled VLA representation이 이를 robot execution에 맞게 흡수하는지 보는 실험이다.
+핵심은 "human video만으로 robot을 학습한다"가 아니다. 충분히 diverse하게 pretrain된 `π0.5`가 있을 때, human video를 robot data mixture에 넣으면 robot data에 없던 concept을 policy가 흡수할 수 있는지 확인한다.
 
-## Experiments and Results
+## System / Data Collection
 
-공식 article은 human demonstration에만 존재하는 scenario에서 robot policy를 평가했다. 예시는 다음과 같다.
+<PaperFigure
+  src="/pi/human-to-robot-paper/fig06-data-collection-apparatus.png"
+  alt="Figure 6 human data collection apparatus"
+  caption="Fig. 6. human data는 head-mounted camera와 양쪽 wrist camera로 수집한다. wrist camera는 robot wrist view와 sensor gap을 줄이기 위한 설계다."
+/>
 
-| scenario | robot data | human data가 주는 정보 |
-| --- | --- | --- |
-| sorting eggs | robot data는 egg를 carton에 넣는 행동을 포함 | 색이 다른 egg를 여러 carton에 어떻게 분류할지 보여줌 |
-| dresser tidying | diverse bedroom robot scenes | target dresser에서 jewelry, hair ties 등을 적절한 container에 배치하는 scene-specific rule |
-| toolbox organization | robot manipulation data | tool/object category와 placement organization |
-| sorting fruit | robot manipulation data | object category별 sorting rule |
+Human data collection은 robot teleoperation episode와 비슷한 형태로 맞춘다. 사람이 wearable camera를 쓰고 task를 반복 수행하며, 손이 camera FOV 안에 들어오도록 지시받는다.
 
-핵심 결과는 human video를 넣은 co-finetuning이 4개 generalization scenarios에서 약 2x improvement를 보였다는 점이다. 공식 글은 이것을 emergent human-to-robot transfer로 해석한다. 특별한 transfer learning module 없이 pre-trained π0.5와 mixture co-training만으로 효과가 나타났기 때문이다.
+| 항목 | 논문 기준 |
+| --- | --- |
+| device | head-worn high-resolution camera, optional left/right wrist cameras |
+| synchronization | head camera와 두 wrist camera가 time-synchronized stream을 제공 |
+| benchmark human data | bussing 3h, spice 3h, dresser 3h, sort eggs 5h |
+| processing | visual SLAM으로 head camera의 6D motion `e_t in R^6`를 world frame 기준으로 복원 |
+| hand tracking | 두 손 각각 17개 3D keypoint `h_t^e in R^{3 x 17}`를 head camera frame에서 복원 |
+| language annotation | robot teleoperation data와 유사하게 각 arm action을 text-based subtask로 dense annotation |
 
-## Scaling Analysis
+논문 discussion은 이 recipe가 아직 "vast passive human video"를 바로 쓰는 단계가 아니라는 점도 분명히 한다. 현재 benchmark는 episodic data이며 human data 규모는 10s of hours 수준이다.
 
-이 연구의 더 중요한 부분은 scaling ablation이다. 논문/글은 “human data가 도움이 됐다”에서 멈추지 않고, robot pretraining diversity가 human data 흡수 능력을 어떻게 바꾸는지 본다.
+## Benchmark Dataset
+
+<PaperFigure
+  src="/pi/human-to-robot-paper/fig03-training-mixture-benchmark.png"
+  alt="Figure 3 training mixture and benchmark"
+  caption="Fig. 3. fine-tuning mixture는 generalization task의 human data와 가장 가까운 robot task data를 50:50으로 섞는다. evaluation은 human data에만 나타난 새 concept에서 수행된다."
+/>
+
+Benchmark는 human data에만 있는 concept을 robot이 실행할 수 있는지 보는 네 가지 scenario로 구성된다.
+
+| 축 | task | robot data가 가진 것 | human data가 추가하는 것 | score |
+| --- | --- | --- | --- | --- |
+| Scene transfer | Spice | 여러 robot kitchen/scene의 spice rack tidying | unseen target kitchen | binary success |
+| Scene transfer | Dresser | 다양한 bedroom/dresser tidying | target apartment dresser의 jewelry/hair tie placement rule | binary success |
+| Object transfer | Bussing | trash/dinnerware 중심 table bussing | kitchen tools 같은 unseen object set | 9 items 중 correctly bussed items, `[0, 1]` normalize |
+| Task transfer | Sort Eggs | egg picking/placing into carton | white/brown eggs를 color별 carton에 sorting하는 semantic rule | correctly sorted eggs + final carton closing, `[0, 1]` normalize |
+
+Appendix A에 따르면 각 experiment는 `20-40`회 evaluation을 수행하고 error bar는 `1 standard error`다.
+
+## Method
+
+<PaperFigure
+  src="/pi/human-to-robot-paper/fig04-model-architecture.png"
+  alt="Figure 4 model architecture"
+  caption="Fig. 4. π0.5 VLA를 그대로 사용하되 human/robot data 모두에서 high-level subtask prediction과 low-level action prediction을 학습한다."
+/>
+
+방법론은 "human을 또 하나의 robot embodiment처럼 다룬다"로 요약할 수 있다. 명시적 alignment loss, hand-to-robot rendering, robot morphology conversion을 추가하지 않는다.
+
+| 단계 | 내용 |
+| --- | --- |
+| base model | `π0.5` VLA |
+| human observation | head/wrist camera images |
+| human low-level action | 손의 6DoF end-effector trajectory와 head/base motion에서 만든 relative action |
+| robot low-level action | robot end-effector relative action chunk |
+| high-level target | dense subtask language token |
+| fine-tuning mix | human generalization task data와 nearest-neighbor robot task data를 50:50 |
+| shorthand | human egocentric data를 넣은 model을 `π0.5 + ego`로 표기 |
+
+### Action Space Alignment
+
+Robot action은 end-effector pose 기준으로 정의한다. 논문은 joint position 대신 end-effector pose를 택한다. human joint position을 robot joint로 대응시키기 어렵기 때문이다.
+
+| action | shape / 구성 |
+| --- | --- |
+| robot action chunk | `a in R^{H x 16}` |
+| robot action 구성 | left arm 6DoF EE trajectory + gripper, right arm 6DoF EE trajectory + gripper, 2D base action |
+| human hand action | 양손 palm/middle/ring finger keypoints가 span하는 6DoF "end-effector" pose |
+| human base/head action | head camera pose를 chunk 첫 timestep base camera frame으로 project |
+| human action dimension | `2 x 6 + 6 = 18` |
+| gripper | human hand openness는 직접 추정하지 않고, gripper action은 robot data에서만 학습 |
+
+여기서 alignment는 완벽한 physical equivalence가 아니라 "relative end-effector trajectory"라는 공유 형식이다. 논문의 claim은 이 정도의 rough alignment와 scaled pretraining만으로 transfer가 나타난다는 점이다.
+
+### Training Objectives
+
+π0.5 계열과 마찬가지로 low-level action에는 두 경로가 함께 쓰인다.
+
+```text
+low-level action:
+  discrete FAST action tokens -> next-token prediction
+  continuous action expert    -> flow matching loss
+
+high-level subtask:
+  subtask language tokens     -> next-token prediction
+```
+
+High-level subtask prediction은 observation과 high-level language command를 보고 short atomic action description을 예측하고, 이 subtask string이 다시 action generation condition으로 들어간다. 즉 human video는 "무엇을 해야 하는가"와 "어떻게 움직이는가"를 모두 supervision한다.
+
+## Representation Analysis
+
+<PaperFigure
+  src="/pi/human-to-robot-paper/fig05-tsne-representations.png"
+  alt="Figure 5 TSNE representation of human and robot data"
+  caption="Fig. 5. pretraining이 없거나 작을 때는 human/robot embedding이 분리된다. full diverse pretraining에서는 두 distribution이 같은 task manifold 위에서 겹친다."
+/>
+
+TSNE 분석은 성능 개선의 원인을 설명하기 위한 diagnostic이다. Appendix C 기준 절차는 다음과 같다.
+
+1. co-finetuned VLA에 human/robot observations를 입력한다.
+2. VLM backbone final layer의 output embeddings 중 처음 200개를 mean-pool한다. 논문은 이 구간이 대략 task 정보를 담는다고 설명한다.
+3. pooled embedding을 TSNE로 2D 시각화한다.
+
+해석은 명확하다. 작은/no pretraining에서는 human data와 robot data가 서로 다른 cluster로 분리된다. pretraining diversity가 커지면 같은 task에 대한 human/robot observations가 더 잘 겹치고, 이 representation overlap이 transfer performance와 같이 증가한다.
+
+## Main Results
+
+<PaperFigure
+  src="/pi/human-to-robot-paper/fig07-human-to-robot-finetuning.png"
+  alt="Figure 7 human to robot finetuning main result"
+  caption="Fig. 7. π0.5+ego는 scene, object, task generalization 모두에서 π0.5보다 높은 score를 보인다."
+/>
+
+주요 결과는 human data가 robot data에 없는 concept을 제공했을 때 policy score가 크게 좋아진다는 것이다.
+
+| task | π0.5 | π0.5 + ego | 해석 |
+| --- | --- | --- | --- |
+| Spice | 32% | 71% | unseen kitchen의 scene-specific rule을 human video에서 흡수 |
+| Dresser | 25% | 50% | target dresser의 placement rule을 human data가 제공 |
+| Bussing | 53% | 63% | unseen kitchen tools/object categories에 대한 object transfer |
+| Sort Eggs | robot-only sorting accuracy 57% | human co-training sorting accuracy 78% | robot data에는 egg picking만 있고 sorting rule은 human data에서만 제공 |
+
+Sort Eggs에서는 평균적으로 `π0.5`보다 4개 더 많은 eggs를 올바르게 배치했다. 이 결과가 중요한 이유는 robot-only model이 이미 egg pick/place skill은 갖고 있지만, color sorting이라는 task semantic은 모른다는 점이다.
+
+## Pretraining Scale
+
+<PaperFigure
+  src="/pi/human-to-robot-paper/fig02-per-task-improvement.png"
+  alt="Figure 2 per task improvement from human data"
+  caption="Fig. 2. human data 추가 이득은 pretraining robot data의 diversity가 커질수록 커진다. 0%/25%에서는 거의 나타나지 않고, 75% 이상에서 뚜렷해진다."
+/>
+
+논문은 여러 pretrained initialization을 비교한다.
+
+| initialization | 의미 |
+| --- | --- |
+| `0%` | base VLM initialization only |
+| `25%`, `50%`, `75%`, `100%` | target robot embodiments인 ARX/mobile ARX에서 scene-task combination diversity fraction을 늘린 VLA pretraining |
+| `100% + X-emb` | π0.5 full VLA pretraining mixture. diverse non-target robot embodiments 포함 |
+
+각 initialization에서 두 policy를 학습한다. 하나는 nearest robot teleoperation data만 fine-tune하고, 다른 하나는 동일 robot data에 human embodiment data를 추가한다. Fig. 2는 두 policy score 차이를 human-to-robot transfer magnitude로 본다.
+
+핵심 결론은 다음이다.
 
 | 관찰 | 의미 |
 | --- | --- |
-| pretraining scale이 커질수록 human data 추가 이득이 커짐 | human-to-robot transfer가 model/data scale에 따라 emergent하게 나타남 |
-| sorting eggs에서 no-human fine-tuning은 약 60% pretraining dataset 이후 saturation | robot data만 늘려서는 해당 human-only scenario 정보를 더 못 얻는 구간이 있음 |
-| human-video fine-tuning은 더 큰 robot pretraining에서 계속 향상 | robot data scale이 human data를 흡수하는 representation을 만든다는 해석 |
-| T-SNE 분석 | final VLM backbone token을 mean-pool한 latent가 robot/human data 사이에서 점점 overlap됨 |
+| 0%/25%에서는 human data co-training gain이 작거나 없다 | human video는 model이 작거나 robot pretraining이 빈약하면 그냥 domain gap으로 남는다. |
+| 75%/100%에서 gain이 커진다 | enough robot pretraining이 embodiment-agnostic representation을 만든다. |
+| `100% + X-emb`에서 transfer가 더 좋아진다 | target robot만이 아니라 non-target robot embodiments까지 포함한 diversity가 human data 흡수 능력을 키운다. |
 
-T-SNE 결과는 인과 증명이라기보다 representation diagnostic이다. 작은/no pretraining model은 human과 robot example이 latent에서 분리되고, 더 다양한 robot pretraining을 거친 model은 두 domain이 더 겹친다. 이는 performance 향상과 함께 관찰되는 evidence다.
+<PaperFigure
+  src="/pi/human-to-robot-paper/fig08-task-generalization-scaling-eggs.png"
+  alt="Figure 8 task generalization scaling for eggs"
+  caption="Fig. 8. Sort Eggs에서 robot-only fine-tuning은 plateau하지만, human+robot fine-tuning은 pretraining diversity가 커질수록 더 크게 개선된다."
+/>
+
+## Ablations and Comparisons
+
+<PaperFigure
+  src="/pi/human-to-robot-paper/fig09-human-vs-target-robot-data.png"
+  alt="Figure 9 human data compared to target robot data"
+  caption="Fig. 9. Eggs/Dresser에서는 human data가 target robot data와 비슷한 수준의 이득을 주지만, Bussing에서는 target robot data가 더 강한 upper bound로 남는다."
+/>
+
+Human data가 target robot data를 완전히 대체한다는 주장은 아니다. Fig. 9는 다음처럼 읽어야 한다.
+
+| 비교 | 결론 |
+| --- | --- |
+| Sort Eggs / Dresser | comparable amount의 human data와 target robot data가 비슷한 성능을 만든다. |
+| Bussing | target robot data가 human data보다 더 효과적이다. 논문 본문은 Bussing에서 human data와 target robot data 차이를 `25% vs 65%`로 설명한다. |
+| 전체 해석 | human data는 cheap/scalable source지만, contact-rich object interaction에서는 target robot data가 여전히 upper bound일 수 있다. |
+
+<PaperFigure
+  src="/pi/human-to-robot-paper/fig10-human-vs-cross-embodiment.png"
+  alt="Figure 10 human data compared to cross embodiment robot data"
+  caption="Fig. 10. Bussing에서 UR5 data와 human data 모두 ARX transfer에 도움을 주지만 target ARX data 수준에는 못 미친다."
+/>
+
+Cross-embodiment comparison에서는 Bussing task를 위해 UR5 robot data `400 demonstrations`, `7.45 hours`를 추가로 수집하고 ARX robot으로 transfer한다. human-to-ARX transfer와 UR5-to-ARX transfer 모두 baseline보다 낫지만 target ARX data에는 못 미친다. 논문의 해석은 human data transfer가 cross-embodiment robot transfer와 비슷한 성격을 가진다는 것이다.
+
+<PaperFigure
+  src="/pi/human-to-robot-paper/fig11-high-vs-low-level-transfer.png"
+  alt="Figure 11 high level vs low level transfer"
+  caption="Fig. 11. mobile tasks에서는 high-level subtask prediction과 low-level action prediction 둘 다 human data로 co-train해야 가장 좋다."
+/>
+
+High-level vs low-level ablation도 중요하다.
+
+| 설정 | 의미 | 관찰 |
+| --- | --- | --- |
+| robot-only HL+LL | human data 없음 | baseline |
+| robot-only HL + co-trained LL | low-level action만 human data 사용 | command를 받는 motion은 일부 개선되지만 high-level command가 틀릴 수 있다. |
+| co-trained HL + robot-only LL | high-level subtask만 human data 사용 | high-level은 맞아도 low-level policy가 command를 제대로 실행하지 못할 수 있다. |
+| co-trained HL+LL | 둘 다 human data 사용 | 가장 안정적 |
+
+Bussing/Eggs는 evaluation에서 high-level policy를 쓰지 않으므로 transfer가 low-level action prediction에서 나온다. Spice/Dresser 같은 mobile tasks는 high-level subtask와 low-level action이 모두 중요하다.
+
+<PaperFigure
+  src="/pi/human-to-robot-paper/fig12-wrist-camera-ablation.png"
+  alt="Figure 12 wrist camera ablation"
+  caption="Fig. 12. wrist camera는 Dresser와 Bussing에서 관찰성을 높여 이득을 주고, Spice/Eggs에서는 비슷한 성능을 보인다."
+/>
+
+Wrist camera ablation은 data collection design의 practical lesson을 준다. Dresser/Bussing처럼 손-물체 interaction과 occlusion이 중요한 task는 wrist camera가 도움이 된다. 반면 Spice/Eggs는 head camera만으로도 sufficient observability가 확보되어 추가 이득이 작다. 논문은 이 결과를 근거로 future human data collection에서는 wrist camera를 포함하는 방향을 선호한다.
+
+## Appendix Notes
+
+<PaperFigure
+  src="/pi/human-to-robot-paper/fig13-per-task-scaling.png"
+  alt="Figure 13 per task scaling graphs"
+  caption="Fig. 13. task별 scaling curve. zero-shot generalization이 늘어나는 것과 human data transferability가 늘어나는 것은 같은 현상이 아니다."
+/>
+
+Appendix에서 실제 survey에 반영해야 할 detail은 다음이다.
+
+| 항목 | 내용 |
+| --- | --- |
+| evaluation count | 각 experiment `20-40`회 평가 |
+| error bars | `1 standard error` |
+| Bussing scoring | 9 kitchen items를 trash can 또는 bussing bin에 올바르게 배치, `[0, 1]` normalized |
+| Spice scoring | 3 spice bottles를 rack에 모두 놓으면 success |
+| Dresser scoring | necklace는 jewelry box, hair clip은 accessories organizer에 넣으면 success |
+| Sort Eggs scoring | white egg는 left carton, brown egg는 right carton. carton closing에도 additional point |
+| TSNE detail | final VLM output embeddings 중 first 200 embeddings를 mean-pool |
+
+Appendix B의 중요한 해석은 zero-shot generalization과 human data transferability가 반드시 함께 움직이지 않는다는 점이다. 예를 들어 Spice `50% -> 75%`에서는 zero-shot은 modest하게 오르지만 human transferability가 크게 오른다. Dresser `75% -> 100%`나 Eggs `50% -> 100%+X-emb`에서도 zero-shot 개선이 없어 보이는 구간에서 human data transfer는 커질 수 있다.
+
+## Code-Level Check
+
+이 논문은 공식 article/PDF/arXiv가 공개되어 있지만, paper-specific code repository나 `π0.5 + ego` checkpoint는 공개 자료에서 확인되지 않는다. 따라서 code-level boundary는 다음처럼 분리해서 읽는다.
+
+| 항목 | 공개 확인 상태 |
+| --- | --- |
+| π0.5 base model family | OpenPI와 π0.5 paper survey에서 구조/recipe 확인 가능 |
+| FAST action token / flow matching action expert | PI family 내 공개 OpenPI/FAST 문서로 배경 확인 가능 |
+| human data capture rig | PDF Fig. 6과 method text로 확인 가능 |
+| SLAM/keypoint processing pipeline | 논문 설명은 있지만 code/data loader 미공개 |
+| human video dataset | benchmark 시간과 task는 공개, raw dataset release는 확인되지 않음 |
+| π0.5+ego checkpoint | 공개 checkpoint 확인 불가 |
+| exact fine-tuning config | 50:50 mixture와 objectives는 공개, optimizer/batch/system detail은 제한적 |
+
+주의할 점은 arXiv ID다. 이 논문의 올바른 arXiv ID는 `2512.22414`이며, `2510.13898`은 완전히 다른 paper다.
 
 ## PI Family 안에서의 위치
 
-이 연구는 PI family에서 data source 확장 축이다. `π0.5`가 web data, object detection, semantic subtask prediction을 co-training했다면, Learning from Human Videos는 human egocentric data도 scaled VLA가 활용할 수 있는지 확인한다.
-
 | 연결 문서 | 연결점 |
 | --- | --- |
-| [π0.5](../pi05-open-world-generalization/) | base model과 heterogeneous co-training philosophy |
-| [π0.7](../pi07-steerable-model/) | broad behavior steering을 위한 richer data/prompt source |
-| [Robot Olympics / π0.6](../moravec-robot-olympics/) | 새 skill을 fine-tuning으로 빠르게 얻는 model scaling 흐름 |
-| [RLT](../rlt-efficient-online-rl/) | human video와 autonomous experience는 서로 다른 data-scaling route |
+| [π0.5](../pi05-open-world-generalization/) | 이 논문의 base VLA. open-world household generalization과 heterogeneous co-training recipe가 전제다. |
+| [FAST / π0-FAST](../pi0-fast-action-tokenization/) | low-level action prediction에서 discrete FAST token next-token objective가 쓰인다. |
+| [Knowledge Insulation](../knowledge-insulation/) | VLM semantic capability와 robot action learning을 함께 다루는 PI recipe 배경. |
+| [π*0.6 / RECAP](../pistar06-recap-learns-from-experience/) | RECAP은 robot autonomous experience를 policy improvement로 바꾸고, 이 논문은 human egocentric experience를 data scaling source로 쓴다. |
+| [π0.7](../pi07-steerable-model/) | human data, strategy metadata, behavior steering은 모두 broader data/control source를 VLA가 흡수하는 흐름으로 연결된다. |
+
+## Citation Trail
+
+| 흐름 | 이 논문에서의 역할 | 읽을 포인트 |
+| --- | --- | --- |
+| Human-to-Robot Imitation in the Wild | human video imitation의 직접 선행 흐름 | 작은 scale에서는 explicit alignment나 representation trick이 필요해지는 이유. |
+| Affordances from Human Videos | human video를 affordance/reward proxy로 쓰는 흐름 | action-free human video와 embodied hand trajectory의 차이. |
+| HOPMan / generative robot-hand conversion | explicit human-to-robot alignment baseline family | 이 논문은 이런 변환 모듈 없이 scaled VLA pretraining으로 transfer를 시도한다. |
+| UMI / portable teleoperation devices | scalable data collection 비교 축 | 장비를 들고 조작하는 robot-like teleop과 wearable human-video capture의 trade-off. |
+| RT-2 / heterogeneous VLA | web/VL data와 robot action을 묶는 VLA 배경 | human data도 heterogeneous supervision 중 하나로 넣는 발상. |
+| Open X-Embodiment / cross-embodiment learning | robot-to-robot transfer의 기준 관점 | human을 또 하나의 embodiment로 보는 해석의 근거. |
+| π0.5 | base model과 full pretraining mixture | diverse robot pretraining이 human data 활용 능력의 전제다. |
 
 ## 한계와 주의
 
-- human video가 모든 robot task에 바로 도움이 된다는 주장이 아니다. 평가 scenario는 human data에만 있는 task-specific setting이다.
-- 3D hand position label을 어떻게 안정적으로 얻는지, annotation pipeline 품질이 중요하다.
-- T-SNE overlap은 representation evidence지만 causal proof는 아니다.
-- human data는 task strategy를 주고, low-level execution은 여전히 robot data와 base VLA capability에 의존한다.
+| 한계 | 의미 |
+| --- | --- |
+| dataset scale 제한 | benchmark human data는 14h task data 중심이고, discussion도 10s of hours 수준이라고 밝힌다. |
+| public reproducibility 제한 | raw dataset, processing code, fine-tuning config, checkpoint가 공개되지 않았다. |
+| target robot data가 여전히 강함 | Bussing에서는 human data보다 target robot data가 더 효과적이다. |
+| action alignment는 rough | human gripper action은 직접 추정하지 않고 robot data에 의존한다. |
+| passive web-scale human video는 아직 아님 | episodic wearable-camera data를 사용하며, everyday passive data pretraining은 future work에 가깝다. |
+| TSNE는 diagnostic | representation overlap은 transfer와 상관된 evidence지만 causal proof는 아니다. |
+
+## Study Takeaways
+
+1. human video transfer는 "human data만 넣으면 된다"가 아니라 "diverse robot pretraining 이후에 나타나는 capability"로 보는 게 정확하다.
+2. 이 논문은 explicit alignment algorithm보다 scaled cross-embodiment representation을 신뢰하는 PI식 recipe다.
+3. human video는 scene rule, object category, task semantic, low-level trajectory를 모두 줄 수 있다.
+4. High-level subtask와 low-level action을 따로 ablate하면 둘 다 transfer에 기여한다.
+5. wrist camera는 모든 task에 필요한 것은 아니지만 hand-object detail이 중요한 task에서는 observability를 올린다.
+6. robot-only zero-shot generalization과 human-data transferability는 같은 곡선이 아니다. pretraining diversity는 "새 task를 혼자 푸는 능력"보다 "새 data source를 흡수하는 능력"을 더 크게 키울 수 있다.
 
 ## 5-Pass 검증 메모
 
 | Pass | 결과 |
 | --- | --- |
-| 1. 구조/coverage | method, experiment examples, scaling analysis, representation diagnostic, family 연결을 포함했다. |
-| 2. 사실/수치 | 약 2x improvement, 4 scenarios, 3D hand position action, sorting eggs 60% saturation, T-SNE mean-pooled final VLM tokens를 official article과 대조했다. |
-| 3. 코드 구현 | 별도 public implementation은 OpenPI release 수준으로 확인되지 않아 미확인으로 남겼다. |
-| 4. 해석/연결 | π0.5 heterogeneous co-training과 PI data-scaling 흐름으로 연결했다. |
-| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |
+| 1. 구조/coverage | metadata, source inventory, figure inventory, problem, data collection, benchmark, method, model/objective, representation, result, ablation, appendix, code boundary, family connection을 포함했다. |
+| 2. 사실/수치 | arXiv ID `2512.22414`, article date 2025-12-16, arXiv date 2025-12-27, 13 pages, Fig. 1-13, 3h/3h/3h/5h human data, `H x 16`, `18D`, 50:50 mixture, 20-40 eval, Fig. 7 task 수치를 PDF와 대조했다. |
+| 3. 이미지 근거 | Fig. 1-13을 `/pi/human-to-robot-paper/`에 crop asset으로 저장하고 contact sheet로 검수했다. |
+| 4. 코드 구현 | paper-specific code/checkpoint는 공개 확인 불가로 분리했고, OpenPI/π0.5/FAST는 배경 구현으로만 연결했다. |
+| 5. 문서 품질/빌드 | `npm run build`와 `BASE_PATH=/robotics-study-notes SITE_URL=https://wons999.github.io npm run build`를 모두 통과했다. |
