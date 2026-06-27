@@ -27,6 +27,14 @@ import PaperFigure from '../../../../components/PaperFigure.astro';
 
 π0.5는 π0의 flow-matching VLA를 집 안 mobile manipulation으로 확장하기 위해, robot action data만이 아니라 web visual-language data, object localization, high-level subtask prediction, verbal instruction, cross-embodiment robot data를 함께 학습해 unseen home에서 multi-stage cleanup task를 수행하도록 만든 모델이다.
 
+## Source/Image Inventory
+
+| Source | Local asset / code path | 본문 반영 위치 | 읽을 때 주의할 점 |
+| --- | --- | --- | --- |
+| arXiv PDF `2504.16054` | `/pi/pi05-paper/fig01-...` through `fig18-...` | Figure/Table Inventory, Dataset, Method, Experiments, Appendix Notes | PDF는 19 pages이며 Figure 1-18이 핵심 근거다. Formal table caption은 없고, appendix에 rubric/model detail이 많다. |
+| pi.website article | `/pi/pi05-og.png`, `/pi/pi05-multimodal-web-data.jpg`, `/pi/pi05-object-detection.jpg`, `/pi/pi05-subtask-command.jpg`, `/pi/pi05-verbal-instruction.jpg` | 문제의식, Dataset, 공식 수치 대조 | article HTML에는 Figure 11 계열 language/OOD ablation 수치가 text로 포함되어 있어 그래프 수치를 대조하는 데 사용한다. |
+| Official OpenPI repository | `README.md`, `src/openpi/models/pi0_config.py`, `src/openpi/models/pi0.py`, `src/openpi/training/config.py`, `src/openpi/transforms.py`, `src/openpi/policies/policy_config.py` | Code-Level Check, OpenPI Config Snapshot | public OpenPI는 π0.5 checkpoint/fine-tuning/runtime path를 제공하지만 논문 내부 household high-level co-training pipeline 전체 공개와는 다르다. |
+
 ## Figure / Table Inventory
 
 PDF 기준 formal table caption은 없고, Figure 1-18이 핵심 근거다. Survey에서는 모든 figure를 본문에 반영했다.
@@ -292,6 +300,17 @@ Fig. 10의 p-value 표기는 no WD가 `p=0.385`로 유의하지 않고, no CE/no
 
 Fig. 11은 같은 ablation을 language following으로 보면 결론이 달라진다는 점을 보여준다. WD를 제거하면 특히 OOD object follow rate와 success rate가 크게 떨어진다. ME/CE도 ID/OOD 모두에 영향을 주며, no CE or ME는 가장 낮다. 이 결과는 web semantic data가 unseen object category를 이해하는 데 필요하고, robot data diversity가 실제 placement success를 받쳐준다는 해석을 뒷받침한다.
 
+공식 article HTML에 포함된 Fig. 11 계열 수치를 전사하면 다음과 같다. 이 표는 PDF 그래프를 수치로 다시 읽을 때 기준점으로 쓸 수 있다.
+
+| Condition | ID Follow | ID Success | OOD Follow | OOD Success |
+| --- | ---: | ---: | ---: | ---: |
+| π0.5 | 86 | 83 | 94 | 94 |
+| no WD | 86 | 82 | 80 | 74 |
+| no CE | 74 | 67 | 67 | 49 |
+| no ME | 66 | 57 | 33 | 31 |
+
+`no ME or CE`도 figure에 포함되지만, article text extraction에서는 네 metric의 개별 숫자가 안정적으로 분리되지 않았다. 따라서 이 표에서는 article HTML에서 직접 확인 가능한 네 condition만 전사하고, `no ME or CE`의 결론은 PDF Figure 11/16의 상대적 최저 성능으로 해석한다.
+
 ### Model Comparison
 
 <PaperFigure src="/pi/pi05-paper/fig12-model-comparison.png" alt="Figure 12 model comparison" />
@@ -382,6 +401,37 @@ Fig. 17은 high-level inference ablation을 task별로 보여준다. Items in Dr
 | `src/openpi/transforms.py` | `TokenizePrompt(..., discrete_state_input=model_config.discrete_state_input)`로 π0.5의 discrete state input path를 구성 |
 | `src/openpi/policies/policy_config.py` | checkpoint assets, norm stats, transforms를 policy creation path에서 연결. checkpoint directory에 `model.safetensors`가 있으면 PyTorch model로 자동 감지 |
 
+### OpenPI Config Snapshot
+
+아래 표는 공식 OpenPI `Pi0Config(pi05=True)`와 public training configs 기준이다. 논문 household model의 internal setting과 public fine-tuning preset을 섞어 쓰지 않기 위한 체크포인트다.
+
+| 항목 | Public OpenPI 기본값 / 동작 |
+| --- | --- |
+| `model_type` | `ModelType.PI05` |
+| `dtype` | `bfloat16` |
+| `paligemma_variant` | `gemma_2b` |
+| `action_expert_variant` | `gemma_300m` |
+| `action_dim` | 32 |
+| `action_horizon` | 50 |
+| `max_token_len` | `pi05=True`일 때 200, `pi05=False`일 때 48 |
+| `discrete_state_input` | `pi05=True`일 때 기본 true |
+| input images | `base_0_rgb`, `left_wrist_0_rgb`, `right_wrist_0_rgb`, each `[B, 224, 224, 3]` |
+| state/action spec | state `[B, 32]`, actions `[B, 50, 32]` 기본 |
+| model transforms | default prompt injection, `ResizeImages(224,224)`, `TokenizePrompt(..., discrete_state_input=True)`, `PadStatesAndActions(32)` |
+| policy runtime | checkpoint download, JAX/PyTorch backend detection, checkpoint assets의 norm stats load, normalize/model transform/sample/unnormalize chain |
+
+Public preset override도 중요하다.
+
+| config | 공개 목적 | model override / training |
+| --- | --- | --- |
+| `pi05_droid` | DROID inference/fine-tuning entry | `Pi0Config(pi05=True, action_horizon=15)`, DROID assets |
+| `pi05_libero` | LIBERO benchmark fine-tuning/eval | `Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False)`, batch 256, 30k steps |
+| `pi05_aloha_pen_uncap` | ALOHA pen-uncap example | `Pi0Config(pi05=True)`, `pi05_base` assets, 20k steps, batch 64 |
+| `pi05_full_droid_finetune` | full DROID RLDS fine-tuning | `Pi0Config(pi05=True, action_dim=32, action_horizon=16)`, batch 256, 100k steps |
+| `pi05_droid_finetune` | smaller custom DROID LeRobot fine-tuning | starts from `pi05_droid`, `action_horizon=16`, 20k steps, batch 32 |
+
+이 표에서 보듯 public OpenPI의 π0.5는 “논문 Figure 3의 high-level/low-level semantic co-training system 전체”라기보다는, π0.5 계열 checkpoint를 특정 public platform/data에 fine-tune하고 inference하는 flow-matching VLA path로 보는 것이 안전하다.
+
 ### 구현에서 확인한 π0.5 차이
 
 | 항목 | π0 path | π0.5 path |
@@ -431,8 +481,8 @@ Fig. 17은 high-level inference ablation을 task별로 보여준다. Items in Dr
 
 | Pass | 결과 |
 | --- | --- |
-| 1. 구조/coverage | `rules/survey.md` 기준으로 문제의식, system, dataset, method, architecture, training, all result figures, appendix, code-level check, 한계, citation trail을 재확인했다. |
-| 2. 사실/수치 | arXiv PDF 19 pages를 다시 확보해 Figure 1-18 inventory, 400 hours/약 100 homes, 97.6%, 280k+80k, post-training CE omission, `alpha=10.0`, 10 denoising steps, location counts `3/12/22/53/82/104`, rubric 점수와 standard 40-evaluation protocol을 PDF와 대조했다. |
-| 3. 코드 구현 | 공식 `openpi` 최신 `README.md`, `pi0_config.py`, `pi0.py`, `training/config.py`, `transforms.py`, `policy_config.py`를 다시 확인해 `pi05=True`, PyTorch/JAX support, `model.safetensors` detection, fine-tuning config override를 분리했다. |
+| 1. 구조/coverage | `rules/survey.md` 기준으로 source inventory, 문제의식, system, dataset, method, architecture, training, all result figures, appendix, code-level check, OpenPI config snapshot, 한계, citation trail을 재확인했다. |
+| 2. 사실/수치 | arXiv PDF 19 pages를 다시 확보해 Figure 1-18 inventory, 400 hours/약 100 homes, 97.6%, 280k+80k, post-training CE omission, `alpha=10.0`, 10 denoising steps, location counts `3/12/22/53/82/104`, rubric 점수와 standard 40-evaluation protocol을 PDF와 대조했다. Article HTML의 ID/OOD language ablation 수치도 함께 전사했다. |
+| 3. 코드 구현 | 공식 `openpi` 최신 `README.md`, `pi0_config.py`, `pi0.py`, `training/config.py`, `transforms.py`, `policy_config.py`를 다시 확인해 `pi05=True`, default `max_token_len=200`, `discrete_state_input=True`, AdaRMS timestep conditioning, PyTorch/JAX support, `model.safetensors` detection, fine-tuning config override를 분리했다. |
 | 4. 시각 자료 | arXiv PDF를 180 dpi로 page render한 뒤 Figure 1-18을 모두 재-crop했다. Fig. 5/8/9/10/11 등 기존에 본문이 끼거나 caption/축이 빡빡하던 asset은 좌표를 재조정했고, contact sheet로 전수 검수했다. |
 | 5. 문서 품질/빌드 | PDF crop asset을 `PaperFigure`로 base-aware local image 연결하고, `npm run build`와 GitHub Pages base path build로 확인한다. |
