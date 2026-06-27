@@ -1,6 +1,6 @@
 ---
 title: MEM
-description: multi-scale embodied memory를 VLA에 넣는 MEM 논문 Survey.
+description: Multi-Scale Embodied Memory를 통해 VLA에 short-term video memory와 long-term language memory를 넣는 MEM 논문 Survey.
 sidebar:
   hidden: true
 ---
@@ -16,87 +16,310 @@ import PaperFigure from '../../../../components/PaperFigure.astro';
 
 | 항목 | 내용 |
 | --- | --- |
-| 논문/글 | VLAs with Long and Short-Term Memory |
-| 방법 이름 | Multi-Scale Embodied Memory, MEM |
-| 공개 | pi.website research, 2026-03-03 |
-| 링크 | https://www.pi.website/research/memory |
-| 연결 모델 | π0.6 + MEM |
-| 태그 | memory, VLA, long-horizon robot tasks, in-context adaptation, partial observability |
+| 논문 | MEM: Multi-Scale Embodied Memory for Vision Language Action Models |
+| 공식 글 제목 | VLAs with Long and Short-Term Memory |
+| 저자/그룹 | Marcel Torne, Karl Pertsch, Homer Walke, Kyle Vedder, Suraj Nair, Brian Ichter, Allen Z. Ren, Haohuan Wang, Jiaming Tang, Kyle Stachowicz, Karan Dhabalia, Michael Equi, Quan Vuong, Jost Tobias Springenberg, Sergey Levine, Chelsea Finn, Danny Driess |
+| 공개 | PI research page, 2026-03-03 |
+| 링크 | https://www.pi.website/research/memory, https://www.pi.website/download/Mem.pdf |
+| 연결 모델 | π0.6-MEM |
+| 태그 | memory, VLA, long-horizon manipulation, video encoder, language memory, in-context adaptation |
 
 ## 한 줄 요약
 
-MEM은 VLA에 short-term video memory와 long-term language memory를 함께 넣어, 최대 15분 길이의 task, partial observability, failure 후 in-context strategy adaptation을 가능하게 하는 PI 계열의 memory system이다.
+MEM은 VLA의 memory를 한 가지 representation으로 억지로 압축하지 않고, 최근 수십 초의 dense observation은 video encoder로, 수 분 단위의 task progress는 language memory로 분리해 최대 15분 규모의 robot task와 in-context strategy adaptation을 가능하게 하는 multi-modal memory system이다.
+
+## Figure / Table Inventory
+
+PDF는 15페이지이며 table은 없고 Figure 1-10과 appendix task detail이 핵심 근거다. Figure-level crop은 PDF page render에서 직접 추출했다.
+
+| Figure / Appendix | Local asset | 본문 반영 위치 | 핵심 내용 |
+| --- | --- | --- | --- |
+| Fig. 1 | `/pi/mem-paper/fig1-overview.png` | Official Visual Evidence, 문제의식 | long-term text memory와 short-term video memory를 결합한 전체 MEM 개념도 |
+| Fig. 2 | `/pi/mem-paper/fig2-system.png` | Model Architecture | π0.6-MEM high-level policy, low-level policy, action expert, memory update 구조 |
+| Fig. 3-4 | `/pi/mem-paper/fig3-4-video-encoder.png` | Video Encoder | naive frame encoding latency와 space-time separable video encoder 설계 |
+| Fig. 5 | `/pi/mem-paper/fig5-long-horizon-tasks.png` | Experiments | recipe setup, clean kitchen, grilled cheese task visual |
+| Fig. 6 | `/pi/mem-paper/fig6-long-horizon-results.png` | Long-horizon results | no memory, only video, only text, naive text+video, MEM ablation |
+| Fig. 7 | `/pi/mem-paper/fig7-in-context-adaptation.png` | In-context adaptation | chopstick pickup, fridge opening에서 memory가 실패 후 전략을 바꿈 |
+| Fig. 8 | `/pi/mem-paper/fig8-memory-comparison.png` | Memory approach comparison | no memory, pool memory, proprio memory, MEM 비교 |
+| Fig. 9 | `/pi/mem-paper/fig9-pretraining-ablation.png` | Pretraining ablation | memory를 pre-training부터 넣는 것이 post-training only보다 강함 |
+| Fig. 10 | `/pi/mem-paper/fig10-dexterity-preservation.png` | Dexterity preservation | memory가 필요 없는 dexterous tasks에서도 π0.6 성능을 유지 |
+| Appendix B | PDF pages 13-15 | Appendix Notes | task scoring, recipe prompts, in-context adaptation data, analysis task rubric |
+| Appendix C | PDF page 15 | Video Encoder 수식 | space-only/time-only attention 정의와 sinusoidal temporal position embedding |
 
 ## Official Visual Evidence
 
-<PaperFigure src="/pi/memory-og.webp" alt="MEM official overview image" />
+<PaperFigure src="/pi/memory-og.webp" alt="MEM official overview image" caption="공식 MEM article의 overview visual. 장기 task를 위해 short-term video memory와 long-term language memory를 함께 쓰는 방향을 보여준다." />
 
-공식 MEM article의 overview visual이다. long/short-term memory를 결합해 longer-horizon household task를 처리하는 방향을 보여준다.
+<PaperFigure src="/pi/mem-paper/fig1-overview.png" alt="MEM Figure 1 overview" caption="Figure 1. MEM은 dense short-term video memory와 compressed long-term text memory를 같이 사용해 long-horizon task, partial observability, in-context adaptation을 다룬다." />
 
 ## 문제의식
 
-현재 frame과 instruction만 보고 행동하는 VLA는 긴 job을 수행하기 어렵다. kitchen cleanup이나 cooking처럼 multi-stage task에서는 이미 수행한 단계, 물건 위치, 실패했던 접근, 기다려야 하는 시간 등을 기억해야 한다. 모든 과거 frame을 context로 넣는 것은 token/latency 때문에 불가능하고, 잘못 설계된 memory는 causal confusion을 만들어 imitation learning을 해칠 수 있다.
+기존 VLA는 현재 관측과 instruction만 보고 action을 만들거나, 많아야 짧은 observation history를 넣는다. 그러나 실제 household/industrial task는 “방금 팔이 가려서 물체가 안 보였는가” 같은 짧은 시간의 dense memory와 “이미 어떤 재료를 꺼냈는가” 같은 긴 시간의 semantic memory를 동시에 요구한다.
 
-| memory 필요성 | 예 |
-| --- | --- |
-| task progress | 이미 어떤 dish를 씻었는지 |
-| object location | 재료가 어느 drawer/cabinet에 있었는지 |
-| recent failure | chopstick을 같은 방식으로 계속 잡으려다 실패했는지 |
-| timing | grilled cheese sandwich를 얼마나 구웠는지 |
+논문이 강조하는 memory mismatch는 다음과 같다.
+
+| 필요한 기억 | 알맞은 표현 | 예시 |
+| --- | --- | --- |
+| 최근 occlusion / dynamics | image/video history | 팔이 물체를 가린 직후의 위치, 실패한 grasp height |
+| timing | short-term temporal observation | grilled cheese를 얼마나 익혔는지, 접시를 얼마나 씻었는지 |
+| task progress | language summary | 어떤 dish를 이미 씻었는지, 어떤 ingredient를 이미 꺼냈는지 |
+| object/location state | language + recent frames | 물건을 어느 drawer/cabinet/fridge에 두었는지 |
+| strategy adaptation | failed attempt in context | chopstick을 낮은 table height에서 계속 같은 방식으로 잡지 않기 |
+
+모든 과거 frame을 context로 넣으면 latency와 token 수가 터진다. 반대로 language memory만 쓰면 grasp angle, height, occlusion 같은 fine-grained spatial information을 잃는다. MEM의 핵심 가정은 memory가 하나의 modality로 통일될 수 없고, 시간 scale과 정보 granularity에 맞게 representation을 나눠야 한다는 것이다.
 
 ## Method
 
-MEM은 두 scale의 memory를 분리한다.
+MEM은 action prediction을 high-level memory/subtask update와 low-level action generation으로 factorize한다.
 
-| Memory | 표현 | 역할 |
-| --- | --- | --- |
-| short-term memory | raw observation/video history를 efficient video encoder로 압축 | 최근 motion, occlusion, timing, 실패 직후 context |
-| long-term memory | natural-language note | task progress, summary, object/location, 다음 high-level subtask |
+논문은 대부분의 VLA가 single observation `o_t`에 조건화한다고 보고, MEM은 긴 observation sequence `o_{t-T:t}`와 language memory `m_t`를 처리하기 위해 다음처럼 나눈다.
 
-Short-term encoder는 standard ViT를 video로 확장하되, sparse spatial attention과 causal temporal attention을 interleave하고 upper layer에서 history token을 drop해 VLA backbone에 넘기는 token 수를 줄인다.
+```text
+π(a_{t:t+H}, l_{t+1}, m_{t+1} | o_{t-T:t}, m_t, g)
+≈ π_LL(a_{t:t+H} | o_{t-K:t}, l_{t+1}, g)
+  π_HL(l_{t+1}, m_{t+1} | o_t, m_t, g)
+```
 
-Long-term memory는 π0.6의 high-level subtask inference process와 결합된다. 모델은 “pick up the plate” 같은 subtask를 저주파로 선택하고, 동시에 미래 inference에 넣을 textual memory를 생성한다. 예를 들어 “green plate를 집고 yellow plate를 집음”을 “plates를 집었다”처럼 요약할 수 있다.
+여기서 `K << T`다. `π_HL`은 다음 subtask `l_{t+1}`와 update된 language memory `m_{t+1}`를 만들고, `π_LL`은 짧은 observation memory와 subtask를 받아 action chunk를 만든다.
 
-## Training / Data
+| 구성요소 | 입력 | 출력 | 역할 |
+| --- | --- | --- | --- |
+| High-level policy `π_HL` | current observation `o_t`, previous language memory `m_t`, task goal `g` | next subtask `l_{t+1}`, updated memory `m_{t+1}` | 긴 task progress를 language summary로 관리 |
+| Low-level policy `π_LL` | recent observations `o_{t-K:t}`, subtask `l_{t+1}`, goal `g` | continuous action chunk `a_{t:t+H}` | 짧은 시간의 video/proprio memory로 dexterous action 생성 |
+| Language memory `m_t` | semantic event summary | compressed long-term context | 이미 완료한 단계, 위치, 실패/성공 상태 요약 |
+| Video memory encoder | multi-frame images, proprioceptive state history | current-timestep-compatible visual/state tokens | occlusion, dynamics, recent failed attempts 처리 |
 
-공식 페이지는 MEM VLA가 robot and non-robot data, single frames and video를 포함한 diverse corpus로 학습된다고 설명한다. 핵심은 memory supervision이 단일 형태가 아니라, short-term raw observation과 long-term text abstraction을 함께 학습한다는 점이다.
+## Model Architecture
 
-## Experiments and Results
+<PaperFigure src="/pi/mem-paper/fig2-system.png" alt="MEM Figure 2 system architecture" caption="Figure 2. π0.6-MEM은 high-level policy가 language memory와 subtask를 갱신하고, low-level policy가 video memory encoder와 action expert를 사용해 continuous actions를 생성한다." />
 
-MEM page는 세 가지 성능 축을 보여준다.
+π0.6-MEM은 π0.6 VLA에 MEM memory를 넣은 형태다. 논문 기준 architecture detail은 다음과 같다.
 
-| 축 | 실험 | 결론 |
-| --- | --- | --- |
-| in-context adaptation | flat chopstick pickup | memory가 없으면 같은 실패를 반복하지만, MEM은 실패 후 다른 grasp strategy를 시도 |
-| partial observability | refrigerator door direction | 처음 잘못된 방향을 시도한 뒤 반대 방향으로 적응 |
-| long-horizon task | grilled cheese, recipe ingredients, kitchen cleanup | 최대 15분 scale task에서 progress/timing/location memory 사용 |
-
-Long-horizon examples:
-
-| Task | memory가 필요한 이유 |
+| 항목 | 내용 |
 | --- | --- |
-| grilled cheese sandwich | grilling time과 flip/plating progress 추적 |
-| retrieve ingredients for recipe | ingredient location, retrieved items, cabinet/drawer closure |
-| clean entire kitchen | fridge/cabinet stowing, dish washing, countertop wiping progress |
+| VLM backbone | SigLIP 400M + Gemma3-4B |
+| action model | flow-matching action expert 860M parameters |
+| action token route | FAST discrete action token prediction도 함께 학습 |
+| gradient boundary | action expert gradient는 VLM backbone으로 흐르지 않음 |
+| image input | camera stream별 448x448 px |
+| cameras | robot embodiment에 따라 최대 4 camera streams |
+| proprioception | past states를 text token으로 늘리지 않고 linear projection으로 backbone embedding space에 넣음 |
+| memory model | high-level language memory + low-level video/proprio memory |
 
-공식 설명은 MEM이 tasks up to 15 minutes length를 처리하고, short-term/long-term memory를 함께 쓰며, in-context adaptation을 보여준다고 요약한다.
+중요한 점은 MEM이 action expert를 새로 정의하는 논문이 아니라, π0.6 VLA의 high-level/low-level inference 흐름에 memory interface를 추가한다는 점이다. 즉 `m_t`는 오래 유지되는 semantic state이고, video memory는 low-level expert가 당장 필요한 dense physical context다.
+
+## Language Memory
+
+Language memory는 past semantic events를 자연어로 요약한 `m_t`다. High-level policy는 이전 memory와 현재 관측/goal을 보고 다음 memory를 만든다.
+
+예시 구조는 다음과 같다.
+
+```text
+m_t:
+I placed a plate in the cabinet and moved to the counter.
+
+m_{t+1}:
+I placed a plate in the cabinet, moved to the counter, and picked up a bowl.
+```
+
+학습 data를 만들기 위해 논문은 robot episode의 subtask language annotations `l_{0:T}`와 각 subtask의 success/failure indicator를 off-the-shelf LLM에 넣고, future execution에 필요한 정보만 남긴 summary를 생성한다. LLM prompt는 필요 없는 detail을 제거하거나 압축하도록 지시한다.
+
+| 설계 선택 | 이유 |
+| --- | --- |
+| 모든 subtask를 그대로 concat하지 않음 | inference 중 실패가 반복되면 같은 subtask가 여러 번 쌓여 train-inference distribution shift가 커진다. |
+| 성공 전에는 memory를 무조건 업데이트하지 않음 | “pick up bowl” 실패가 반복될 때, 실패한 instruction만 memory에 계속 쌓지 않는다. |
+| object attribute를 압축 | “light green bowl, dark blue bowl, bright yellow bowl”보다 “three bowls in the top right cabinet”이 future task에 충분할 수 있다. |
+| natural language 사용 | long-horizon semantic memory를 few bits 수준으로 압축하기 좋다. |
+
+이 language memory는 recipe setup, kitchen cleanup처럼 step order와 object/location tracking이 긴 시간 유지되어야 하는 task에서 핵심이다.
+
+## Video Encoder
+
+<PaperFigure src="/pi/mem-paper/fig3-4-video-encoder.png" alt="MEM Figures 3 and 4 video encoder" caption="Figures 3-4. naive multi-frame encoding은 frame 수가 늘면 latency가 빠르게 증가한다. MEM은 spatial attention과 causal temporal attention을 분리하고 past timestep token을 upper layer에서 drop해 real-time constraint를 맞춘다." />
+
+Short-term memory는 language summary로 충분하지 않다. 손이 물체를 가린 상황, grasp height correction, dish washing duration 같은 정보는 dense visual/proprio history가 필요하다. MEM의 video encoder는 표준 ViT를 video input으로 확장한다.
+
+| 설계 요소 | 내용 |
+| --- | --- |
+| initialization | 기존 pretrained single-image ViT weight에서 초기화 가능 |
+| extra learnable parameters | standard single-image ViT 대비 새 learnable parameter를 추가하지 않음 |
+| temporal position | fixed sinusoidal temporal position embedding, `e(0)=0`으로 single-image input일 때 기존 VLM initialization과 일치 |
+| attention pattern | 일반 spatial attention을 유지하되 매 4번째 layer에서 timestep 방향 causal temporal attention을 additive하게 추가 |
+| complexity | naive joint attention `O(n^2 K^2)` 대신 factorized `O(K n^2 + n K^2)` |
+| token compression | upper layer에서 past timestep patch representations를 drop하고 current timestep representation만 VLA backbone에 전달 |
+| real-time goal | 300 ms real-time barrier 아래에서 많은 observation frames 사용 |
+
+Pre-training에서는 current observation과 five past observations, 총 6 observations를 1초 stride로 사용한다. Post-training/evaluation에서는 horizon을 더 늘려 최대 18 frames, 54 seconds of observation-based memory까지 확장한다.
+
+## Training Recipe
+
+논문은 exact optimizer와 batch size를 공개하지 않지만, training source와 objective 구성은 비교적 명확하다.
+
+| 구분 | 내용 |
+| --- | --- |
+| base | π0.6 VLA |
+| pre-training data | teleoperated robot demonstrations, policy rollout data, human corrections, vision-language tasks, video-language tasks |
+| memory pre-training | robot and non-robot video data를 포함한 diverse mixture에서 video memory 사용 능력을 pre-train |
+| action objective | FAST discrete action token prediction + flow-matching action expert |
+| language memory label | subtask annotations와 success/failure indicator를 LLM에 넣어 future-relevant summary를 생성 |
+| post-training | target task / intervention data로 MEM policy를 fine-tune |
+| real-time execution | inference-time RTC 또는 training-time RTC로 asynchronous real-time inference 사용 |
+
+Figure 9가 이 recipe의 핵심 검증이다. memory encoder를 post-training 때만 붙이는 ablation보다, pre-training 단계에서부터 diverse robot/non-robot video data로 memory capability를 학습한 MEM이 훨씬 강하다.
+
+## Experiments
+
+<PaperFigure src="/pi/mem-paper/fig5-long-horizon-tasks.png" alt="MEM Figure 5 long-horizon task examples" caption="Figure 5. MEM은 recipe setup, clean kitchen, grilled cheese처럼 memory가 최대 15분 유지되어야 하는 long-horizon dexterous tasks에서 평가된다." />
+
+평가 질문은 세 가지다.
+
+| 질문 | 실험 |
+| --- | --- |
+| 15분급 long-horizon memory가 가능한가? | recipe setup, clean kitchen, grilled cheese |
+| short-term memory가 in-context adaptation을 만드는가? | chopstick pickup, refrigerator opening |
+| 다른 memory approach보다 좋은가? | no memory, pool memory, proprio memory, MEM-posttrain-only 비교 |
+
+모든 evaluation은 policy/task 또는 recipe당 10 rollouts를 사용하고, graph는 mean ± standard error를 보고한다.
+
+## Long-Horizon Results
+
+<PaperFigure src="/pi/mem-paper/fig6-long-horizon-results.png" alt="MEM Figure 6 long-horizon result chart" caption="Figure 6. Recipe setup과 clean kitchen에서 π0.6-MEM은 no memory, only video memory, only text memory, naive text+video memory보다 높은 task progress를 보인다." />
+
+Figure 6은 MEM의 가장 중요한 result다. 비교 대상은 다음과 같다.
+
+| policy | memory 구성 | 관찰된 실패/한계 |
+| --- | --- | --- |
+| π0.6 No Memory | 현재 관측 중심 | long-horizon task progress가 낮음 |
+| Only Video Memory | short-term dense memory만 사용 | 최근 motion/occlusion은 보지만 먼 과거 semantic state를 잃음 |
+| Only Text Memory | long-term language memory만 사용 | duration, washing/wiping progress, occlusion 같은 dense context가 부족 |
+| Naive Text + Video Memory | subtask instruction history를 압축 없이 사용 | repeated failed subtasks로 train-inference distribution shift가 커짐 |
+| π0.6-MEM | compressed language memory + video memory | recipe setup, clean kitchen 평균 모두 가장 높음 |
+
+논문 해석은 명확하다. Long-horizon language memory는 먼 과거의 semantic event를 기억하는 데 필요하고, short-horizon video memory는 plate washing duration, wiping progress, occlusion, manipulation robustness에 필요하다. 둘 중 하나만 있으면 task가 풀리지 않는다.
+
+## In-Context Adaptation
+
+<PaperFigure src="/pi/mem-paper/fig7-in-context-adaptation.png" alt="MEM Figure 7 in-context adaptation" caption="Figure 7. Chopstick pickup과 fridge opening에서 memory가 있는 policy는 이전 실패를 context로 보고 grasp height나 opening direction을 바꾸며, no-memory policy보다 각각 +11%, +62% success gain을 보인다." />
+
+MEM은 단순히 오래 기억하는 것뿐 아니라, episode 안에서 실패 후 전략을 바꾸는 데 쓰인다.
+
+| task | setup | memory가 필요한 이유 | result |
+| --- | --- | --- | --- |
+| Chopstick pickup | train 때보다 낮은 table height에서 flat chopstick을 집음 | 직전 mis-grasp strategy를 기억해야 grasp height를 바꿀 수 있음 | memory가 있는 policy가 +11% success gain |
+| Open refrigerator | hinge side가 visually ambiguous한 fridge | 한 방향으로 실패한 뒤 반대 방향을 시도해야 함 | memory가 있는 policy가 +62% success gain |
+
+Data collection은 targeted human feedback을 사용한다. Policy가 실패하면 사람이 corrected manipulation strategy를 보여주고, MEM은 실패 attempt를 short-term memory 안에 둔 상태로 fine-tune된다. No-memory π0.6도 같은 intervention data로 fine-tune되지만, inference 때 어떤 strategy를 이미 시도했는지 기억할 수 없어서 같은 방식으로 실패를 반복하기 쉽다.
+
+## Memory Approach Comparison
+
+<PaperFigure src="/pi/mem-paper/fig8-memory-comparison.png" alt="MEM Figure 8 memory approach comparison" caption="Figure 8. Core memory capability tasks에서 no memory, pool memory, proprio memory를 비교하면 MEM만 partial observability, counting, visual memory 전반에 강하게 동작한다." />
+
+Figure 8은 memory representation의 tradeoff를 비교한다.
+
+| approach | 구현 | 강점 | 약점 |
+| --- | --- | --- | --- |
+| No Memory | π0.6 without memory | dexterous base policy는 강함 | drawer/object location, grocery count, window progress 등 기억 필요 task에서 약함 |
+| Pool Memory | past observation encodings를 average pooling한 single memory token | 간단한 few-bit memory task에는 도움 | multiple mug positions, grocery bag remaining objects처럼 longer visual state에 약함 |
+| Proprio Memory | low-dimensional robot state history만 linear projection | robot 자신의 state 기억에는 도움 | environment state나 hidden object location 기억에 약함 |
+| MEM | video encoder + language memory | partial observability, counting, visual memory 전반에 강함 | 더 복잡한 architecture/training이 필요 |
+
+논문은 no-memory policy가 random chance에 가까운 문제를 예로 든다. 네 개 drawer 중 어느 drawer에 object가 들어갔는지 고르는 task는 25% chance, coffee scoop을 더 넣을지 말지 판단하는 task는 50% chance다. MEM은 이런 core memory tasks에서 평균적으로 가장 높은 progress를 보인다.
+
+## Pretraining Ablation
+
+<PaperFigure src="/pi/mem-paper/fig9-pretraining-ablation.png" alt="MEM Figure 9 pretraining ablation" caption="Figure 9. MEM memory를 pre-training부터 diverse robot/non-robot video data로 학습하면, post-training 때만 memory를 도입한 ablation보다 훨씬 높은 performance를 보인다." />
+
+Figure 9는 “memory module을 나중에 붙이면 충분한가?”에 답한다. 논문은 아니라고 본다.
+
+| 비교 | 의미 |
+| --- | --- |
+| Ours post-train only | π0.6 base checkpoint에서 target task post-training 때 video encoder를 도입 |
+| Ours | diverse robot/non-robot video data에서 memory capability를 pre-train한 뒤 post-training |
+
+결론은 pre-training이 중요하다는 것이다. 특히 pre-training 때는 5 seconds horizon이었지만 post-training 때는 up to 1 minute까지 memory horizon을 확장해도 MEM이 더 잘 동작한다. 논문은 temporal attention이 ViT layer 전반에 들어가 prior timestep 정보를 더 잘 추출/압축하기 때문이라고 해석한다.
+
+## Dexterity Preservation
+
+<PaperFigure src="/pi/mem-paper/fig10-dexterity-preservation.png" alt="MEM Figure 10 dexterity preservation" caption="Figure 10. MEM은 memory가 직접 필요하지 않은 dexterous manipulation tasks에서도 π0.6의 state-of-the-art non-memory VLA 성능을 대체로 유지한다." />
+
+Memory가 있는 policy는 causal confusion 때문에 오히려 성능이 떨어질 수 있다. Figure 10은 이 우려를 확인한다. Table bussing, shirt folding, clean up counter, make bed, dishes to sink, batch folding, box building에서 MEM은 π0.6와 비슷한 수준의 task progress를 유지한다.
+
+논문은 이 안정성을 diverse pre-training data mixture 덕분으로 해석한다. Data에는 varying optimality, speed, control frequency의 robot episodes와 internet videos가 섞여 있어, small uniform dataset에서 생길 수 있는 spurious correlation과 brittleness를 줄인다는 설명이다.
+
+## Appendix Notes
+
+Appendix B는 task rubric과 scoring detail이 중요하다.
+
+| task group | scoring / setup |
+| --- | --- |
+| Recipe setup | items are placed in randomized locations; prompt specifies item/location/target placement; +1 per retrieved item; most recipes 6-7 points; data over 40 recipes; evaluation on unseen scenes with seen recipes |
+| Clean kitchen | wipe/dry countertop, put food into fridge, put dishes in cabinets, wash dishes from sink; average 8 subtasks |
+| Chopstick pickup | random chopstick/table positions; intervention on mis-grasp; evaluation on lowest table height; +1 pickup, +1 place in bin, success score 2 |
+| Open refrigerator | hinge side visually ambiguous; success if fridge opens in `<= 4` grasps, to test intentional strategy switching |
+| Three-way swap mugs | +1 per mug under coffee machine without tipping/repeating |
+| Find object | human hides object in one of four drawers; success requires opening correct drawer only |
+| Unpack groceries | randomized item count inside bag, hidden from third-person camera; success requires retrieving all items and indicating completion |
+| Scoop coffee | exactly two scoops and lid back on |
+| Grilled cheese | +1 for assembly, correct cook time per side, flip, plating; correct time is 30 seconds to 3 minutes per side |
+| Window cleaning | spray, tear towel, wipe whole window, throw towel away; failure if parts remain unwiped |
+| Dexterity tasks | table bussing, shirt folding, clean up counter, make bed, kitchen cleanup, batch folding, box building |
+
+Appendix C formalizes video encoder attention. It adds sinusoidal temporal position embedding `e(t)` to patch/timestep embeddings, reuses the original ViT Q/K/V projections, and defines space-only attention and time-only attention as separate instantiations over spatial set `S` and temporal set `T`. The implemented layer applies temporal/spatial factorization rather than full joint attention over every patch and timestep.
+
+## Code-Level Check
+
+공식 page와 PDF에는 code repository link가 없다. OpenPI 공개 repo도 현재 public research release 중심이며, 이 MEM 논문의 π0.6-MEM checkpoint, training mixture, LLM memory-label generation pipeline, partner/internal evaluation stack 전체가 공개된 것으로 보이지 않는다.
+
+| 확인 항목 | 상태 |
+| --- | --- |
+| PDF | 공식 `/download/Mem.pdf` 직접 확인 |
+| 공식 article | `https://www.pi.website/research/memory` 직접 확인 |
+| code repo | 공식 MEM-specific code link 미확인 |
+| checkpoint | π0.6-MEM public checkpoint 미확인 |
+| reproducibility boundary | architecture와 high-level recipe는 공개, exact data mixture/training config/eval raw numbers는 제한적 |
 
 ## PI Family 안에서의 위치
 
-MEM은 π0.5의 open-world household generalization 이후 자연스럽게 필요한 기능이다. π0.5가 새 집에서 high-level/low-level chain-of-thought style inference를 한다면, MEM은 그 inference가 여러 분 동안 유지되도록 task memory를 공급한다. RLT/RECAP이 experience로 policy를 업데이트하는 축이라면, MEM은 현재 episode 안에서 경험을 기억하고 즉시 전략을 바꾸는 축이다.
+MEM은 π0.5의 open-world household generalization 이후 자연스럽게 필요한 기능이다. π0.5가 unseen environment에서 high-level/low-level reasoning을 강화했다면, MEM은 그 reasoning이 여러 분 동안 이어질 수 있게 memory state를 제공한다.
+
+| 연결 문서 | 이어 읽을 이유 |
+| --- | --- |
+| [π0](../pi0-vla-flow-model/) | base VLA와 flow-matching action expert의 뼈대 |
+| [π0-FAST](../pi0-fast-action-tokenization/) | MEM이 함께 쓰는 FAST discrete action token route |
+| [π0.5](../pi05-open-world-generalization/) | high-level subtask inference와 open-world generalization |
+| [Robot Olympics / π0.6](../moravec-robot-olympics/) | π0.6 family의 new skill/fine-tuning capability |
+| [Real-Time Action Chunking](../real-time-action-chunking/) | MEM이 real-time constraint를 유지하기 위해 의존하는 RTC 계열 |
+| [π*0.6 / RECAP](../pistar06-recap-learns-from-experience/) | episode 밖 experience learning과 episode 안 memory adaptation의 차이 |
+| [RLT](../rlt-efficient-online-rl/) | online RL adaptation과 memory-based adaptation의 차이 |
+| [π0.7](../pi07-steerable-model/) | user steering/subgoal/current image conditioning과 memory conditioning의 연결 |
+
+## Citation Trail
+
+| 연결 논문/방법 | MEM에서의 역할 |
+| --- | --- |
+| Causal Confusion in Imitation Learning | memory가 prior action을 그대로 copy하게 되는 위험을 설명하는 배경 |
+| ViViT / space-time attention 계열 | video encoder의 spatial-temporal separable attention 설계 배경 |
+| π0 / π0.6 VLA | MEM을 얹는 base robot foundation model |
+| FAST | discrete action token prediction route |
+| Real-Time Action Chunking | long-memory inference를 real robot latency 안에 맞추는 실행 계열 |
+| GR00T N1 | reference에는 generalist humanoid robot foundation model로 등장하며, 직접 baseline이라기보다는 VLA/foundation model 흐름의 주변 연구 |
+| MEMER / memory in VLA 계열 | memory representation baseline/related work 흐름 |
 
 ## 한계와 주의
 
-- memory가 항상 성능을 올리는 것은 아니다. 공식 글도 causal confusion을 명시적으로 경고한다.
-- long-term textual memory는 무엇을 기억할지 잘못 고르면 stale context가 될 수 있다.
-- 공개 page만으로는 memory labeling/training objective 전체를 재현하기 어렵다. PDF/코드 공개 여부 추가 확인이 필요하다.
+- Figure chart는 PDF에 bar plot으로만 제공되고 raw numeric table은 없다. 수치는 “정확한 table value”가 아니라 chart 기반 상대 비교로 읽어야 한다.
+- PDF는 exact optimizer, batch size, train steps, data mixture ratio, LLM prompt 전체를 공개하지 않는다.
+- π0.6-MEM checkpoint와 training code가 공개되어 있지 않아 동일 재현은 어렵다.
+- Language memory는 stale/incorrect summary가 들어가면 policy를 잘못 유도할 수 있다.
+- Video memory는 latency를 크게 줄이지만, camera/frame sampling, stride, RTC setup이 맞지 않으면 real robot 성능이 달라질 수 있다.
+- Figure 10은 causal confusion 우려를 줄이지만, 모든 deployment 환경에서 memory가 무해하다는 보장은 아니다.
 
 ## 5-Pass 검증 메모
 
 | Pass | 결과 |
 | --- | --- |
-| 1. 구조/coverage | short/long memory, architecture, tasks, in-context adaptation 포함 |
-| 2. 사실/수치 | 15분 task, three long-horizon scenarios, chopstick/refrigerator examples 확인 |
-| 3. 코드 구현 | 공식 openpi 구현 미확인 |
-| 4. 해석/연결 | π0.5, RECAP, RLT, π0.7과 연결 |
-| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |
+| 1. 구조/coverage | PDF 기준 metadata, figure inventory, method, model architecture, language/video memory, training recipe, experiments, appendix, code boundary, PI family 연결을 포함했다. |
+| 2. 사실/수치 | 15 pages PDF, 2026-03-03, 15분 memory, 10 rollouts, 42+ recipes, 5 unseen recipe eval, 448x448, 최대 4 cameras, Gemma3-4B, SigLIP 400M, action expert 860M, 6 observations/1s stride pre-training, 18 frames/54s post-training, +11%/+62% adaptation gain을 PDF와 대조했다. |
+| 3. 코드 구현 | 공식 MEM-specific code/checkpoint 링크는 확인하지 못했고, OpenPI와 공개 경계를 분리했다. |
+| 4. 해석/연결 | π0/π0.5/π0.6, FAST, RTC, RECAP/RLT/π0.7, GR00T reference 흐름과 연결했다. |
+| 5. 문서 품질/빌드 | `npm run build`와 GitHub Pages base path build로 MDX, 이미지 asset, route 생성을 확인했다. |
