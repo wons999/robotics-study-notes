@@ -1,6 +1,6 @@
 ---
 title: π*0.6 / RECAP
-description: VLA가 autonomous experience, correction, RL로 개선되는 π*0.6와 RECAP Survey.
+description: RECAP이 demonstration, autonomous rollouts, expert corrections, value function, advantage conditioning으로 π0.6 VLA를 개선하는 방식을 정리한 Survey.
 sidebar:
   hidden: true
 ---
@@ -16,100 +16,409 @@ import PaperFigure from '../../../../components/PaperFigure.astro';
 
 | 항목 | 내용 |
 | --- | --- |
-| 글/논문 | π*0.6: a VLA that Learns from Experience |
-| 방법 | RECAP, RL with Experience & Corrections via Advantage-conditioned Policies |
-| 공개 | pi.website blog, 2025-11-17 |
-| 링크 | https://www.pi.website/blog/pistar06, https://www.pi.website/download/pistar06.pdf |
-| 연결 모델 | π0.6, π*0.6 |
-| 태그 | RL from experience, corrections, value function, advantage conditioning, throughput |
+| 논문 | π*0.6: a VLA That Learns From Experience |
+| 방법 | RL with Experience and Corrections via Advantage-conditioned Policies, RECAP |
+| 저자/그룹 | Physical Intelligence team |
+| 공개 | pi.website blog 2025-11-17, PDF 18 pages, π0.6 model card 4 pages |
+| 링크 | [official article](https://www.pi.website/blog/pistar06), [PDF](https://www.pi.website/download/pistar06.pdf), [π0.6 model card](https://website.pi-asset.com/pi06star/PI06_model_card.pdf) |
+| 연결 모델 | π0.5, π0.6, π*0.6, Knowledge Insulation, RTC, RLT, π0.7 |
+| 태그 | VLA, offline RL, autonomous experience, expert correction, value function, advantage conditioning, policy extraction |
 
 ## 한 줄 요약
 
-RECAP은 demonstration으로 시작한 VLA를 expert correction과 autonomous experience/RL로 개선하고, value-change advantage를 conditioning signal로 넣어 π0.6을 더 높은 success/throughput의 π*0.6으로 만드는 PI의 experience-learning recipe다.
+RECAP은 imitation으로 얻은 VLA를 그대로 복사 학습하지 않고, robot이 실제 rollout에서 만든 성공/실패 경험과 expert correction을 distributional value function으로 평가한 뒤, binarized advantage indicator를 policy input에 넣어 π0.6을 더 빠르고 안정적인 π*0.6으로 개선하는 iterated offline RL recipe다.
+
+## Source/Image Inventory
+
+| Source | Local asset / code path | 본문 반영 위치 | 읽을 때 주의할 점 |
+| --- | --- | --- | --- |
+| Official article | `/pi/pistar06-og.png` | Official Visual Evidence, article claims | article은 연구 동기, qualitative videos, public-facing summary를 담는다. 수식과 데이터 수치는 PDF 기준으로 대조한다. |
+| RECAP PDF | `/pi/pistar06-paper/fig01-...`부터 `/pi/pistar06-paper/fig13-...` | Figure Inventory, Method, Dataset, Experiments, Appendix Notes | 18-page PDF이며 figure 13개와 Algorithm 1이 핵심 근거다. 별도 result table은 없다. |
+| π0.6 model card | `/pi/pistar06-paper/model-card-fig01-pi06-architecture.png` | Model Architecture, Code-Level Boundary | π0.6 base architecture와 out-of-box evaluation 근거다. RECAP 자체의 RL loop는 main PDF 기준으로 읽는다. |
+| OpenPI public boundary | [OpenPI Survey](../openpi-release/) | Code-Level Check | 현재 사이트 정리 기준 공개 checkpoint는 π0/π0-FAST/π0.5 중심이다. π0.6/π*0.6 RECAP training code/checkpoint는 같은 방식으로 공개되어 있지 않다. |
+
+## Figure / Table Inventory
+
+| 원문 항목 | Survey 반영 위치 | 핵심으로 읽을 내용 |
+| --- | --- | --- |
+| Fig. 1 | Method overview | diverse robot/web data, π*0.6 VLA, value function, rollout/intervention loop가 어떻게 연결되는지 보여준다. |
+| Fig. 2 | Task examples | cafe, box, laundry task의 multi-stage execution 예시다. |
+| Fig. 3 | Model/Training architecture | π*0.6 VLA와 value function이 분리되어 있고, value function이 advantage indicator를 만든다. |
+| Fig. 4 | Value function visualization | value가 drop/increase하는 구간이 실제 episode mistake/recovery와 대응된다. |
+| Algorithm 1 | Training Recipe | pretrain value/policy, task demo fine-tune, rollout collection, value/policy update loop를 보여준다. |
+| Fig. 5 | Robot setup | 2x 6-DoF arms, parallel jaw grippers, 50 Hz joint position control, 3-camera observation. |
+| Fig. 6 | Evaluation tasks | laundry variants, box assembly, espresso task의 success criteria를 시각화한다. |
+| Fig. 7 | Main result: throughput | final π*0.6가 diverse laundry와 espresso에서 throughput을 2배 이상 높인다. |
+| Fig. 8 | Main result: success rate | final π*0.6가 failure rate를 약 2배 줄이고 box subtask success도 가장 일관되게 높다. |
+| Fig. 9 | Iteration ablation: throughput | RECAP iteration이 늘수록 laundry와 box throughput이 개선된다. |
+| Fig. 10 | Iteration ablation: success | laundry는 첫 iteration에서 90%+ success에 도달하고 box도 iteration을 거치며 개선된다. |
+| Fig. 11 | Policy extraction comparison | advantage conditioning이 AWR/PPO보다 높은 throughput을 낸다. |
+| Fig. 12 | Failure mode removal | strict laundry collar-up criterion에서 RECAP이 특정 failure mode를 제거한다. |
+| Fig. 13 | Appendix value visualization | value function이 여러 task에서 실패/회복/진행 속도를 어떻게 표시하는지 추가 예시를 준다. |
+| Model card Fig. 1 | π0.6 architecture | Gemma 3 4B 기반 VLM, SigLIP image encoder, 860M action expert, discrete/continuous action output 구조. |
 
 ## Official Visual Evidence
 
-<PaperFigure src="/pi/pistar06-og.png" alt="π*0.6 / RECAP official overview image" />
-
-공식 π*0.6 article의 overview visual이다. RECAP이 demonstration 이후 autonomous experience와 correction을 policy improvement로 연결하는 축임을 보여준다.
+<PaperFigure
+  src="/pi/pistar06-og.png"
+  alt="π*0.6 / RECAP official overview image"
+  caption="공식 article의 overview visual. π*0.6은 demonstration 이후 autonomous rollout, reward feedback, expert correction을 추가해 practical task throughput을 높이는 방향으로 제시된다."
+/>
 
 ## 문제의식
 
-Imitation만으로는 robot이 task를 “가끔” 성공하게 만들 수 있지만, 실제 application은 reliably and quickly가 필요하다. Robot policy는 환경과 계속 상호작용하기 때문에 작은 mistake가 distribution shift를 만들고, 이 상태에서 더 큰 mistake가 이어지는 compounding error가 발생한다.
+VLA는 supervised imitation만으로도 task를 가끔 성공할 수 있다. 하지만 robot control에서는 작은 mistake가 environment state를 바꾸고, 그 state가 training data distribution 밖으로 나가면 다음 mistake가 더 커지는 compounding error가 생긴다. RECAP의 출발점은 이 문제다.
 
-| 문제 | RECAP의 대응 |
+| imitation-only 병목 | 왜 문제가 되나 | RECAP의 대응 |
+| --- | --- | --- |
+| demonstration state만 배움 | 실제 policy가 만든 mistake state에서 recovery supervision이 부족하다. | 현재 policy를 실행하고 expert가 intervene/correct한다. |
+| 실패 rollout을 그대로 imitation하면 실패를 복사 | bad experience에도 학습 신호가 필요하지만, "그대로 따라하기"는 위험하다. | value function으로 action/trajectory의 advantage를 판단한다. |
+| long-horizon credit assignment | espresso 실패가 마지막 serving이 아니라 초기 portafilter grasp에서 시작될 수 있다. | value change와 remaining steps-to-success 예측을 advantage로 쓴다. |
+| large VLA에 PPO/REINFORCE 적용이 어려움 | flow matching action expert는 tractable log-likelihood가 단순하지 않다. | advantage-conditioned supervised policy extraction으로 RL signal을 주입한다. |
+
+## Method Overview
+
+<PaperFigure
+  src="/pi/pistar06-paper/fig01-recap-overview.png"
+  alt="Figure 1 RECAP overview"
+  caption="Fig. 1. RECAP은 pre-trained VLA와 value function을 두고, task rollout/correction data로 value estimate를 갱신한 다음 advantage-conditioned VLA를 다시 학습한다."
+/>
+
+RECAP은 세 개의 subroutine을 반복한다.
+
+1. **Data collection**: 현재 policy를 task에 실행하고, episode outcome label을 수집한다. 필요하면 expert teleoperator가 intervene해서 correction trajectory를 제공한다.
+2. **Value function training**: 지금까지 모은 demonstration, autonomous rollout, correction data를 사용해 multi-task distributional value function을 학습한다.
+3. **Advantage-conditioned policy training**: value function이 계산한 advantage를 binarized improvement indicator `I_t`로 바꾸고, 이 indicator를 VLA prefix/input에 넣어 policy를 supervised 방식으로 학습한다.
+
+여기서 중요한 점은 bad rollout을 버리지 않는다는 것이다. RECAP은 좋은 action과 나쁜 action을 모두 학습 데이터로 유지하되, "이 action은 positive advantage인가?"라는 조건을 추가해 policy가 high-advantage behavior를 뽑도록 만든다.
+
+## Task Examples
+
+<PaperFigure
+  src="/pi/pistar06-paper/fig02-recap-task-examples.png"
+  alt="Figure 2 RECAP task examples"
+  caption="Fig. 2. cafe, box, laundry task는 모두 여러 substep과 deformable/liquid/cardboard interaction을 포함한다."
+/>
+
+논문이 강조하는 task는 단순 pick-and-place가 아니다. espresso는 liquid와 wait time, machine interaction이 있고, box assembly는 cardboard가 휘거나 서로 붙는 edge case가 있으며, laundry는 item/fabric/initial pose variation이 크다. RECAP은 이런 long-horizon 실사용형 task에서 "성공률"뿐 아니라 "시간당 성공 횟수"를 끌어올리는 것이 목표다.
+
+## 시스템 설정
+
+<PaperFigure
+  src="/pi/pistar06-paper/fig05-robot-setup.png"
+  alt="Figure 5 robot setup"
+  caption="Fig. 5. iterative improvement 실험에는 static bimanual system을 사용한다. 두 팔은 6-DoF arm과 parallel jaw gripper이며, observations는 joint/gripper state와 3개 camera image다."
+/>
+
+| 축 | 논문 기준 |
 | --- | --- |
-| demo data만으로는 failure recovery 부족 | 현재 best policy를 실행하다가 사람이 takeover/correction |
-| bad experience를 그대로 imitation하면 실패를 복사 | outcome/reward 기반 value function으로 좋은 행동과 나쁜 행동을 구분 |
-| long-horizon credit assignment | value change를 advantage로 사용 |
-| large VLA policy extraction | VLA를 advantage-conditioned policy로 학습 |
+| robot | static bimanual system |
+| arm/gripper | two 6-DoF arms + parallel jaw grippers |
+| control | 50 Hz joint position control |
+| observation | joint positions, gripper positions, base camera, two wrist cameras |
+| flexible mounting | table 등 환경에 맞게 setup 가능 |
+| pretraining robots | many different robots/tasks, tens of thousands of hours demonstration data |
+| target tasks | laundry folding, espresso making, box assembly |
+| episode duration | task에 따라 약 5-15 minutes scale |
 
-## Method
+이 설정은 RTC page의 runtime 관점과도 연결된다. RTC가 chunked action policy를 real-time으로 이어 붙이는 문제라면, RECAP은 같은 계열의 VLA를 deployment 경험으로 다시 개선하는 training loop다.
 
-RECAP은 세 단계로 이해하면 된다.
+## Dataset and Experience
 
-1. Demonstration으로 기본 behavior를 만든다.
-2. Expert correction으로 policy가 실제로 만든 mistake state에서 recovery supervision을 얻는다.
-3. Autonomous experience와 reward로 value function을 학습하고, value 변화량을 advantage signal로 policy에 조건화한다.
+RECAP의 데이터는 하나의 static dataset이 아니라 단계별로 확장된다.
 
-### Value Function과 Advantage Conditioning
+| 데이터 source | 사용 위치 | 핵심 |
+| --- | --- | --- |
+| multi-task demonstrations | pretraining value function과 π*0.6 base policy | tens of thousands of hours, many tasks/robots, π0.5 recipe를 확장 |
+| VLM/web co-training data | π0.6/π*0.6의 semantic knowledge 유지 | Knowledge Insulation 계열 recipe와 연결 |
+| task demonstrations `D_l` | downstream specialist initialization | target task마다 초기 SFT stage를 만든다. |
+| autonomous rollouts | RECAP iteration | policy가 실제로 만든 성공/실패 state를 제공한다. |
+| expert corrections/interventions | exploration과 catastrophic failure recovery | 모든 correction action은 `I_t=True`로 취급해 positive supervision으로 넣는다. |
 
-RECAP의 핵심은 task outcome에서 long-horizon credit assignment를 푸는 것이다. 예를 들어 espresso portafilter 삽입 실패가 마지막 insertion이 아니라 처음 grasp에서 시작되었을 수 있다. RECAP은 상황의 value를 예측하고, action 전후 value 변화가 positive면 좋은 action, negative면 피해야 할 action으로 본다.
+Appendix F가 공개한 data collection 수치는 다음과 같다.
 
-Training 때는 good/bad data를 버리지 않고 모두 사용하되, advantage annotation을 input condition으로 넣는다. Execution 때는 “high-advantage action”을 수행하도록 conditioning한다. 그래서 policy는 bad experience도 “이런 상황에서 이렇게 하면 좋지 않다”는 형태로 사용할 수 있다.
-
-## π0.6와 π*0.6
-
-공식 글은 π0.6을 π0.5의 refinement로 설명한다. π0.6은 5B-parameter VLM backbone과 action expert를 가지며, textual command뿐 아니라 execution quality, RECAP advantage 같은 heterogeneous conditioning 정보를 받을 수 있다.
-
-| 모델 | 의미 |
+| task / setting | 데이터 수집 |
 | --- | --- |
-| π0.6 | π0.5 이후 더 큰 backbone과 heterogeneous prompt를 지원하는 base VLA |
-| π*0.6 offline RL pretrain | RECAP의 offline RL pretraining stage |
-| π*0.6 + SFT | task-specific demonstration fine-tuning |
-| π*0.6 ours | on-robot experience, corrections, reward feedback까지 포함한 final model |
+| Laundry, T-shirts and shorts | main text는 iteration마다 4 robots에서 300 trajectories를 수집한다고 설명한다. expert correction 없이 autonomous evaluation data만 사용한다. |
+| Diverse laundry | 450 evaluation episodes와 287 correction episodes |
+| Failure mode removal ablation | 약 1000 autonomous episodes와 `280 + 378` correction episodes, 3 robots |
+| Box assembly | main text는 iteration마다 600 autonomous trials와 360 intervention trials를 사용한다고 설명한다. Appendix는 deployment scenario에서 3 robots를 사용하고 600 demonstrations/trials와 360 correction episodes를 언급한다. |
+| Cafe / espresso | single iteration, 429 correction episodes와 414 autonomous episodes |
 
-## Experiments and Results
+논문 표현상 box assembly의 `600` 항목은 main text와 appendix에서 autonomous trials/demonstrations라는 표현이 섞인다. 확실한 것은 box assembly가 deployment scenario에서 3 robots를 사용했고, iteration당 `600` 규모의 rollout/demo data와 `360` correction episodes를 썼다는 점이다.
 
-공식 글의 application은 세 가지다.
+## Value Function
 
-| Application | 어려운 점 |
+<PaperFigure
+  src="/pi/pistar06-paper/fig04-value-function-visualization.png"
+  alt="Figure 4 value function visualization"
+  caption="Fig. 4. value function은 remaining steps-to-success를 normalized value로 예측한다. 빨간 구간은 value drop, 초록 구간은 value increase로 표시된다."
+/>
+
+RECAP은 value function을 task success/failure label에서 직접 학습한다. 각 episode의 terminal outcome을 보고 reward를 다음처럼 정의한다.
+
+```text
+r_t =
+  0        if t = T and success
+ -C_fail   if t = T and failure
+ -1        otherwise
+```
+
+따라서 successful episode에서는 value가 "성공까지 남은 step 수의 음수"가 되고, failed episode는 큰 negative value를 갖는다. 실제 학습에서는 task 길이가 다르므로 value를 task별 최대 episode length 기준으로 normalize해 `(-1, 0)` 범위로 둔다.
+
+value function은 observation `o_t`와 language command `l`을 입력으로 받아 `B=201`개의 discretized value bins에 대한 distribution `p_phi(V | o_t, l)`을 예측한다. empirical return `R_t(tau)`를 binning한 뒤 cross entropy로 학습한다.
+
+```text
+min_phi E_{tau in D} [
+  sum_{o_t in tau} H(R_t^B(tau), p_phi(V | o_t, l))
+]
+```
+
+이 value function은 π*0.6 VLA와 같은 architecture design을 쓰지만, VLM backbone은 더 작은 `670M` parameter Gemma 3 initialized model을 사용한다. overfitting을 줄이기 위해 small mixture of multimodal web data에도 co-train한다.
+
+## Advantage Conditioning
+
+<PaperFigure
+  src="/pi/pistar06-paper/fig03-vla-value-interaction.png"
+  alt="Figure 3 interaction between VLA and value function"
+  caption="Fig. 3. π*0.6 VLA는 binarized advantage indicator를 action prediction 전에 입력받는다. 이 indicator는 별도 value function이 계산한다."
+/>
+
+value function이 있으면 action의 advantage를 계산할 수 있다. post-training에서는 `N=50` lookahead를 쓴다.
+
+```text
+A_pi(o_t, a_t) =
+  sum_{t'=t}^{t+N-1} r_{t'} + V_pi(o_{t+N}) - V_pi(o_t)
+```
+
+pretraining에서는 on-the-fly cost를 줄이기 위해 `N=T` 형태의 full-episode return estimate를 사용한다. advantage를 그대로 regression target으로 쓰지 않고, task-specific threshold `epsilon_l`로 binarize한다.
+
+```text
+I_t = 1(A_pi_ref(o_t, a_t, l) > epsilon_l)
+```
+
+policy training에서는 일반 action likelihood와 improvement-conditioned action likelihood를 함께 학습한다.
+
+```text
+min_theta E_{D_pi_ref} [
+  -log pi_theta(a_t | o_t, l)
+  -alpha log pi_theta(a_t | I_t, o_t, l)
+]
+```
+
+π*0.6은 flow matching continuous action도 함께 갖기 때문에 실제 objective는 discrete action likelihood와 flow matching loss의 조합으로 해석한다. 논문은 continuous part의 exact log-likelihood가 직접 계산되지 않으므로, flow/diffusion likelihood lower-bound 관점으로 설명한다.
+
+## π0.6 and π*0.6 Model Architecture
+
+<PaperFigure
+  src="/pi/pistar06-paper/model-card-fig01-pi06-architecture.png"
+  alt="π0.6 model architecture from model card"
+  caption="π0.6 model card Fig. 1. π0.6은 language subtask, web/VLM data, metadata, image inputs, discrete FAST action tokens, continuous action expert를 함께 다룬다."
+/>
+
+기존 초안에는 π0.6을 "5B-parameter VLM backbone"처럼 적었지만, model card 기준으로 더 정확히 쓰면 다음과 같다.
+
+| 구성 | 공식 model card / PDF 기준 |
 | --- | --- |
-| espresso drinks | long horizon, liquid, grinder/espresso wait time, machine cleaning |
-| diverse laundry folding | item/fabric variation, initial condition variation |
-| box assembly/labeling | flap folding, repeated factory-like packaging, edge cases |
+| VLM backbone | Gemma 3 `4B` initialized language backbone + SigLIP `400M` vision encoder |
+| action expert | 약 `860M` parameters |
+| image input | 최대 4개 image, 각 `448 x 448`; base camera, up to two wrist cameras, optional backward camera |
+| attention | image token은 bidirectional, text token은 causal, action expert token은 bidirectional |
+| training recipe | Knowledge Insulation. backbone은 FAST action token과 co-training examples를 예측하고, action expert는 continuous action을 flow matching으로 예측한다. action expert gradient는 main VLM backbone으로 흐르지 않는다. |
+| output | textual next subtask `l_hat`, FAST-discretized action tokens, continuous action chunk |
+| action interface | joint angles + gripper commands at 50 Hz |
+| inference speed | model card 기준 3-camera input에서 H100 single GPU action chunk generation `63 ms` |
 
-주요 결과:
+π*0.6은 이 π0.6에 advantage indicator를 추가한 RL-ready variant다. PDF는 advantage indicator가 `l_hat` 이후, discretized/continuous action 이전에 들어간다고 설명한다. 즉 high-level subtask prediction 자체를 바꾸기보다는, 이후 action prediction이 "positive advantage behavior"를 따르도록 조건화한다.
 
-- espresso, laundry, box assembly에서 throughput이 크게 개선된다.
-- hard tasks에서는 on-robot experience를 포함했을 때 throughput과 success rate가 2배 이상 개선될 수 있다.
-- 최종 π*0.6은 espresso drinks를 하루 종일 만들고, 새로운 집에서 50개 novel laundry items를 folding하며, real factory packaging에 쓰이는 59 boxes를 assemble/label하는 데모를 보여준다.
-- espresso task는 90%+ success rate를 달성한다고 설명한다.
+## Training Recipe
 
-중요한 점은 RECAP이 단순히 더 많은 human demonstration을 넣는 방법이 아니라, robot이 만든 실패 state와 autonomous outcome을 학습 signal로 바꾸는 방법이라는 것이다.
+<PaperFigure
+  src="/pi/pistar06-paper/algorithm01-recap.png"
+  alt="Algorithm 1 RECAP"
+  caption="Algorithm 1. RECAP은 value/policy pretraining 뒤 task demo로 초기화하고, rollout collection -> value update -> policy update를 반복한다."
+/>
+
+Algorithm 1을 단계별로 풀면 다음과 같다.
+
+| 단계 | 내용 |
+| --- | --- |
+| pretrain value | multi-task demonstration dataset `D_demo`로 `V_pre`를 학습한다. |
+| pretrain policy | `D_demo`, `V_pre`, advantage conditioning objective로 `pi_pre`를 학습한다. |
+| task initialization | target task `l`의 demonstrations로 `D_l`을 초기화한다. |
+| task value SFT | `V_pre`에서 시작해 `D_l`로 task value `V_l^0`를 학습한다. |
+| task policy SFT | `pi_pre`에서 시작해 `D_l`, `V_l^0`로 task policy `pi_l^0`를 학습한다. demonstration 단계에서는 `I_t=True`로 둔다. |
+| iteration | current policy `pi_l^{k-1}`로 rollout/correction data를 모아 `D_l`에 추가한다. |
+| value update | 항상 `V_pre` checkpoint에서 시작해 누적 `D_l`로 `V_l^k`를 fine-tune한다. |
+| policy update | 항상 `pi_pre` checkpoint에서 시작해 누적 `D_l`, `V_l^k`로 `pi_l^k`를 fine-tune한다. |
+
+마지막 두 줄이 중요하다. 논문은 value/policy를 이전 iteration checkpoint에서 계속 이어 fine-tune하지 않고, pre-trained checkpoint에서 다시 fine-tune하는 방식을 사용한다. 이유는 multiple iterations에서 drift를 줄이기 위해서다.
+
+Advantage threshold 설정도 공개되어 있다.
+
+| 설정 | 값 |
+| --- | --- |
+| pretraining threshold | task별로 demonstration data의 약 `30%`가 positive advantage가 되도록 설정 |
+| fine-tuning threshold | 일반적으로 evaluation rollout의 약 `40%`가 positive advantage가 되도록 설정 |
+| T-shirt/shorts laundry | high success but slow policy setting이므로 약 `10%`만 positive advantage가 되도록 threshold를 높임 |
+| advantage conditioning dropout | training 중 `30%` 확률로 advantage indicator conditioning을 drop |
+| test-time CFG | 필요하면 `beta > 1`로 sharpening. 논문은 aggressive motion을 피하기 위해 보통 `beta in [1.5, 2.5]` 같은 moderate setting을 언급한다. |
+
+## Evaluation Tasks
+
+<PaperFigure
+  src="/pi/pistar06-paper/fig06-evaluation-tasks.png"
+  alt="Figure 6 evaluation tasks"
+  caption="Fig. 6. 평가 task는 laundry variants, box assembly, espresso making으로 구성된다. 각 task는 start/success/criteria를 명시한다."
+/>
+
+| task | success criterion / details |
+| --- | --- |
+| Laundry, T-shirts and shorts | basket에서 T-shirt 또는 shorts를 꺼내 flatten/fold하고 top-right stack에 올림. `200 s` 이내 성공. |
+| Laundry, diverse items | towel, button-up shirt, sweater, jeans, T-shirt, shorts, polo, skirt, long sleeve shirt, socks, underwear 등 11 item types. 정량 평가는 hard item인 button-up shirt 중심. `500 s` 이내 target item을 fold/stack. |
+| Laundry, failure removal | fixed flattened orange T-shirt를 collar facing up으로 정확히 접어야 함. `200 s` 이내. |
+| Cafe, double shot espresso | portafilter pickup, grinding, tamping, lock, cup placement, extraction, serving. `200 s` 이내 critical mistakes 없이 성공. |
+| Box assembly | flattened cardboard sheet에서 box를 만들고 label 부착 후 crate에 배치. 전체 성공은 `600 s` 이내 assembled/stacked box. |
+
+metric은 두 가지다.
+
+| metric | 의미 |
+| --- | --- |
+| throughput | successful task completions per hour. speed와 success를 함께 반영한다. |
+| success rate | human-provided annotations를 quality indicators로 aggregate한 episode success proportion. |
+
+## Main Results
+
+<PaperFigure
+  src="/pi/pistar06-paper/fig07-08-throughput-success.png"
+  alt="Figures 7 and 8 throughput and success rates"
+  caption="Fig. 7-8. final π*0.6는 모든 task에서 throughput을 크게 높이고, diverse laundry와 espresso에서는 on-robot data 포함 후 successful completions per hour가 2배 이상 증가한다."
+/>
+
+비교 baseline은 다음과 같다.
+
+| baseline | 의미 |
+| --- | --- |
+| pre-trained π0.5 | RL/RECAP 없음 |
+| pre-trained π0.6 | supervised pretraining, advantage indicator 없음 |
+| RL pre-trained π*0.6 | value function과 advantage indicator를 포함한 offline RL pretrain |
+| π*0.6 offline RL + SFT | target task demonstrations로 fine-tune. demonstration은 `I_t=True`로 고정 |
+| π*0.6 ours | on-robot autonomous rollouts, expert corrections, reward feedback까지 포함한 final RECAP model |
+
+결과의 핵심은 다음이다.
+
+| 관찰 | 해석 |
+| --- | --- |
+| final π*0.6가 모든 task에서 throughput 개선 | RECAP은 단순 success rate뿐 아니라 실제 task/hour 기준 효율을 높인다. |
+| diverse laundry와 espresso에서 throughput 2배 이상 | 가장 어려운 deformable/liquid long-horizon task에서 on-robot experience 효과가 크다. |
+| failure rate가 약 2배 감소 | success rate figure 기준 difficult task에서 실패율이 크게 줄어든다. |
+| T-shirt/shorts laundry는 SFT 이후 success가 이미 높음 | final model은 success보다 speed/throughput을 더 끌어올린다. |
+| box assembly는 subtask별 success가 균일하게 높아짐 | retrieve/build/label/place stage 모두에서 final π*0.6가 가장 안정적이다. |
+
+논문은 final π*0.6가 espresso/office use나 factory box assembly 같은 practical setting에 가까운 robustness에 도달한다고 주장한다. article은 qualitative claim으로 espresso drinks를 13시간 straight로 만들고, 새로운 집에서 novel laundry items를 2시간 이상 접고, real packaging factory box를 조립하는 video evidence를 제시한다.
+
+## Iteration, Policy Extraction, Failure Removal
+
+<PaperFigure
+  src="/pi/pistar06-paper/fig09-12-iterations-ablation.png"
+  alt="Figures 9 to 12 RECAP iterations, policy extraction, failure mode removal"
+  caption="Fig. 9-12. iteration 수, policy extraction 방식, targeted failure removal을 나누어 RECAP 설계 요소를 검증한다."
+/>
+
+세 가지 ablation을 분리해서 읽어야 한다.
+
+| ablation | 설정 | 결과 |
+| --- | --- | --- |
+| multiple iterations | T-shirt/shorts folding과 box assembly에서 `i=1`, `i=2` 비교 | laundry throughput은 약 50% 개선, box는 두 번째 iteration 후 throughput 2배 개선. |
+| policy extraction comparison | 같은 on-robot data로 RECAP, AWR, PPO 비교 | AWR/PPO도 reasonable result는 얻지만 RECAP throughput보다 낮다. PPO는 off-policy setting 안정화를 위해 작은 trust-region `eta=0.01`이 필요했다. |
+| failure mode removal | collar-up strict laundry criterion, 추가 demo/intervention 없이 RL만으로 개선 | 두 iteration, iteration당 600 trajectories 후 success `97%`와 높은 speed를 달성. |
+
+이 ablation은 RECAP이 단순히 "더 많은 data를 넣어서 좋아진다"가 아니라, value-conditioned policy extraction이 어떤 learning signal을 제공하는지 보여준다.
+
+## Appendix Notes
+
+<PaperFigure
+  src="/pi/pistar06-paper/fig13-additional-value-visualization.png"
+  alt="Figure 13 additional value function visualization"
+  caption="Fig. 13. Appendix value visualization. value function은 make coffee, box building, towel hanging, hook attachment 등 여러 task에서 value drop/increase를 구분한다."
+/>
+
+Appendix에서 survey에 반영해야 할 detail은 다음이다.
+
+| 항목 | 내용 |
+| --- | --- |
+| value visualization | value drop은 red, value increase는 green, oscillation은 yellow로 표시한다. |
+| advantage lookahead | post-training advantage는 `N=50` lookahead를 사용한다. |
+| pretraining advantage | `N=T` full-episode estimate를 사용해 value function single inference로 on-the-fly 계산한다. |
+| dropout | advantage indicator는 training 중 30% drop된다. |
+| threshold | pretraining 30%, fine-tuning 40%, special laundry speed case 10% positive advantage 기준. |
+| CFG | high `beta`는 action distribution support boundary로 밀어 aggressive motion을 만들 수 있으므로 moderate `beta`를 사용한다. |
+| data aggregation | Algorithm 1의 누적 dataset `D_l`를 쓰되, task별 episode length, correction feasibility, deployment condition이 다르다. |
+
+## Code-Level Check
+
+공식 PDF/model card는 method와 model architecture를 충분히 설명하지만, 현재 public OpenPI release boundary와는 분리해서 봐야 한다. 이 repository의 [OpenPI Survey](../openpi-release/)와 PI overview 기준으로 공개 checkpoint는 `π0`, `π0-FAST`, `π0.5`가 중심이며, `π0.6`/`π*0.6` RECAP training code, value function training loop, task rollout/correction collection stack은 같은 방식으로 공개되어 있지 않다.
+
+따라서 이 페이지의 code-level 결론은 다음처럼 제한한다.
+
+| 항목 | 공개 자료 기준 |
+| --- | --- |
+| π0.6 architecture | model card와 PDF로 확인 가능 |
+| RECAP equations/algorithm | PDF의 Eq. 1-5, Algorithm 1로 확인 가능 |
+| public OpenPI implementation | π0/π0.5 계열 flow action expert와 KI/openpi config는 연결 배경으로 참고 가능 |
+| π*0.6 checkpoint/code | 공개 code/checkpoint로 확인 불가 |
+| value function data/loader | 공개 구현 미확인 |
+| correction interface | article/PDF에서 concept와 episode counts만 확인 가능 |
 
 ## PI Family 안에서의 위치
 
 | 항목 | 연결 |
 | --- | --- |
-| π0.5 | open-world household VLA base |
-| π0.6 | 더 큰 backbone, heterogeneous prompt/conditioning |
-| π*0.6 | RECAP으로 experience/RL 개선된 specialist |
-| RLT | RECAP보다 더 작은 actor-critic layer로 precise phase online RL |
-| π0.7 | RECAP experience를 strategy metadata로 distill해 single generalist가 specialist 수준 성능에 접근 |
+| [π0.5](../pi05-open-world-generalization/) | open-world household VLA base. π0.6은 π0.5의 hierarchy/conditioning을 이어받아 backbone/data/prompt를 개선한다. |
+| [Knowledge Insulation](../knowledge-insulation/) | π0.6/π*0.6은 KI recipe를 사용해 FAST discrete action token, VLM/web data, continuous action expert를 함께 학습한다. |
+| [Real-Time Action Chunking](../real-time-action-chunking/) | RECAP espresso/box demo는 follow-up training-time RTC 흐름과 연결된다. RTC는 runtime chunk consistency, RECAP은 deployment experience learning 축이다. |
+| [Robot Olympics / π0.6](../moravec-robot-olympics/) | π0.6이 새 physical skill fine-tuning base가 되는 중간 capability signal이다. |
+| [RLT](../rlt-efficient-online-rl/) | RECAP은 long-horizon task-level throughput/success 개선, RLT는 precise phase의 online RL adaptation에 더 가깝다. |
+| [π0.7](../pi07-steerable-model/) | π0.7은 RECAP specialist experience/strategy를 metadata로 distill해 single generalist behavior steering으로 이어진다. |
 
 ## 한계와 주의
 
-- RECAP은 reward/value design과 task-specific rollout collection이 필요하다.
-- autonomous experience가 많아질수록 safety, reset, failure handling cost가 중요해진다.
-- π0.6/π*0.6 model card와 full PDF를 봐야 architecture/training hyperparameter를 완전히 확정할 수 있다.
+| 한계 | 의미 |
+| --- | --- |
+| 완전 autonomous system은 아님 | 논문도 expert correction과 human-provided success annotation이 들어간다고 명시한다. |
+| reward design과 annotation 필요 | sparse success label을 task마다 정의해야 하고, success criteria가 결과 해석을 좌우한다. |
+| robot operation cost | espresso/box/laundry처럼 긴 task에서는 reset, monitoring, correction, failure handling cost가 크다. |
+| public reproducibility 제한 | value function, rollout infrastructure, π*0.6 checkpoint/code가 공개되어 있지 않다. |
+| safety/runtime constraints | on-robot RL은 bad policy rollout을 포함하므로 hardware safety, intervention, timeout criterion이 필수다. |
+| task-specific specialist 중심 | final results는 task-specific π*0.6 specialists다. 단일 generalist로의 distillation은 π0.7 흐름에서 다룬다. |
+
+## Citation Trail
+
+| 기반/비교 흐름 | RECAP에서의 역할 | 읽을 포인트 |
+| --- | --- | --- |
+| DAgger / human-gated DAgger | expert intervention/correction의 선행 흐름 | policy가 만든 state에서 supervision을 받는 것이 compounding error 완화에 중요하다. |
+| Offline RL | 기존 data를 재사용해 policy improvement | RECAP은 on-policy PPO보다 offline/iterated data aggregation에 가깝다. |
+| Advantage Conditioning / CFGRL | policy extraction 핵심 아이디어 | high-advantage action을 조건으로 supervised policy를 학습한다. |
+| AWR | baseline policy extraction | weighted regression은 data 일부를 downweight/filter하는 경향이 있어 RECAP보다 낮은 throughput. |
+| PPO / DPPO / FPO / SPO | policy-gradient style baseline | flow/diffusion VLA에 적용하기 어렵고 off-policy setting에서 trust-region 안정화가 필요하다. |
+| Flow Matching / Diffusion Policy | continuous action expert 기반 | exact likelihood가 단순하지 않아 advantage-conditioned supervised route가 유리하다. |
+| Knowledge Insulation / FAST | π0.6 action/token training recipe | discrete action token과 continuous flow action expert를 같이 학습하되 gradient interference를 막는다. |
+
+## Study Takeaways
+
+1. RECAP의 핵심은 robot이 만든 bad experience를 버리거나 복사하지 않고, value/advantage annotation이 붙은 supervised data로 바꾸는 것이다.
+2. value function은 reward predictor라기보다 "remaining steps-to-success" critic으로 쓰인다.
+3. π*0.6은 π0.6에 advantage conditioning을 추가한 RL-ready VLA variant다.
+4. correction은 모든 문제를 해결하는 optimal supervision이 아니라, catastrophic mistake recovery와 exploration bottleneck 해결에 가깝다.
+5. on-robot experience를 넣었을 때 diverse laundry와 espresso 같은 어려운 task에서 throughput이 2배 이상 오른다.
+6. RECAP은 PI family에서 "runtime correction" 이후 "deployment experience를 training signal로 환류"하는 단계다.
 
 ## 5-Pass 검증 메모
 
 | Pass | 결과 |
 | --- | --- |
-| 1. 구조/coverage | correction, value function, advantage conditioning, 3 applications, π0.6/π*0.6 구분 포함 |
-| 2. 사실/수치 | 5B VLM, 2x+ improvement, 50 laundry items, 59 boxes, 90%+ espresso success 확인 |
-| 3. 코드 구현 | 공식 code 미확인 |
-| 4. 해석/연결 | RLT와 π0.7로 이어지는 RL/experience 축 정리 |
-| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |
+| 1. 구조/coverage | metadata, source inventory, figure inventory, problem, system, dataset, value function, advantage conditioning, model architecture, training, experiments, appendix, code boundary, family connection을 포함했다. |
+| 2. 사실/수치 | PDF/model card 기준으로 `B=201`, value range `(-1, 0)`, `N=50`, 50 Hz control, 2x 6-DoF arms, 3 cameras, Gemma 3 4B, SigLIP 400M, action expert 860M, action chunk 63 ms, task cutoff와 episode counts를 대조했다. |
+| 3. 이미지 근거 | PDF Fig. 1-13 중 핵심 figure와 Algorithm 1, model card Fig. 1을 `/pi/pistar06-paper/`에 crop asset으로 저장했다. |
+| 4. 코드 구현 | π0.6/π*0.6 public code/checkpoint는 현재 OpenPI 공개 범위 밖으로 분리해 표기했다. |
+| 5. 문서 품질/빌드 | `npm run build`와 `BASE_PATH=/robotics-study-notes SITE_URL=https://wons999.github.io npm run build`를 모두 통과했다. |
