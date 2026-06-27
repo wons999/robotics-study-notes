@@ -1,6 +1,6 @@
 ---
 title: RLT
-description: RL token을 이용해 VLA를 효율적으로 online RL fine-tuning하는 RLT 논문 Survey.
+description: RL token으로 VLA 표현과 action prior를 보존한 채 online RL을 효율화하는 RLT 논문 Survey.
 sidebar:
   hidden: true
 ---
@@ -16,121 +16,348 @@ import PaperFigure from '../../../../components/PaperFigure.astro';
 
 | 항목 | 내용 |
 | --- | --- |
-| 논문/글 | Precise Manipulation with Efficient Online RL |
-| 방법 이름 | RLT, RL Tokens |
-| 저자 | Charles Xu, Jost Tobias Springenberg, Michael Equi, Ali Amin, Adnan Esmail, Sergey Levine, Liyiming Ke |
-| 공개 | pi.website research, 2026-03-19 |
+| 논문 | RL Token: Bootstrapping Online RL with Vision-Language-Action Models |
+| 공식 글 제목 | Precise Manipulation with Efficient Online RL |
+| 방법 이름 | RLT, RL Token |
+| 저자/그룹 | Charles Xu, Jost Tobias Springenberg, Michael Equi, Ali Amin, Adnan Esmail, Sergey Levine, Liyiming Ke / Physical Intelligence |
+| 공개 | PI research page, 2026-03-19 |
 | 링크 | https://www.pi.website/research/rlt, https://www.pi.website/download/rlt.pdf |
-| 태그 | online RL, VLA, RL token, actor-critic, precision manipulation, throughput |
+| 연결 모델 | π0.6 VLA, RL token actor-critic adaptation |
+| 태그 | online RL, VLA, RL token, actor-critic, action chunking, precision manipulation, human intervention |
 
 ## 한 줄 요약
 
-RLT는 pretrained VLA 전체를 online RL로 직접 업데이트하지 않고, VLA 내부 표현을 압축한 `RL token`을 작은 actor-critic policy에 제공해 정밀 조작의 마지막 어려운 구간을 몇 분에서 몇 시간의 real-world data로 빠르게 개선하는 방법이다.
+RLT는 pretrained VLA 전체를 online RL로 업데이트하지 않고, VLA 내부 embedding을 `RL token`으로 압축한 뒤 작은 actor-critic이 VLA action chunk를 국소적으로 수정하게 만들어, 접촉/삽입의 마지막 정밀 구간을 몇 분에서 몇 시간의 real robot data로 빠르게 개선하는 방법이다.
+
+## Figure / Table Inventory
+
+PDF는 13페이지이며 formal table은 없고, Figure 1-9와 Algorithm 1, Appendix A-C가 핵심 근거다. Figure-level crop은 공식 PDF page render에서 직접 추출했다.
+
+| Figure / Appendix | Local asset | 본문 반영 위치 | 핵심 내용 |
+| --- | --- | --- | --- |
+| Fig. 1 | `/pi/rlt-paper/fig01-overview.png` | Official Visual Evidence, Method | Data → VLA with RL Token → Online RL → Final RL Policy pipeline |
+| Fig. 2 | `/pi/rlt-paper/fig02-rl-token-extraction.png` | Model Architecture | encoder-decoder transformer로 `RL token: 1 x 2048`을 만들고 VLA action expert와 연결 |
+| Algorithm 1 | `/pi/rlt-paper/algorithm01-rlt.png` | Complete Training Loop | RL token 학습, warmup, rollout, replay buffer, critic/policy update loop |
+| Fig. 3 | `/pi/rlt-paper/fig03-tasks.png` | Dataset / Experiment Setup | screw, zip tie, Ethernet, charger critical phase task visual |
+| Fig. 4 | `/pi/rlt-paper/fig04-throughput.png` | Results | base VLA 대비 RLT throughput 향상 |
+| Fig. 5 | `/pi/rlt-paper/fig05-success-rate.png` | Results | task별 success rate 변화 |
+| Fig. 6 | `/pi/rlt-paper/fig06-baseline-comparison.png` | Baseline Comparison | DAgger, HIL-SERL, PLD, DSRL, RLT 비교 |
+| Fig. 7 | `/pi/rlt-paper/fig07-throughput-ablation.png` | Ablation | RL token, chunk, BC regularizer, pass-through ablation의 throughput learning curve |
+| Fig. 8 | `/pi/rlt-paper/fig08-success-ablation.png` | Ablation | success rate learning curve |
+| Fig. 9 | `/pi/rlt-paper/fig09-speed-histogram.png` | Emergent Strategy | Ethernet에서 RLT, teleop, base policy의 episode length histogram |
+| Appendix B | PDF page 12 | Implementation Detail | MLP 크기, `C=10`, 50% reference action masking, update ratio, reward |
+| Appendix C | PDF pages 12-13 | Baseline Detail | PLD, DSRL, HIL-SERL, DAgger 구현 차이 |
 
 ## Official Visual Evidence
 
-<PaperFigure src="/pi/rlt-og.png" alt="RLT official overview image" />
+<PaperFigure src="/pi/rlt-og.png" alt="RLT official overview image" caption="공식 RLT article의 overview visual. RL token을 통해 VLA 기반 policy를 online RL로 효율적으로 개선하는 문제 설정을 보여준다." />
 
-공식 RLT article의 overview visual이다. RL token을 통해 VLA 기반 policy를 online RL로 효율적으로 개선하는 문제 설정을 보여준다.
+<PaperFigure src="/pi/rlt-paper/fig01-overview.png" alt="RLT Figure 1 overview" caption="Figure 1. RLT는 VLA 내부 표현에서 RL token을 만들고, 이 compact representation을 작은 critic/actor에 넣어 real-world online RL로 정밀 manipulation을 개선한다." />
 
 ## 문제의식
 
-PI의 generalist VLA는 laundry folding, coffee making, grilled cheese cooking 같은 긴 task를 수행할 수 있지만, 실제 제품 수준에서는 “대체로 할 수 있음”만으로 부족하다. 특히 screwdriver alignment, zip tie threading, Ethernet cable insertion, charger insertion처럼 마지막 접촉 구간이 sub-millimeter precision을 요구하는 task에서는 base VLA가 broad phase는 잘 수행해도 critical phase에서 실패한다.
+PI 계열의 generalist VLA는 다양한 task를 out-of-box로 수행할 수 있지만, 제품 수준의 robot behavior에서는 “거의 됨”이 부족하다. Screwdriver alignment, zip tie threading, Ethernet insertion, charger insertion처럼 마지막 접촉 구간이 millimeter/sub-millimeter precision을 요구하는 task에서는 작은 자세 오차, 관측 ambiguity, 접촉 dynamics가 성공과 속도를 결정한다.
 
-기존 RECAP은 long-horizon task를 large-scale RL로 개선하는 방향이다. RLT는 반대로 특정 skill의 가장 정밀한 stage를 deployment 중에도 빠르게 개선하는 것을 목표로 한다.
+기존 선택지는 둘 다 부담이 크다.
 
-| 문제 | RLT의 답 |
+| 선택지 | 장점 | 병목 |
+| --- | --- | --- |
+| full VLA online RL | VLA 전체 behavior를 직접 개선 가능 | billion-parameter model을 real robot online loop에서 업데이트하기에는 compute/sample cost가 큼 |
+| small real-world RL policy | SERL/RL100처럼 몇 시간 안에 개선 가능 | 일반화된 VLA representation/action prior를 버리고 작은 encoder/policy를 새로 학습해야 함 |
+| imitation / DAgger | intervention data를 단순히 반영 가능 | human demonstration 속도와 전략에 묶이고, 더 빠른 contact strategy를 탐색하기 어려움 |
+
+RLT의 질문은 명확하다. VLA의 perception/generalization/action prior는 유지하면서, online RL의 빠른 sample efficiency만 가져올 수 있는가?
+
+## 시스템 설정
+
+RLT는 π0.6 VLA를 base policy로 사용한다. 논문 기준 base VLA는 up to four camera images, language instruction, proprioceptive state를 입력으로 받아 continuous action chunk를 만든다.
+
+| 항목 | 논문 기준 설정 |
 | --- | --- |
-| full VLA RL은 너무 큼 | VLA는 frozen feature/token provider로 두고 작은 actor-critic만 online update |
-| few-hour data에서 end-to-end RL 불안정 | RL token을 compact state representation으로 사용 |
-| base VLA prior를 버리면 exploration이 위험 | actor가 VLA action chunk를 입력으로 받아 edit하도록 설계 |
-| contact-rich precision stage가 병목 | critical phase만 targeted online RL로 개선 |
+| base policy | π0.6 VLA |
+| VLM backbone | SigLIP 400M + Gemma 4B |
+| action expert | 860M parameter action expert |
+| VLA action horizon | `H = 50` actions, 50 Hz에서 약 1초 |
+| open-loop execution | VLA는 chunk를 예측하지만 실제로는 prefix, 예: 20 steps, 실행 후 replanning |
+| robot control frequency | 50 Hz |
+| per-step action dimension | 14 |
+| RL actor chunk | `C = 10`, 따라서 `C x d = 10 x 14 = 140` dimensional action chunk |
+| 핵심 조건 | `C < H`로 두어 VLA보다 더 reactive하게 update |
+
+여기서 중요한 차이는 VLA가 “전체 task policy”로 남고, RLT actor는 critical phase에서 VLA가 제안한 action chunk를 수정한다는 점이다. 즉 RLT는 generalist robot model을 대체하는 새 policy가 아니라, precision bottleneck에 붙는 online refinement layer다.
+
+## Dataset / Task Setup
+
+<PaperFigure src="/pi/rlt-paper/fig03-tasks.png" alt="RLT Figure 3 tasks" caption="Figure 3. RLT는 screw installation, zip tie fastening, Ethernet insertion, charger insertion처럼 마지막 접촉 구간이 정밀도와 속도를 좌우하는 task에서 평가된다." />
+
+논문은 task별로 1-10 hours의 teleoperated demonstrations를 수집하고, 이를 사용해 base VLA를 task-specific하게 fine-tune하면서 RL token representation도 학습한다. 이후 online RL은 task 난이도에 따라 400-1000 episodes를 수행하며, reset/overhead를 제외한 실제 robot data는 약 15 minutes에서 5 hours 범위다.
+
+| Task | 전체 task | critical phase | 왜 어려운가 |
+| --- | --- | --- | --- |
+| Screw installation | electric screwdriver로 M3 screw를 robot arm receptacle에 조임 | screw head와 screwdriver tip alignment / rotation | sub-millimeter alignment, 10 cm lever arm 때문에 wrist motion error가 tip에서 증폭 |
+| Zip tie fastening | zip tie를 집고 tail을 narrow locking slot에 넣음 | tail threading | deformable object, bimanual coordination, tight tolerance |
+| Ethernet insertion | recessed port에 Ethernet connector 삽입 | angular/positional alignment 후 decisive insertion | 작은 orientation error나 hesitant contact가 port housing에 걸림 |
+| Charger insertion | power strip에 charger 삽입 | prong/socket alignment | socket/prong observability가 제한되고 반복 probing이 생김 |
+
+Task 전체는 30-120 seconds, 즉 50 Hz 기준 1500-6000 control steps다. RLT가 집중하는 critical phase는 보통 5-20 seconds, 즉 250-1000 control steps다. 논문은 controlled critical-phase evaluation에서는 각 task당 50 episodes로 평가하고, screw/zip tie는 full-task evaluation도 추가한다.
 
 ## Method
 
-### RL Token
+RLT는 두 단계로 구성된다.
 
-RLT는 VLA에 encoder-decoder transformer를 추가해 내부 embedding을 bottleneck으로 재구성하게 만든다. encoder의 마지막 output이 `RL token`이다. 이 token은 원래 VLA embedding을 복원할 만큼 충분한 정보를 담아야 하므로, actor-critic이 사용할 compact observation representation이 된다.
+1. VLA 내부 embedding을 compact한 `RL token`으로 readout하도록 encoder-decoder transformer를 학습한다.
+2. VLA와 RL token module을 freeze한 뒤, 작은 off-policy actor-critic을 online RL로 학습한다.
 
-| 구성 | 역할 |
+핵심은 actor가 새 action을 처음부터 만들지 않는다는 점이다. Actor는 VLA가 sampled reference action chunk `ã_{1:C}`를 제안하면, `x = (z_rl, sp)`와 `ã_{1:C}`를 함께 보고 action distribution을 만든다.
+
+```text
+actor input:
+  x = (z_rl, sp)
+  reference action chunk ã_{1:C} ~ π_vla(. | s, l)
+
+actor output:
+  π_θ(a_{1:C} | x, ã_{1:C}) = N( μ_θ(x, ã_{1:C}), σ²I )
+```
+
+이 구조는 online RL을 “고차원 action space 전체 탐색”이 아니라 “VLA가 이미 그럴듯하게 제안한 action 주변의 local action editing”으로 바꾼다.
+
+## Model Architecture
+
+<PaperFigure src="/pi/rlt-paper/fig02-rl-token-extraction.png" alt="RLT Figure 2 RL token extraction" caption="Figure 2. RLT는 VLA token embedding에 learned RL token을 append하고 encoder-decoder reconstruction objective를 학습한다. RL token은 1 x 2048, image embeddings는 N x 2048로 표시된다." />
+
+RL token 학습은 VLA final-layer token embeddings를 bottleneck으로 복원하는 방식이다.
+
+```text
+z = f(s, l; θ_vla)
+z = {z_1, ..., z_M}
+e_rl = e_ϕ(<rl>)
+z_rl = g_ϕ([z_1:M, e_rl])_{M+1}
+```
+
+Decoder는 `z_rl`과 이전 token reconstruction을 받아 원래 VLA embedding을 autoregressive하게 복원한다. Target embedding은 stop-gradient 처리된다.
+
+```text
+L_ro(ϕ) =
+  E_D [ Σ_i || h_ϕ(d_ϕ([z_rl, z̄_1:i-1]))_i - z̄_i ||² ]
+
+where z̄_i = sg(z_i)
+```
+
+| 구성요소 | 입력/출력 | 역할 |
+| --- | --- | --- |
+| frozen VLA `f_{θ_vla}` | state `s`, language `l` → token embeddings `z_1:M` | large pretrained representation source |
+| learned RL token `e_rl` | appended special token | encoder output 위치를 지정 |
+| encoder transformer `g_ϕ` | `[z_1:M, e_rl]` → `z_rl` | VLA internal embedding을 compact state로 압축 |
+| decoder transformer `d_ϕ` | `z_rl` + previous reconstructed embeddings | bottleneck이 정보를 보존하도록 reconstruction pressure 제공 |
+| actor `π_θ` | `x=(z_rl, sp)`, VLA reference chunk `ã` | Gaussian action chunk distribution 생성 |
+| critic `Q_ψ` | `x`, action chunk `a` | action-value estimate |
+
+논문 footnote에 따르면 실험 task는 language instruction이 고정되어 있어서 RL token step에서는 language embeddings를 drop한다. 하지만 construction 자체는 일반 VLA embeddings 전체에 적용 가능하다고 설명한다.
+
+## RL Objective
+
+Critic은 action chunk transition에 대해 off-policy temporal-difference learning을 수행한다. Replay buffer `B`에는 VLA warmup data, online RL rollouts, human teleoperated interventions가 모두 들어간다.
+
+```text
+L_Q = E_{(x,a_1:C,x')~B} [ ( Q_hat - Q_ψ(x, a_1:C) )² ]
+
+Q_hat =
+  Σ_{t'=1}^{C} γ^{t'-1} r_{t'}
+  + γ^C E_{a'~π_θ}[ Q_{ψ'}(x', a') ]
+```
+
+Actor는 critic value를 키우되 VLA reference action chunk에서 너무 멀어지지 않도록 regularization을 받는다.
+
+```text
+L_π(θ) =
+  E [ -Q_ψ(x, a_1:C) + β || a_1:C - ã_1:C ||²_2 ],
+
+a_1:C ~ π_θ(. | x, ã_1:C)
+ã_1:C ~ π_vla(. | s, l)
+```
+
+| 설계 | 이유 |
 | --- | --- |
-| VLA backbone | image/language/action prior 제공, RL 단계에서는 주로 frozen |
-| encoder-decoder transformer | VLA internal embedding을 bottleneck으로 압축/복원 |
-| RL token | actor와 critic의 compact state input |
-| actor | VLA action chunk를 입력으로 받아 action을 edit |
-| critic | outcome과 reward를 통해 value/advantage 추정 |
+| action chunks | sparse reward에서 credit assignment horizon을 줄인다. |
+| VLA reference pass-through | actor가 VLA의 multimodal action mode를 직접 볼 수 있다. |
+| BC/reference regularizer | actor가 무작정 action space를 탐색하지 않고 VLA prior 주변에서 개선한다. |
+| reference action dropout | actor가 reference를 복사만 하지 않게 한다. |
+| off-policy replay | VLA rollout, RL rollout, intervention을 모두 재사용한다. |
 
-### Online RL Policy Design
+Reference action dropout은 특히 중요하다. Training batch의 random subset에서 reference chunk를 zero로 바꿔 actor에 넣는다. Appendix B 기준 masking 비율은 50%이며, inference 때는 reference action을 항상 제공한다.
 
-RLT actor는 low-level single-step action이 아니라 VLA와 같은 action chunk를 예측한다. 이는 π 계열 VLA가 chunked action을 쓰는 구조와 맞춘 선택이다.
+## Complete Training Loop
 
-| 설계 선택 | 이유 |
+<PaperFigure src="/pi/rlt-paper/algorithm01-rlt.png" alt="RLT Algorithm 1" caption="Algorithm 1. RLT는 먼저 RL token과 선택적 VLA fine-tuning을 수행한 뒤, frozen VLA reference chunk와 RL token state를 사용해 actor/critic을 online으로 업데이트한다." />
+
+RLT 전체 loop는 다음 흐름이다.
+
+| 단계 | 내용 |
 | --- | --- |
-| action chunk output | VLA가 이미 쓰는 temporally extended action 구조를 유지 |
-| VLA predicted action input | actor가 처음부터 새 action을 만들지 않고 VLA output을 수정 |
-| reference-action regularization | exploration이 base VLA prior에서 너무 멀어지지 않게 함 |
-| reference-action dropout | actor가 VLA action을 단순 복사하지 않고 독립 action path를 학습 |
-| optional human intervention | robot이 stuck/failure에 빠질 때 human correction을 RL update에 반영 가능 |
+| 1. demonstration collection | task별 1-10 hours teleop demonstration 수집 |
+| 2. VLA adaptation | task data로 base VLA fine-tune, 동시에 RL token reconstruction objective 학습 |
+| 3. freeze | online RL 단계에서는 VLA와 RL token module을 freeze |
+| 4. warmup | VLA reference policy rollout으로 replay buffer를 pre-fill |
+| 5. rollout | chunk boundary마다 VLA reference chunk와 RL token을 만들고 actor action을 실행 |
+| 6. intervention | 필요 시 human operator가 action을 overwrite하고, sparse success/failure reward를 제공 |
+| 7. replay update | off-policy critic/policy update를 asynchronous하게 수행 |
+| 8. handover prediction | full-task autonomous execution을 위해 VLA가 RL policy로 넘길 timing을 예측하도록 short fine-tuning 가능 |
 
-핵심은 “large model을 직접 RL fine-tune”이 아니라 “large model이 주는 rich representation과 action prior 위에 small RL controller를 얹는 것”이다.
+Appendix B의 구현 detail은 재현 관점에서 중요하다.
 
-## Experiments and Results
-
-평가는 네 개의 contact-rich precision task에서 이루어진다.
-
-| Task | bottleneck |
+| 구현 항목 | 논문/appendix 기준 |
 | --- | --- |
-| Screwdriver | M3 screw를 robot arm에 맞춰 전동 드라이버로 조이는 sub-millimeter alignment |
-| Tie Zip Tie | 좁은 opening에 zip tie tail을 넣는 phase |
-| Insert Ethernet | Ethernet cable insertion |
-| Plug in Charger | charger insertion |
+| RL actor/critic init | online RL 시작 시 scratch |
+| network size | zip tie/Ethernet/charger는 2-layer MLP hidden 256, screw는 3-layer MLP hidden 512 |
+| critic | TD3처럼 two Q function ensemble, target value에는 min 사용 |
+| actor distribution | fixed small standard deviation의 Gaussian policy |
+| actor chunk | `C = 10`, `a_{t:t+C-1} ∈ R^{C x d}` |
+| sample efficiency | stride 2로 intermediate action chunks를 replay에 저장, 1초 data에서 약 25 samples |
+| update ratio | high update-to-data ratio 5 |
+| actor/critic update | critic update 2회당 actor update 1회 |
+| reward | operator가 RL task 완료 시 sparse `+1` reward |
 
-공식 페이지의 bar chart는 throughput을 `successes / 10 minutes`로 보고한다.
+## Results
+
+<PaperFigure src="/pi/rlt-paper/fig04-throughput.png" alt="RLT Figure 4 throughput results" caption="Figure 4. RLT는 base VLA policy 대비 critical phase throughput을 크게 높인다. 공식 article chart 기준 Screwdriver 1.7→14, Zip Tie 2.8→13, Ethernet 147→400, Charger 136→600 successes/10 minutes다." />
+
+공식 article chart는 throughput을 `successes / 10 minutes`로 보고한다.
 
 | Task | Base policy | RLT | 해석 |
 | --- | ---: | ---: | --- |
-| Screwdriver | 1.7 | 14 | 약 8.2x throughput 향상 |
+| Screwdriver | 1.7 | 14 | 약 8.2x throughput 향상, precision-critical task에서 가장 큰 개선 |
 | Tie Zip Tie | 2.8 | 13 | 약 4.6x throughput 향상 |
 | Insert Ethernet | 147 | 400 | 약 2.7x throughput 향상 |
 | Plug in Charger | 136 | 600 | 약 4.4x throughput 향상 |
 
-공식 설명은 “up to 3x” speed-up이라고 요약하지만, chart의 throughput ratio는 task별 metric scale과 episode definition에 따라 더 크게 보일 수 있다. Survey에서는 raw chart 수치와 article summary를 분리해서 기록한다.
+논문 abstract와 conclusion은 “hardest part of the task에서 up to 3x speedup”이라고 요약한다. 공식 article chart의 단순 throughput ratio는 task/phase/episode definition에 따라 더 크게 보일 수 있으므로, Survey에서는 paper wording과 article chart 수치를 분리해 기록한다.
 
-Ethernet insertion의 progress plot에서는 total training이 2시간이고 실제 robot data는 15분이며, 나머지는 reset/overhead라고 설명한다. Histogram에서는 final RLT policy trial의 절반이 teleoperated demonstration 전체보다 빠르다고 보고한다.
+<PaperFigure src="/pi/rlt-paper/fig05-success-rate.png" alt="RLT Figure 5 success rate results" caption="Figure 5. RLT는 throughput뿐 아니라 success rate도 높인다. Screwdriver와 zip tie처럼 base VLA가 어려워하는 task에서 success gain이 크고, Ethernet/charger처럼 이미 성공률이 높은 task에서는 success를 유지하며 속도를 개선한다." />
+
+논문 text는 screw critical phase success가 `20% → 65%`로 오른다고 명시한다. Full-task evaluation에서는 앞 단계의 grasp/lift variation이 누적되어 전체 success가 낮아지지만, RLT는 screwdriver full-task success를 40%p, zip tie full-task success를 60%p 높인다고 설명한다.
+
+## Baseline Comparison
+
+<PaperFigure src="/pi/rlt-paper/fig06-baseline-comparison.png" alt="RLT Figure 6 baseline comparison" caption="Figure 6. Ethernet task에서 DAgger, HIL-SERL, PLD, DSRL, RLT를 비교한다. Single-step RL 계열은 sparse reward와 긴 horizon에서 느리고, DSRL은 success는 높지만 throughput이 낮다." />
+
+| Baseline | 어떻게 비교했나 | RLT 대비 한계 |
+| --- | --- | --- |
+| DAgger | online RL 중 수집한 intervention data로 VLA fine-tune | human demonstration/intervention 속도와 전략에 묶인다. |
+| HIL-SERL | intervention을 포함한 small actor-critic RL | pretrained VLA representation을 쓰지 않고 ResNet encoder를 사용한다. Appendix C 기준 50 Hz setting과 exploration space 때문에 실패. |
+| PLD | VLA single-step action에 residual policy를 더함 | single-step action이라 sparse reward credit assignment가 길다. |
+| DSRL | flow VLA의 latent noise space를 RL로 steering | success는 높지만 VLA action space 제약이 강해 throughput 개선 폭이 작다. |
+| RLT | RL token + VLA reference chunk + actor-critic | base success를 유지하면서 mean steps to completion을 약 2x 줄임 |
+
+이 비교에서 RLT의 차별점은 “VLA representation을 쓴다”만이 아니다. Chunked action, reference action pass-through, reference regularizer가 함께 있어야 sparse reward 아래에서 빠르게 개선된다.
+
+## Ablation
+
+<PaperFigure src="/pi/rlt-paper/fig07-throughput-ablation.png" alt="RLT Figure 7 throughput ablation" caption="Figure 7. Ethernet throughput learning curve. RLT는 critical-phase data 5분, 전체 experiment time 약 40분 시점에 이미 alternative policy를 앞선다." />
+
+<PaperFigure src="/pi/rlt-paper/fig08-success-ablation.png" alt="RLT Figure 8 success ablation" caption="Figure 8. RLT는 success rate를 base VLA 수준으로 빠르게 회복/유지하면서 throughput을 높인다. RL token이나 pass-through를 빼면 learning이 느려진다." />
+
+| Ablation | 제거한 것 | 관찰된 영향 |
+| --- | --- | --- |
+| w/o RL Token | RL token 대신 frozen ImageNet-pretrained ResNet-10 encoder 사용 | throughput이 약 50% 감소. VLA 내부 표현이 manipulation-relevant structure를 담는다는 근거 |
+| w/o Chunk | `C=10` chunk 대신 single-step action | effective horizon이 길어져 base policy performance도 안정적으로 맞추기 어렵다. RL token을 50 Hz로 쓰기도 infeasible |
+| w/o BC Regularizer | `β=0`, Q-function만으로 actor 학습 | 가장 큰 single drop. actor가 고차원 action space를 Q gradient만으로 탐색해야 함 |
+| w/o Pass-Through | actor input에서 VLA reference action 제거 | 최종 성능은 따라올 수 있지만 learning이 느리고 early exploration drift/failure가 많음 |
+
+즉 RLT의 성능은 어느 한 모듈 때문만이 아니라, VLA internal state, VLA action prior, chunked TD learning, conservative regularization이 맞물린 결과다.
+
+## Emergent Strategy
+
+<PaperFigure src="/pi/rlt-paper/fig09-speed-histogram.png" alt="RLT Figure 9 Ethernet speed histogram" caption="Figure 9. Ethernet critical insertion phase에서 RLT median은 66 timesteps, teleop median은 146, base policy median은 228이다. RLT episode의 절반은 모든 teleoperated demonstrations보다 빠르다." />
+
+Figure 9는 단순 success/throughput 수치보다 더 중요한 qualitative evidence다. Base VLA는 port 근처에서 approach, retreat, readjust, retry를 반복하는 probing behavior를 보인다. RLT는 port로 접근한 뒤 유동적으로 삽입하고, 첫 시도가 실패해도 pressure와 작은 wiggle motion을 사용해 compliance를 활용한다.
+
+논문은 이 behavior가 demonstration data에서 보이지 않았고 online exploration에서 emergent하게 나온 전략이라고 해석한다. 따라서 RLT는 “human demonstration을 더 잘 모방”한 것만이 아니라, reward signal 아래에서 더 빠른 physical strategy를 발견한 사례로 볼 수 있다.
+
+## Appendix Notes
+
+Appendix B/C는 main text보다 구현 경계가 더 구체적이다.
+
+| Appendix detail | 내용 |
+| --- | --- |
+| VLA/RL token warm start | single-task data에서 base VLA와 RL token을 2000-10000 gradient steps 학습 |
+| freeze boundary | online RL 동안 VLA와 RL token representation은 freeze |
+| actor/critic architecture | 2-layer 256 MLP 또는 screw task의 3-layer 512 MLP |
+| critic ensemble | two Q functions, target 계산 시 min 사용 |
+| reference action masking | actor training에서 reference action chunk를 50% masking, inference에서는 항상 제공 |
+| replay sample expansion | stride 2 subsampling으로 1초 data에서 약 25 RL samples |
+| screw/zip training | 먼저 critical phase에서 RL 시작 후 full-task phase로 확장 |
+| PLD baseline | 50 base policy rollouts로 Cal-QL critic pretrain 후 online RL |
+| DSRL baseline | `(1, 32)` latent action을 예측하고 VLA noise input shape에 맞게 50번 반복 |
+| HIL-SERL baseline | 20 demo episodes로 RLPD 초기화, interventions 제공. 50 Hz와 action-space bounding box 부재 때문에 이 setting에서 실패 |
+| DAgger baseline | demonstration data와 online RL 중 수집한 intervention data mixture로 VLA fine-tune |
+
+## Code-Level Check
+
+공식 PI page와 PDF에는 RLT-specific code repository나 checkpoint link가 없다. OpenPI 공개 repo는 π0/π0-FAST/π0.5 중심의 release 성격이며, RLT의 RL token module, actor-critic training loop, intervention UI, replay buffer, reward labeling stack이 같은 형태로 공개된 것으로 보이지 않는다.
+
+| 확인 항목 | 상태 |
+| --- | --- |
+| PDF | 공식 `/download/rlt.pdf` 직접 확인 |
+| 공식 article | `https://www.pi.website/research/rlt` 직접 확인 |
+| code repo | 공식 RLT-specific code link 미확인 |
+| checkpoint | RLT actor/critic 또는 RL-tokenized π0.6 checkpoint 미확인 |
+| reproducibility boundary | method/algorithm/appendix hyperparameters는 공개, full data mixture/robot infra/intervention UI는 제한적 |
 
 ## PI Family 안에서의 위치
 
-| 이전 항목 | RLT가 잇는 지점 |
+RLT는 RECAP과 같은 “experience로 VLA를 개선한다”는 축에 있지만 scale과 목적이 다르다. RECAP은 long-horizon task-level performance를 iterated offline RL/advantage-conditioned policy extraction으로 개선한다. RLT는 이미 base VLA가 대부분 수행할 수 있는 task의 critical phase를 online actor-critic으로 빠르게 다듬는다.
+
+| 연결 문서 | 이어 읽을 이유 |
 | --- | --- |
-| π0 / π0.5 | imitation/pretraining 기반 VLA prior |
-| RECAP / π*0.6 | experience와 RL로 task-level performance를 개선 |
-| MEM | history와 state를 더 잘 유지 |
-| RLT | 특정 critical phase를 fast online RL로 개선 |
-
-RLT는 RECAP보다 더 fine-grained adaptation layer다. RECAP은 long-horizon task 전체의 success/throughput을 개선하고, RLT는 이미 할 수 있는 task 안에서 가장 정밀한 마지막 stage를 빠르게 개선한다.
-
-## 한계와 주의
-
-- RLT는 task-specific critical phase에 대한 reward/episode design이 필요하다.
-- VLA 전체를 개선하는 것이 아니라 small actor-critic이 특정 phase를 edit하는 구조다.
-- article 기준 공개 내용만으로는 full training hyperparameter와 off-policy RL algorithm detail을 전부 재현하기 어렵다. PDF 확인으로 추가 보강이 필요하다.
-- throughput metric은 task마다 scale이 다르므로 단순 평균으로 섞으면 안 된다.
+| [π0](../pi0-vla-flow-model/) | flow/action expert 기반 VLA 구조의 출발점 |
+| [π0-FAST](../pi0-fast-action-tokenization/) | action tokenization과 chunked action interface 배경 |
+| [π0.5](../pi05-open-world-generalization/) | open-world generalist VLA가 제공하는 prior의 의미 |
+| [π*0.6 / RECAP](../pistar06-recap-learns-from-experience/) | full/large VLA를 experience와 RL로 개선하는 대비 축 |
+| [MEM](../mem-multiscale-embodied-memory/) | episode 안 memory adaptation과 online RL adaptation의 차이 |
+| [π0.7](../pi07-steerable-model/) | task-specific specialist/strategy를 다시 generalist로 distill하는 후속 방향 |
+| [OpenPI](../openpi-release/) | 공개 코드와 PI internal latest capability의 경계 확인 |
 
 ## Citation Trail
 
-| 연결 | 이유 |
-| --- | --- |
-| RECAP / π*0.6 | prior PI RL-from-experience method |
-| π0.7 | RECAP experience를 distill해 single generalist model 성능으로 연결 |
-| MEM | memory와 online adaptation이 장기 task robustness를 함께 만든다 |
-| actor-critic RL | RL token을 value/policy head input으로 쓰는 직접 기반 |
+| 분류 | 논문/방법 | RLT에서의 역할 |
+| --- | --- | --- |
+| 직접 기반 | π0 / π0.6 | frozen VLA representation과 action chunk prior |
+| 직접 기반 | Action Chunking / ACT | action chunk horizon을 통해 sparse reward credit assignment를 줄이는 배경 |
+| 직접 기반 | TD3 / SAC / off-policy actor-critic | critic target, replay buffer, online RL update의 기반 |
+| 직접 기반 | SERL / HIL-SERL / RL100 | real-world sample-efficient robot RL의 비교 축 |
+| 직접 비교 | PLD | frozen VLA 위 residual RL baseline |
+| 직접 비교 | DSRL | diffusion/flow VLA의 latent noise space를 RL로 steering하는 baseline |
+| 직접 비교 | DAgger / HG-DAgger | intervention data를 imitation으로 반영하는 baseline |
+| PI 흐름 | RECAP / π*0.6 | full VLA RL-from-experience와 RLT의 small actor-critic adaptation 대비 |
+| VLA 배경 | RT-2, OpenVLA, Gemini Robotics, GR00T N1 | generalist VLA/foundation model 흐름의 related work |
+| action model 배경 | Diffusion Policy, FAST | expressive action distribution과 action token/chunk 계열 배경 |
+| offline/online RL | Cal-QL, RLPD | PLD/HIL-SERL baseline 및 data-efficient RL 구성 배경 |
+
+## 한계와 주의
+
+- RLT는 human operator가 reward signal, intervention correction, base policy와 RL policy 전환 시점을 제공하는 setup을 전제로 한다.
+- Critical phase segmentation이 필요하다. 자동 handover prediction을 fine-tune할 수 있다고 하지만, fully autonomous RL pipeline은 future work로 남겨둔다.
+- Official RLT code/checkpoint가 공개되어 있지 않아 동일 재현은 어렵다.
+- Reward는 sparse binary human label이므로 labeling consistency와 operator latency가 성능에 영향을 줄 수 있다.
+- Task-specific actor-critic을 online으로 학습하는 구조라, 하나의 single generalist checkpoint 자체가 즉시 개선되는 방식은 아니다.
+- Hardware/contact setup 의존성이 크다. 50 Hz control, gripper/hardware, reset/overhead, intervention UI가 바뀌면 data efficiency도 달라질 수 있다.
+- Throughput metric은 task/phase별 scale이 달라 단순 평균으로 섞으면 안 된다.
+
+## 기억할 점
+
+1. RLT의 핵심은 “VLA를 RL로 직접 fine-tune”이 아니라 “VLA 내부 표현과 action prior를 작은 RL policy가 쓰게 만드는 interface”다.
+2. RL token은 `1 x 2048` bottleneck representation이며, decoder reconstruction objective로 VLA embedding 정보를 보존하도록 학습된다.
+3. Actor는 `π_θ(a | x, ã)`처럼 RL token state와 VLA reference action chunk를 모두 받는다.
+4. `C=10`, `d=14`라 RL actor action은 140-dimensional chunk이고, VLA horizon `H=50`보다 짧다.
+5. Reference action pass-through, BC regularizer, chunked action, RL token이 모두 필요하다. 하나만 제거해도 learning speed 또는 final throughput이 떨어진다.
+6. Ethernet에서는 RLT median 66 timesteps, teleop median 146, base median 228로 RLT가 human teleop보다 빠른 전략을 찾는다.
 
 ## 5-Pass 검증 메모
 
 | Pass | 결과 |
 | --- | --- |
-| 1. 구조/coverage | 문제, method, RL token, actor-critic, experiment, result, 한계 포함 |
-| 2. 사실/수치 | pi.website RLT page의 4-task throughput, 15분 data/2시간 training, teleop 비교 확인 |
-| 3. 코드 구현 | 공식 openpi에 RLT 구현 공개는 확인하지 못해 code-level 미확인으로 명시 |
-| 4. 해석/연결 | RECAP, π0.7, MEM과 연결 |
-| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |
+| 1. 구조/coverage | PDF 기준 metadata, figure inventory, system setup, dataset/task setup, method, model architecture, RL objective, training loop, results, baselines, appendix, code boundary, PI family 연결을 포함했다. |
+| 2. 사실/수치 | 13 pages PDF, 2026-03-19, `H=50`, 50 Hz, `C=10`, 14-dim action, `1 x 2048` RL token, 1-10h demos, 400-1000 episodes, 15min-5h robot data, 50 eval episodes, 2000-10000 gradient steps, 50% masking, update ratio 5, 2 critic updates/actor update, Ethernet median 66/146/228을 PDF/HTML과 대조했다. |
+| 3. 코드 구현 | 공식 RLT-specific code/checkpoint 링크는 확인하지 못했고, OpenPI 공개 범위와 분리했다. |
+| 4. 해석/연결 | π0/π0.5/π0.6, RECAP, MEM, π0.7, SERL/PLD/DSRL/DAgger, GR00T related work 흐름과 연결했다. |
+| 5. 문서 품질/빌드 | `npm run build`와 GitHub Pages base path build로 MDX, 이미지 asset, route 생성을 확인했다. |
