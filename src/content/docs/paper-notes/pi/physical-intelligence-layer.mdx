@@ -18,74 +18,190 @@ import PublicImage from '../../../../components/PublicImage.astro';
 | 항목 | 내용 |
 | --- | --- |
 | 글 | The Physical Intelligence Layer |
-| 분류 | pi.website article |
-| 링크 | https://www.pi.website/blog/partner |
+| 분류 | pi.website article, partner deployment note |
+| 공개 | 2026-02-24 |
+| 링크 | https://www.pi.website/blog/partner, https://physicalintelligence.company/blog/partner |
 | 연결 모델 | π0, π0.5, π0.6, π*0.6 |
-| 태그 | robot foundation model, platform, partner deployment, industrial robotics, home robotics |
+| 태그 | robot foundation model, platform layer, partner deployment, industrial robotics, home robotics |
 
 ## 한 줄 요약
 
-The Physical Intelligence Layer는 PI 모델을 논문 단위 알고리즘이 아니라, robot application 개발자가 LLM API처럼 재사용할 수 있는 physical-world intelligence layer로 만들겠다는 제품/플랫폼 관점의 글이다.
+The Physical Intelligence Layer는 PI 모델을 단일 논문 알고리즘이 아니라, robot application 개발자가 LLM API처럼 재사용할 수 있는 physical-world intelligence layer로 만들겠다는 제품/플랫폼 관점의 article이다.
+
+## Source / Image / Video Inventory
+
+이 글은 formal paper가 아니므로 PDF Figure/Table inventory 대신 공식 article의 source, image, video, chart inventory를 남긴다.
+
+| Source | Local asset / URL | 본문 반영 위치 | 읽을 때 주의할 점 |
+| --- | --- | --- | --- |
+| Official article HTML | `https://www.pi.website/blog/partner` | 전체 article note | 공식 페이지는 `pi.website`와 `physicalintelligence.company` URL을 함께 노출한다. HTML을 직접 확인해 chart/video/source를 대조했다. |
+| OG visual | `/pi/partner-og.png` | Official Visual Evidence | model architecture figure가 아니라 platform article 대표 이미지다. |
+| Partner logos | `/pi/partner-weave-mark.png`, `/pi/partner-ultra-logomark.svg` | Partner Evidence | partner section 구분용 visual이다. |
+| Weave metrics chart | `/pi/partner-weave-metrics.png` | Weave deployment evidence | 공식 HTML chart를 렌더링해 screenshot으로 저장했다. |
+| Ultra metrics chart | `/pi/partner-ultra-metrics.png` | Ultra deployment evidence | 공식 HTML chart를 렌더링해 screenshot으로 저장했다. |
+| Weave deployment videos | `seabreeze_timelapse.mov`, 5개 tricky situation clips | Video evidence inventory | real San Francisco laundromat/customer site라고 article이 설명한다. |
+| Ultra deployment videos | full-shift packaging video, 8개 tricky situation clips | Video evidence inventory | live customer warehouse, real customer orders라고 article이 설명한다. |
+| π0.6 model card link | `https://website.pi-asset.com/pi06star/PI06_model_card.pdf` | PI family 연결 | article 안에서 π0.6 링크로 걸린 공개 PDF다. |
 
 ## Official Visual Evidence
 
-<PaperFigure src="/pi/partner-og.png" alt="Physical Intelligence Layer official overview image" />
-
-공식 partner article의 overview visual이다. PI model family를 reusable platform layer로 설명하는 제품/배포 관점을 보여준다.
+<PaperFigure src="/pi/partner-og.png" alt="Physical Intelligence Layer official overview image" caption="공식 partner article의 overview visual. 이 이미지는 모델 구조도가 아니라 PI model family를 reusable platform layer로 설명하는 제품/배포 관점의 대표 이미지다." />
 
 | Partner deployment logos |  |
 | --- | --- |
 | <PublicImage src="/pi/partner-weave-mark.png" alt="Weave Robotics logo" /> | <PublicImage src="/pi/partner-ultra-logomark.svg" alt="Ultra logo" /> |
 
-공식 article의 partner section visual이다. Weave laundromat deployment와 Ultra warehouse packaging deployment를 구분해 읽기 위한 자료로 둔다.
+<PaperFigure src="/pi/partner-weave-metrics.png" alt="Weave deployment metrics chart from official article" caption="Weave section의 공식 HTML chart screenshot. Autonomy, missed grasp sequences, intervention 수를 비교해 laundry folding deployment에서 π0.6와 Weave pre-training data의 효과를 보여준다." />
 
-## 핵심 주장
+<PaperFigure src="/pi/partner-ultra-metrics.png" alt="Ultra deployment metrics chart from official article" caption="Ultra section의 공식 HTML chart screenshot. Success rate와 order packing throughput을 비교해 π0.6와 Ultra pre-training data의 효과를 보여준다." />
 
-Software에서는 app 개발자가 foundation model API를 호출해 language intelligence를 재사용할 수 있다. Robotics에는 아직 그런 off-the-shelf layer가 없어서, controller, data pipeline, model training, deployment stack을 모두 직접 만들어야 한다. PI는 `π0`, `π0.5`, `π0.6`, `π*0.6` 같은 general-purpose robotic foundation model이 이 gap을 줄일 수 있다고 주장한다.
+## 문제의식
 
-| software analogy | robotics에서 대응되는 문제 |
-| --- | --- |
-| LLM API | reusable physical intelligence layer |
-| prompt/fine-tune app | robot application adaptation |
-| model provider infrastructure | data collection, policy runtime, robot-specific interface |
-| app ecosystem | homes, hospitals, offices, warehouses, factories의 robot use case |
+Article의 출발점은 software AI와 robotics 사이의 비대칭이다. Language app을 만들 때는 보통 foundation model API를 호출하고, application-specific prompt나 fine-tuning만 고민한다. 반면 robot system을 만들 때는 controller, data pipeline, model training, robot interface, deployment runtime을 거의 모두 직접 만들어야 한다.
+
+PI가 말하는 `physical intelligence layer`는 이 gap을 줄이기 위한 abstraction이다. 단일 checkpoint만 뜻하는 것이 아니라, general-purpose VLA model을 robot application 위에 연결하고, partner-specific data와 runtime loop로 성능을 끌어올리는 stack 전체를 가리킨다.
+
+| software analogy | robotics에서 대응되는 문제 | layer가 줄이려는 비용 |
+| --- | --- | --- |
+| LLM API | reusable physical intelligence model | task마다 low-level policy를 처음부터 훈련하는 비용 |
+| prompt / fine-tune app | robot-specific instruction, data, action interface | domain-specific behavior adaptation 비용 |
+| model provider infrastructure | data collection, policy runtime, evaluation, human intervention loop | 배포 중 생기는 long-tail failure 처리 비용 |
+| app ecosystem | homes, hospitals, offices, warehouses, factories의 robot use case | use case 탐색과 morphology 전환 비용 |
+
+## Layer로 읽는 핵심 주장
+
+공식 글은 `π0`, `π0.5`, `π0.6`, `π*0.6` 같은 general-purpose robotic foundation model이 robotics application 개발의 하부 layer가 될 수 있다고 주장한다. 이때 layer는 다음 구성요소를 함께 포함한다.
+
+| 구성요소 | article에서 보이는 역할 | 공개/비공개 경계 |
+| --- | --- | --- |
+| foundation model | π0, π0.5, π0.6, π*0.6 계열 모델이 robot task policy의 출발점이 된다. | π0/π0.5/OpenPI 일부는 공개, partner deployment의 최신 stack은 비공개에 가깝다. |
+| partner-specific data | Weave는 WPT, Ultra는 UPT처럼 partner data를 pre-training에 포함한 조건을 비교한다. | data 자체, collection protocol, filtering detail은 공개 article만으로는 재현 불가다. |
+| supervised fine-tuning | chart label은 SFT 조건을 명시한다. | exact dataset size, optimizer, train steps, checkpoint는 article에서 공개하지 않는다. |
+| robot interface | partner가 own hardware를 PI model에 interface한다고 설명한다. | observation/action schema, controller, safety layer는 공개하지 않는다. |
+| deployment runtime | live laundromat/customer site, live warehouse/customer orders에서 실행된다. | production monitoring, intervention UI, rollback/safety protocol은 공개하지 않는다. |
+| human-in-the-loop | Ultra는 model stumble 시 human intervention system이 correctness를 보장하고 새 data를 만든다고 설명한다. | intervention trigger, labeling format, learning loop detail은 공개하지 않는다. |
+
+이 글을 읽을 때 가장 중요한 점은 “모델이 좋다”보다 “모델, partner data, SFT, runtime, intervention feedback을 묶어 layer처럼 공급하려 한다”는 방향성이다.
 
 ## Partner Evidence
 
-Article은 두 partner deployment 사례를 통해 “research demo”가 아니라 real-world setting에서 model을 stress-test한다.
+Article은 두 partner section을 통해 research demo가 아니라 real-world setting에서 model을 stress-test한다는 논리를 만든다.
 
-| partner | domain | 공식 글에서 강조한 점 |
+| partner | domain | 공식 글에서 강조한 setting | 핵심 evidence |
+| --- | --- | --- | --- |
+| Weave | laundry folding, laundromat/customer setting | San Francisco real laundromat/customer site, home robotics로 확장하려는 laundry folding | π0.6 autonomy 증가, Weave data pre-training으로 missed grasp와 intervention 감소 |
+| Ultra | e-commerce order packaging, customer warehouse setting | live customer warehouses, real customer orders, industrial workstation에 slot-in하는 robots | π0 -> π0.5 -> π0.6 generation마다 intelligence/throughput/reliability 개선, π0.6 full-shift 96.4% autonomy video caption |
+
+이 evidence는 논문식 독립 benchmark가 아니라 partner-authored deployment report다. 따라서 “실제 배포에서 이런 신호가 있었다”는 근거로는 중요하지만, baseline/control protocol이 완전히 공개된 실험 결과처럼 읽으면 안 된다.
+
+## Weave: Laundry Folding Deployment
+
+Weave section은 laundry folding을 home robotics의 첫 task로 본다. 이유는 universal, time-consuming, attention-intensive이고, household size에 따라 workload가 반복적으로 커지기 때문이다. 동시에 deformable garment manipulation은 long-horizon이며, corner misplacement가 final fold quality에 영향을 주고, garment size/fabric/color/shape variation이 크다.
+
+Article이 공식적으로 적은 Weave evidence는 다음과 같다.
+
+| 항목 | 공식 글 기준 내용 | 해석 |
 | --- | --- | --- |
-| Weave | laundry folding, laundromat/customer setting | fold quality, fold time, remote specialist intervention 감소 등 performance improvement를 관찰 |
-| Ultra | e-commerce order packaging, live customer warehouses | π0 -> π0.5 -> π0.6 model generation마다 intelligence, throughput, reliability가 step up; π0.6에서 cycle time/success rate 개선 |
+| deployment context | Weave robots의 live deployment videos는 San Francisco real laundromat/customer site에서 나온 것이라고 설명한다. | lab tabletop demo보다 domain noise가 크다. |
+| task variety | t-shirts뿐 아니라 long-sleeves, shorts, pants 등 다양한 garment를 접어야 한다고 설명한다. | deformable long-tail이 task의 핵심이다. |
+| continuous video | π0.6가 customer site에서 laundry folding하는 continuous shot을 제공한다. | cherry-picked single success clip보다 강한 deployment signal이지만, 전체 실패율을 대체하지는 않는다. |
+| metric 1 | Autonomy / total time: chart상 π0.5 SFT보다 π0.6 SFT가 크게 높다. | model generation upgrade가 autonomy에 기여했다는 주장이다. |
+| metric 2 | Weave data included in pre-training, 즉 +WPT가 missed grasp sequences를 42% 줄였다고 caption이 말한다. | partner data가 pre-training에 들어갈 때 domain-specific manipulation failure가 줄었다는 주장이다. |
+| metric 3 | +WPT가 interventions per full laundry load를 50% 줄였다고 caption이 말한다. | remote specialist 부담 감소가 deployment metric으로 쓰인다. |
 
-Weave 사례는 deformable laundry가 long-horizon이고 garment size/fabric/color/shape variation이 크다는 점을 강조한다. Ultra 사례는 e-commerce packaging이 item type, deformable packaging, external machinery 때문에 traditional automation으로 hard long-tail problem이라고 설명한다.
+여기서 `WPT`는 Weave data included in pre-training이다. `SFT`는 supervised fine-tuning이다. 중요한 구조는 “π0.6 SFT만으로도 π0.5 SFT보다 autonomy가 오른다”와 “π0.6 안에서도 Weave data를 pre-training에 넣으면 missed grasp와 intervention이 줄어든다”를 분리해 읽는 것이다.
+
+Weave section의 tricky situation videos는 fabric top layer grasp, tangled pants legs unraveling, sweater sleeve/collar recovery, fold 아래 edge picking 같은 장면을 보여준다. 이는 benchmark score보다 failure mode coverage에 가깝다.
+
+## Ultra: E-Commerce Packaging Deployment
+
+Ultra section은 industrial robot이 existing workstation에 들어가 몇 시간 내 valuable work를 시작하는 방향을 설명한다. 첫 use case는 e-commerce order packaging이다. Article은 이 task가 item type, deformable packaging, external machinery, customer workflow variation 때문에 traditional automation으로는 long-tail이 크다고 설명한다.
+
+Article이 공식적으로 적은 Ultra evidence는 다음과 같다.
+
+| 항목 | 공식 글 기준 내용 | 해석 |
+| --- | --- | --- |
+| deployment context | live customer warehouses에서 real customer orders를 packing하는 videos라고 설명한다. | simulation이나 staged demo가 아니라 production-like setting을 강조한다. |
+| full-shift evidence | π0.6가 Ultra customer site에서 full shift 동안 packaging orders를 수행했고 video caption은 96.4% autonomy라고 적는다. | article에서 가장 명시적인 Ultra 수치다. 다만 evaluation protocol 전체는 공개하지 않는다. |
+| generation trend | π0 -> π0.5 -> π0.6마다 intelligence, throughput, reliability가 step up됐다고 설명한다. | family improvement를 partner deployment metric으로 연결한다. |
+| success rate chart | π0.6 SFT가 π0.5 SFT보다 success rate가 높다고 chart/caption이 말한다. | model generation upgrade 효과다. |
+| throughput chart | +UPT가 -UPT보다 order packing throughput을 높인다고 chart/caption이 말한다. | Ultra data pre-training이 throughput에 기여한다는 주장이다. |
+| qualitative behavior | π0.6는 prompt adherence가 좋아지고 long-tail edge case에서 더 committed recovery strategy를 고른다고 설명한다. | success/failure binary 밖의 behavior quality를 강조한다. |
+| human-in-the-loop | model이 stumble하면 human-in-the-loop intervention system이 correctness를 보장하고, thousands of orders에서 새 data를 만든다고 설명한다. | production reliability와 data flywheel이 연결된다. |
+
+여기서 `UPT`는 Ultra data included in pre-training이다. `SFT`는 supervised fine-tuning이다. Ultra chart에는 95% confidence interval error bar가 표시되어 있다. 숫자를 정확히 재현하려면 원자료가 필요하지만, 공식 caption 기준으로는 “π0.6가 success rate를 올리고, +UPT가 throughput을 더 올린다”가 안전한 결론이다.
+
+Ultra section의 tricky situation videos는 double pick 후 drop/regrab, 떨어진 item pick-up, bag machine 대기, funnel/bag unblock, funnel에 걸린 item recovery, 떨어진 polybag pick-up 같은 장면을 보여준다. 이들은 prompt adherence와 long-tail recovery claim의 qualitative evidence다.
+
+## Video Evidence Inventory
+
+| partner | video group | official caption / title | evidence로 읽는 법 |
+| --- | --- | --- | --- |
+| Weave | continuous deployment video | π0.6 folding laundry at Weave's customer site | deployment continuity를 보여주지만 전체 evaluation table은 아니다. |
+| Weave | 5 tricky situation clips | top layer fabric grasp, pants unraveling, sleeve/collar recovery 등 | deformable garment failure modes를 처리하는 qualitative evidence다. |
+| Ultra | full-shift packaging video | π0.6 packaging orders for a full shift at 96.4% autonomy | article에서 직접 수치가 붙은 deployment evidence다. |
+| Ultra | 8 tricky situation clips | double pick recovery, fallen item, bag machine wait, funnel unblock 등 | warehouse packaging long-tail recovery evidence다. |
+
+## Model / Method Boundary
+
+이 article은 모델 architecture, loss, training recipe를 공개하는 논문이 아니다. 따라서 “method”를 다음처럼 경계 지어야 한다.
+
+| 물어볼 질문 | article에서 확인되는 것 | article만으로 확인되지 않는 것 |
+| --- | --- | --- |
+| 어떤 모델인가? | π0, π0.5, π0.6, π*0.6 계열 general-purpose robotic foundation model이라고 설명한다. | π0.6 partner checkpoint architecture/config, parameter count, action head detail |
+| 어떤 학습인가? | SFT 조건과 WPT/UPT pre-training inclusion 조건이 chart label로 나온다. | data mixture 비율, optimizer, train step, augmentation, loss |
+| 어떤 robot interface인가? | partners can interface their own hardware to PI models라고 설명한다. | camera/state/action schema, controller frequency, safety monitor |
+| deployment 중 어떻게 개선되는가? | human-in-the-loop intervention이 correctness를 보장하고 새 data를 만든다고 설명한다. | intervention labels가 어떤 objective로 다시 학습되는지 |
+| 공개 코드는 어디까지인가? | OpenPI는 π0/π0.5 계열의 research release와 fine-tuning path를 제공한다. | partner deployment stack, π0.6/π*0.6 production checkpoint 전체 |
+
+따라서 이 문서는 implementation recipe가 아니라 platform/deployment evidence note로 분류한다. 모델 내부 구조를 보려면 [π0](../pi0-vla-flow-model/), [π0.5](../pi05-open-world-generalization/), [π*0.6 / RECAP](../pistar06-recap-learns-from-experience/) 쪽 개별 Survey를 읽어야 한다.
 
 ## PI Family 안에서의 위치
 
-이 글은 method detail이 아니라 “왜 PI가 model family를 layer로 부르는가”를 설명한다. OpenPI는 research community가 model을 fine-tune해보는 공개 software release이고, Physical Intelligence Layer는 partner robot/application 위에 모델을 연결해 실제 deployment loop를 만드는 방향이다.
+Physical Intelligence Layer article은 PI family를 “연구 결과들의 목록”이 아니라 “사용 가능한 robotics intelligence layer”로 재배치한다.
 
 | 연구 축 | layer 관점에서의 의미 |
 | --- | --- |
-| [π0](../pi0-vla-flow-model/) | reusable low-level VLA foundation |
-| [π0.5](../pi05-open-world-generalization/) | unseen environment/generalization capability |
-| [Robot Olympics / π0.6](../moravec-robot-olympics/) | 새 physical skill fine-tuning capability |
-| [π*0.6 / RECAP](../pistar06-recap-learns-from-experience/) | autonomous experience/correction/RL로 deployment reliability 개선 |
+| [π0](../pi0-vla-flow-model/) | reusable low-level VLA foundation model의 시작점 |
+| [OpenPI](../openpi-release/) | 공개 checkpoint, fine-tuning config, policy runtime으로 community가 실험할 수 있는 software layer |
+| [π0-FAST](../pi0-fast-action-tokenization/) | action tokenization route로 language/action interface를 다르게 푸는 축 |
+| [π0.5](../pi05-open-world-generalization/) | unseen environment와 open-world generalization을 강화한 family step |
+| [Robot Olympics / π0.6](../moravec-robot-olympics/) | 새 physical skill acquisition과 fine-tuning capability를 보여주는 배경 |
+| [π*0.6 / RECAP](../pistar06-recap-learns-from-experience/) | autonomous experience, correction, RL로 deployment reliability를 높이는 방향 |
 | [RLT](../rlt-efficient-online-rl/) | online RL로 throughput/speed를 올리는 adaptation mechanism |
+| [π0.7](../pi07-steerable-model/) | user steering, subgoal/current image conditioning으로 deployment controllability를 높이는 방향 |
 
-## 읽을 때 주의할 점
+이 article의 partner evidence는 위 논문들의 formal result를 대체하지 않는다. 대신 “이 family를 왜 product/platform layer로 포장하는가”를 설명하는 bridge 역할을 한다.
 
-- 이 문서는 논문이 아니라 partner/product article이다. 수치가 제한적이고 formal benchmark protocol이 아니다.
-- partner 인용은 deployment evidence지만, 독립 재현 benchmark와 같은 성격으로 쓰면 안 된다.
-- “layer”는 단일 model checkpoint가 아니라 model, data, policy runtime, robot interface, human intervention loop를 포함하는 platform abstraction이다.
+## Citation Trail / 읽기 흐름
+
+Formal paper가 아니므로 citation list는 없지만, 이 article을 이해하려면 다음 순서로 연결해 읽는 것이 좋다.
+
+| 연결 자료 | 왜 이어 읽는가 |
+| --- | --- |
+| [π0](../pi0-vla-flow-model/) | physical intelligence layer의 가장 기본이 되는 VLA policy 구조를 확인한다. |
+| [OpenPI](../openpi-release/) | 공개 checkpoint와 policy runtime boundary를 확인해 “공개 layer”와 “partner layer”를 분리한다. |
+| [π0.5](../pi05-open-world-generalization/) | partner/customer deployment에서 중요한 unseen environment generalization 문제를 이해한다. |
+| [Robot Olympics / π0.6](../moravec-robot-olympics/) | π0.6가 새 skill/task를 빠르게 획득한다는 family narrative를 확인한다. |
+| [π*0.6 / RECAP](../pistar06-recap-learns-from-experience/) | deployment 중 experience와 correction을 data flywheel로 바꾸는 쪽을 확인한다. |
+| [RLT](../rlt-efficient-online-rl/) | Ultra의 throughput/speed claim과 online adaptation 계열 문제를 연결한다. |
+
+## 한계와 주의
+
+- 이 문서는 논문이 아니라 partner/product article이다. formal benchmark protocol, dataset split, rollout count, random seed, baseline implementation detail이 공개되어 있지 않다.
+- Weave/Ultra section은 partner가 작성한 deployment report 성격이므로 독립 재현 benchmark와 동일하게 해석하면 안 된다.
+- Weave chart의 42% missed grasp 감소와 50% intervention 감소는 공식 caption의 claim이지만, full evaluation protocol은 article에서 확인할 수 없다.
+- Ultra의 96.4% autonomy는 full-shift video caption에 나온 명시 수치다. 하지만 어떤 denominator와 intervention policy를 썼는지 세부 정의는 공개되지 않는다.
+- `physical intelligence layer`는 단일 model checkpoint가 아니라 model, partner data, SFT, robot interface, runtime, intervention/data loop를 포함하는 platform abstraction이다.
 - OpenPI처럼 공개된 부분과 partner deployment에서 쓰인 내부 stack을 구분해야 한다.
+- public site에 공개하기 어려운 workplace, partner integration, production safety detail은 이 노트에 추정해서 넣지 않는다.
 
 ## 5-Pass 검증 메모
 
 | Pass | 결과 |
 | --- | --- |
-| 1. 구조/coverage | platform claim, software analogy, partner evidence, family 연결, caveat를 포함했다. |
-| 2. 사실/수치 | Weave/Ultra partner names, laundromat/customer warehouse context, π0 -> π0.5 -> π0.6 generation claim을 official article과 대조했다. |
-| 3. 코드 구현 | article note이므로 public code-level reproduction 대상이 아니며 OpenPI와 boundary를 분리했다. |
-| 4. 해석/연결 | PI research family를 deployment layer 관점으로 재배치했다. |
-| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |
+| 1. 구조/coverage | article metadata, source/image/video inventory, official visual evidence, layer claim, Weave/Ultra deployment evidence, model/method boundary, PI family 연결, caveat를 포함했다. |
+| 2. 사실/수치 | 공개일 2026-02-24, Weave WPT 42% missed grasp 감소/50% intervention 감소, Ultra full-shift 96.4% autonomy, π0 -> π0.5 -> π0.6 generation claim, UPT/WPT/SFT label을 official article HTML과 대조했다. |
+| 3. 코드 구현 | article note이므로 code-level reproduction 대상이 아니다. 공개 구현 boundary는 OpenPI와 분리해서 적었다. |
+| 4. 해석/연결 | PI research family를 deployment/platform layer 관점으로 재배치하고, formal paper Survey로 이어지는 reading flow를 정리했다. |
+| 5. 문서 품질/빌드 | `npm run build`와 GitHub Pages base path build로 MDX, 이미지 asset, route 생성을 확인했다. |
