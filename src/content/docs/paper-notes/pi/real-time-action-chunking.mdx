@@ -1,6 +1,6 @@
 ---
 title: Real-Time Action Chunking
-description: chunked VLA action을 실시간 feedback과 inpainting으로 이어 붙이는 Real-Time Action Chunking Survey.
+description: action chunking VLA를 pause 없이 실행하기 위해 overlap action을 inpainting constraint로 쓰는 Real-Time Action Chunking Survey.
 sidebar:
   hidden: true
 ---
@@ -16,83 +16,382 @@ import PaperFigure from '../../../../components/PaperFigure.astro';
 
 | 항목 | 내용 |
 | --- | --- |
-| 논문/글 | Real-Time Action Chunking with Large Models |
-| 공개 | pi.website research, 2025-06-09 |
-| 링크 | https://www.pi.website/research/real_time_chunking |
-| 연결 모델 | π0, π0-FAST, π0.5, flow/diffusion VLA |
-| 태그 | action chunking, real-time control, latency, inpainting, flow policy |
+| 논문 | Real-Time Execution of Action Chunking Flow Policies |
+| pi.website 제목 | Real-Time Action Chunking with Large Models |
+| 저자 | Kevin Black, Manuel Y. Galliker, Sergey Levine |
+| 공개 | pi.website research 2025-06-09, arXiv `2506.07339`, NeurIPS 2025 |
+| 링크 | [project article](https://www.pi.website/research/real_time_chunking), [arXiv](https://arxiv.org/abs/2506.07339), [PDF](https://arxiv.org/pdf/2506.07339), [Kinetix code](https://github.com/Physical-Intelligence/real-time-chunking-kinetix), [follow-up](https://arxiv.org/abs/2512.05964) |
+| 연결 모델 | π0, π0-FAST, π0.5, π*0.6, diffusion/flow VLA |
+| 태그 | action chunking, real-time control, latency, inpainting, flow matching, asynchronous execution |
 
 ## 한 줄 요약
 
-Real-Time Action Chunking, RTC는 VLA가 예측한 action chunk를 synchronous pause 없이 실행하면서도 chunk 간 discontinuity를 피하기 위해, 새 chunk의 overlap 구간을 inpainting constraint처럼 처리하는 training-free real-time inference algorithm이다.
+Real-Time Action Chunking, RTC는 VLA가 예측한 action chunk를 실시간으로 실행할 때 생기는 pause와 chunk discontinuity를 줄이기 위해, 이미 실행되었거나 곧 실행될 overlap action을 freeze/soft-mask constraint로 두고 새 chunk의 나머지 미래 action을 flow/diffusion policy가 inpaint하게 만드는 training-free inference algorithm이다.
+
+## Source/Image Inventory
+
+| Source | Local asset / code path | 본문 반영 위치 | 읽을 때 주의할 점 |
+| --- | --- | --- | --- |
+| Official PDF `2506.07339` | `/pi/rtc-paper/fig01-...`, `/pi/rtc-paper/table04-...` | Figure/Table Inventory, Method, Experiments, Runtime, Appendix Notes | 정식 논문 제목은 project article 제목과 다르다. 수치와 experimental setup은 PDF 기준으로 정리한다. |
+| Official article | `/pi/rtc-og.png` | Official Visual Evidence, 문제의식 | article은 연구 동기와 latency table을 읽기 쉽지만, 상세 알고리즘/appendix는 PDF가 근거다. |
+| Follow-up PDF `2512.05964` | 별도 crop 없음 | Follow-Up Boundary | training-time RTC paper다. main RTC와 같은 문제를 다루지만 알고리즘 위치가 inference-time에서 training-time으로 이동한다. |
+| OpenPI code check | `tmp/rtc/openpi-pi0.py` | Code-Level Check | public OpenPI의 π0 sampling은 action chunk flow sampling을 보여주지만 RTC runtime scheduler는 포함하지 않는다. |
+| GROOT N1.7 code check | `tmp/rtc/gr00t_n1d7.py`, [GROOT N1.7 Survey](../../groot/n1-7-release/) | Code-Level Check | N1.7 action head에는 RTC-style overlap/freeze/ramp option이 명시적으로 들어 있다. |
+
+## Figure / Table Inventory
+
+| 원문 항목 | Survey 반영 위치 | 핵심으로 읽을 내용 |
+| --- | --- | --- |
+| Fig. 1 | 문제의식, real-world speed | match lighting에서 RTC가 synchronous/temporal ensembling보다 빠르고 부드럽게 같은 motion을 수행한다. |
+| Fig. 2 | 왜 naive async가 위험한가 | 이전 chunk와 새 chunk가 obstacle 주변에서 다른 전략을 택하면 transition point에서 큰 discontinuity가 생긴다. |
+| Fig. 3 | Method | previous chunk tail을 현재 chunk의 known/frozen/soft guidance 구간으로 넣고 나머지를 inpaint한다. |
+| Fig. 4 | Soft Masking | hard masking은 frozen boundary에서 sharp transition이 생길 수 있고, soft masking은 overlap 전체에 완만한 weight를 둔다. |
+| Algorithm 1 | Runtime Architecture | controller thread와 inference thread를 분리하고, delay estimate와 overlap chunk를 이용해 새 action chunk를 갱신한다. |
+| Fig. 5 | Simulation | 12개 Kinetix dynamic task에서 inference delay가 커질 때 RTC가 solve rate를 가장 잘 유지한다. |
+| Fig. 6 | Real-world | 6개 bimanual/mobile task에서 RTC throughput이 injected latency에 거의 무너지지 않는다. |
+| Fig. 7 | Guidance clipping ablation | guidance weight clipping `beta`가 없으면 작은 denoising step 수에서 불안정해질 수 있다. |
+| Tables 1-3 | Latency | RTC는 denoising step 비용을 늘리지만 전체 model latency는 97 ms 수준이다. mobile total latency는 약 139 ms다. |
+| Fig. 8 | Appendix ablation | exponential soft masking과 guidance-based inpainting이 hard masking/naive async보다 안정적이다. |
+| Table 4 | Hyperparameters | real-world setting은 `n=5`, `H=50`, `s_min=25`, `beta=5`, delay buffer `b=10`을 쓴다. |
 
 ## Official Visual Evidence
 
-<PaperFigure src="/pi/rtc-og.png" alt="Real-Time Action Chunking official overview image" />
-
-공식 RTC article의 overview visual이다. action chunk를 한 번에 내보내는 VLA에서 latency와 real-time correction 문제가 어디서 생기는지 확인하는 자료로 둔다.
+<PaperFigure
+  src="/pi/rtc-og.png"
+  alt="Real-Time Action Chunking official overview image"
+  caption="공식 article의 overview visual. action chunk를 길게 뽑아도 실제 robot execution에서는 inference latency, network latency, image resize latency가 합쳐져 chunk 사이 pause와 discontinuity 문제가 생긴다."
+/>
 
 ## 문제의식
 
-PI VLA는 action chunking으로 inference latency를 amortize한다. 공식 글에 따르면 π 계열 VLA는 chunk size 50 actions를 사용하며 이는 1초 real time에 해당한다. 하지만 chunking만으로는 real-time system이 되지 않는다.
+<PaperFigure
+  src="/pi/rtc-paper/fig01-match-lighting-overview.png"
+  alt="Figure 1 match lighting overview and motion smoothness comparison"
+  caption="Fig. 1. match lighting처럼 짧고 동적인 task에서 RTC는 300 ms 이상 latency가 있어도 synchronous pause를 피하고, temporal ensembling보다 acceleration spike가 작게 나온다."
+/>
 
-| 기존 실행 방식 | 문제 |
+π 계열 VLA는 action chunking으로 inference latency를 amortize한다. 공식 article은 π0, π0-FAST, π0.5가 `50`개 action으로 된 chunk를 쓰며, 이것이 `1`초 real time에 해당한다고 설명한다. 하지만 chunking은 "한 번 생각해서 여러 step을 실행한다"는 의미이지, robot이 실제 시간 제약을 만족한다는 뜻은 아니다.
+
+| 실행 방식 | 동작 | 실패 모드 |
+| --- | --- | --- |
+| synchronous execution | chunk 일부를 실행한 뒤 다음 chunk inference가 끝날 때까지 기다림 | pause가 생기고, pause 때문에 robot dynamics가 training distribution과 달라진다. |
+| naive asynchronous switching | 이전 chunk를 실행하면서 새 chunk를 만들고, 도착 즉시 새 chunk로 점프 | 이전 chunk와 새 chunk가 서로 다른 전략을 택하면 action discontinuity와 큰 acceleration이 생긴다. |
+| temporal ensembling | 여러 chunk의 같은 timestep action을 평균내어 smoothing | average action이 유효한 action이라는 보장이 없고, 큰 latency에서는 overlap이 충분하지 않다. |
+| RTC | overlap action을 inpainting constraint로 쓰고 새 미래 action만 갱신 | flow/diffusion action chunk policy에 맞는 runtime wrapper가 필요하다. |
+
+논문은 π0/π0-FAST/π0.5의 정량 실험이 기본적으로 synchronous execution을 썼다고 명시한다. 즉 RTC의 위치는 "새 VLA backbone"이 아니라, 기존 chunked VLA를 실제 robot runtime에서 pause 없이 쓰기 위한 execution-time algorithm이다.
+
+## 왜 Naive Async가 깨지는가
+
+<PaperFigure
+  src="/pi/rtc-paper/fig02-bifurcation-discontinuity.png"
+  alt="Figure 2 bifurcation between consecutive chunks"
+  caption="Fig. 2. 첫 chunk는 obstacle 위쪽을 지나려 했고, 새 chunk는 아래쪽을 지나려 한다. inference가 끝나는 순간 새 chunk로 점프하면 transition point의 action이 out-of-distribution이 된다."
+/>
+
+action chunk policy는 보통 현재 observation `o_t`에서 horizon `H`짜리 action sequence `A_t = (a_t, ..., a_{t+H-1})`를 예측한다. inference delay가 `delta`이고 controller period가 `Delta t`이면, 논문은 controller step 단위 delay를 `d = ceil(delta / Delta t)`로 둔다.
+
+문제는 새 chunk가 계산되는 동안 robot이 멈춰 있지 않는다는 점이다. 새 observation으로부터 만든 chunk가 도착하는 시점에는 이미 몇 step이 실행되었고, 새 chunk의 prefix는 실제 robot trajectory와 맞지 않을 수 있다. 특히 obstacle 회피나 match lighting처럼 전략이 둘 이상 가능한 task에서는 이전 chunk와 새 chunk가 서로 다른 mode를 택할 수 있다. 이때 단순히 새 chunk로 바꾸면 "좋은 chunk 두 개" 사이의 transition이 나쁜 action이 된다.
+
+RTC는 이 transition을 별도 low-level controller smoothing으로 덮으려 하지 않는다. 대신 action chunk generation 자체에 "이 앞부분은 이전 chunk와 일관되어야 한다"는 constraint를 넣는다.
+
+## 시스템 설정
+
+| 축 | 논문 기준 |
 | --- | --- |
-| synchronous execution | chunk 실행 후 inference를 기다리므로 pause가 생김 |
-| naive real-time switching | 이전 chunk와 새 chunk가 불일치해 discontinuity/unsafe acceleration 발생 |
-| temporal ensembling smoothing | high latency에서 valid action 보장이 없고 실패 가능 |
+| base real-world policy | π0.5 VLA |
+| real-world robot | two 6-DoF arms + parallel jaw grippers, 일부 task는 mobile base 포함 |
+| action horizon | `H=50` |
+| controller period | `Delta t=20 ms`, 즉 50 Hz |
+| denoising steps | `n=5` |
+| baseline model latency | vanilla π0.5 약 `76 ms` |
+| RTC model latency | 약 `97 ms` |
+| remote inference | LAN에서 network overhead 약 `10-20 ms` |
+| starting RTC delay | 대략 `d≈6` controller steps |
+| injected delay | `+100 ms`는 대략 `d≈11`, `+200 ms`는 대략 `d≈16` |
 
-π0, π0-FAST, π0.5의 quantitative results에서는 synchronous execution을 사용했다고 명시한다. RTC는 이 한계를 해결하기 위한 runtime layer다.
+이 숫자를 보면 RTC가 다루는 문제는 "수 ms 단위 servo control"이 아니라, 100 ms 이상 걸리는 VLA inference를 50 Hz robot execution 위에 어떻게 얹을지에 가깝다. low-level controller는 여전히 매 `20 ms`마다 action을 받아야 하고, VLA는 훨씬 느리게 chunk를 갱신한다.
 
 ## Method: Chunk Inpainting
 
-새 observation을 보고 새 chunk를 생성하는 동안 robot은 이전 chunk를 계속 실행한다. 따라서 새 chunk가 도착했을 때 chunk의 앞부분은 이미 지나간 timestep이다.
+<PaperFigure
+  src="/pi/rtc-paper/fig03-rtc-inpainting-diagram.png"
+  alt="Figure 3 RTC inpainting and soft guidance diagram"
+  caption="Fig. 3. 검은 prefix는 이미 실행된 이전 chunk, 짙은 빨강 구간은 강하게 맞춰야 하는 overlap, 뒤쪽은 새 observation을 반영해 새로 생성할 future action이다."
+/>
 
-RTC의 핵심 아이디어:
+RTC의 핵심은 previous chunk tail을 "known action"으로 보고, 현재 observation에서 새 action chunk를 만들 때 그 부분을 inpainting constraint로 주는 것이다.
 
-1. 이미 실행된 timestep의 action은 이전 chunk 값으로 freeze한다.
-2. 일부 overlap 구간은 이전 chunk와 consistency를 유지하도록 partial attention/conditioning을 준다.
-3. 나머지 미래 구간은 diffusion/flow model이 새 observation을 반영해 inpaint한다.
+| 구간 | 의미 | RTC 처리 |
+| --- | --- | --- |
+| already executed prefix | 새 chunk가 도착하기 전에 이미 robot이 실행한 action | 되돌릴 수 없으므로 새 chunk prefix와 일치해야 하는 hard/frozen constraint가 된다. |
+| overlapping future | 이전 chunk가 아직 실행할 예정이었고, 새 chunk와 시간적으로 겹치는 구간 | soft mask weight로 consistency를 준다. |
+| new future | 이전 chunk가 커버하지 못하거나 새 observation이 반영되어야 하는 미래 | flow/diffusion policy가 새로 inpaint한다. |
 
-이는 image inpainting을 action chunk에 적용한 것으로 볼 수 있다. 중요한 점은 π0/π0.5 같은 diffusion/flow 기반 VLA에 training-time change 없이 붙일 수 있다는 것이다.
+논문은 flow matching policy를 기준으로 설명한다. 일반 flow sampling은 noise action chunk에서 시작해 denoising step을 적분한다.
 
-## Experiments and Results
+```text
+A_t^{tau + 1/n} = A_t^tau + (1/n) * v_pi(A_t^tau, o_t, tau)
+```
 
-공식 글은 RTC를 synchronous inference, temporal ensembling과 비교한다.
+RTC는 여기서 velocity field에 inpainting guidance를 더한다. intuition은 간단하다. "현재 denoising 중인 action chunk를 한 step 더 denoise했을 때, previous chunk에서 가져온 overlap action과 얼마나 맞는가"를 보고, 그 mismatch를 줄이는 방향의 gradient를 추가한다.
 
-| 실험 조건 | 내용 |
+```text
+e = (A_prev - f(A'))^T diag(W)
+g = e * d f(A') / d A'
+
+A^{tau + 1/n} =
+  A^tau + (1/n) * (v_pi(A^tau, o, tau) + clipped_guidance(g))
+```
+
+여기서 `W`가 soft masking weight다. 이전 chunk와 반드시 맞아야 하는 prefix에는 큰 weight를 주고, overlap 뒤쪽으로 갈수록 weight를 줄인다.
+
+## Soft Masking
+
+<PaperFigure
+  src="/pi/rtc-paper/fig04-naive-inpainting-soft-masking.png"
+  alt="Figure 4 hard masking versus soft masking"
+  caption="Fig. 4. hard masking은 frozen boundary 근처에서 급격한 방향 전환을 만들 수 있다. soft masking은 overlap 전체를 점진적으로 약하게 묶어 transition을 부드럽게 만든다."
+/>
+
+hard masking은 "처음 `d` step만 이전 chunk와 정확히 맞추고 나머지는 자유롭게 둔다"에 가깝다. 하지만 policy가 그 boundary 바로 뒤에서 다른 mode로 꺾이면 discontinuity가 남는다.
+
+RTC는 `H - s`개의 overlap action 전체에 soft weight를 둔다. 논문 식의 형태는 다음과 같다.
+
+```text
+W_i = 1                              if i < d
+W_i = (exp(c_i) - 1) / (e - 1)       if d <= i < H - s
+W_i = 0                              if i >= H - s
+
+c_i = (H - s - i) / (H - s - d + 1)
+```
+
+읽을 때 중요한 점은 `d`와 `s`의 역할이다. `d`는 inference delay라서 이미 늦은 만큼의 prefix를 강하게 고정한다. `s`는 이번 chunk에서 최소한 몇 step을 실행할지 결정하는 execution horizon이다. `H - s`는 이전 chunk와 새 chunk가 겹치는 미래 영역이고, 이 영역을 어떻게 묶을지가 motion smoothness를 좌우한다.
+
+## Runtime Architecture
+
+<PaperFigure
+  src="/pi/rtc-paper/algorithm01-rtc.png"
+  alt="Algorithm 1 Real-Time Chunking"
+  caption="Algorithm 1. controller는 매 Delta t마다 현재 action을 소비하고, inference loop는 background에서 새 chunk를 만든다. 새 chunk는 previous chunk tail과 delay estimate를 이용해 guided inference로 생성된다."
+/>
+
+RTC runtime은 두 loop로 나뉜다.
+
+| loop | 역할 |
 | --- | --- |
-| latency | normal latency, +100 ms, +200 ms artificial latency |
-| total delay | +200 ms 조건에서 mobile manipulator total inference delay가 1/3초 이상 |
-| tasks | candle lighting with match, Ethernet cable insertion, longer-horizon tasks |
-| metric | throughput = completed substeps proportion / episode duration |
-| sample | 6 tasks x 10 episodes = 60 episodes per latency point |
+| controller / `GETACTION` | 매 `Delta t`마다 현재 chunk `A_cur[t-1]`을 robot에 보낸다. observation `o_next`를 갱신하고 inference thread에 알린다. |
+| inference loop | `s_min` 이상 action이 실행될 때까지 기다린 뒤, previous chunk tail `A_prev`와 현재 observation으로 새 chunk `A_new`를 만든다. |
+| delay buffer | 최근 inference delay를 queue에 보관하고, 다음 delay를 보수적으로 `max(Q)`로 추정한다. |
+| chunk swap | `A_new`가 준비되면 `A_cur`를 새 chunk로 바꾸고, index를 reset해 다음 controller step부터 새 chunk를 실행한다. |
 
-결론:
+따라서 RTC는 "더 빠른 VLA"가 아니다. VLA inference는 여전히 100 ms 단위로 걸릴 수 있다. 대신 robot이 기다리지 않도록 background inference를 돌리고, 늦게 도착한 chunk가 현재 trajectory와 자연스럽게 이어지도록 inpainting한다.
 
-- synchronous inference는 latency가 커질수록 throughput이 크게 떨어진다.
-- RTC는 +200 ms artificial latency까지 throughput이 거의 변하지 않는다고 설명한다.
-- Temporal ensembling은 +100 ms/+200 ms에서 작동하지 않는다고 보고한다.
-- RTC는 match striking, Ethernet insertion 같은 dynamic/precise tasks도 300 ms+ inference delay에서 수행한다.
+## Simulation: Kinetix Benchmark
 
-공식 글은 controller steps 기준으로 보면 synchronous도 final score가 비슷해 보일 수 있지만, RTC가 episode 초반 progress를 더 빠르게 만들고 mistake가 적다는 해석을 제시한다.
+<PaperFigure
+  src="/pi/rtc-paper/fig05-kinetix-simulation-results.png"
+  alt="Figure 5 Kinetix simulation results"
+  caption="Fig. 5. 12개 dynamic Kinetix task에서 RTC는 delay가 커질수록 naive async, temporal ensembling, Diffuser baseline보다 solve rate를 잘 유지한다."
+/>
+
+시뮬레이션은 Kinetix의 12개 dynamic/stochastic task를 사용한다. 논문은 기존 task 10개에 throwing, catching, balancing처럼 dynamic motion이 필요한 task 2개를 더해, inference delay가 closed-loop correction을 얼마나 방해하는지 본다.
+
+| 항목 | 설정 |
+| --- | --- |
+| expert policy | RPO expert, binary success reward |
+| expert seeds | environment마다 6개 expert policy |
+| imitation data | 1M transition dataset |
+| imitation model | prediction horizon `H=8`, 4-layer MLP-Mixer flow policy |
+| training | 32 epochs |
+| evaluation | policy당 2048 rollouts |
+| simulated delay | `d=0`부터 `d=4`까지 |
+
+비교 baseline은 synchronous, naive async, temporal ensembling, Diffuser 방식 inpainting, BID 계열이다. 결과의 핵심은 두 가지다.
+
+| 관찰 | 해석 |
+| --- | --- |
+| delay가 커질수록 naive async와 temporal ensembling이 급격히 나빠진다. | chunk 사이 mode jump가 dynamic task에서 바로 성능 저하로 이어진다. |
+| RTC는 execution horizon이 너무 짧을 때보다 적절히 긴 overlap을 쓸 때 더 좋다. | "자주 새로 계산"만으로는 충분하지 않고, 새 chunk가 이전 chunk와 연결되어야 한다. |
+
+## Real-World Experiments
+
+<PaperFigure
+  src="/pi/rtc-paper/fig06-real-world-results.png"
+  alt="Figure 6 real-world RTC results"
+  caption="Fig. 6. 6개 real-world task에서 RTC는 injected delay가 +100 ms, +200 ms로 늘어도 throughput이 거의 유지된다. temporal ensembling dense/sparse는 큰 delay에서 protective stop이 발생한다."
+/>
+
+real-world 실험은 π0.5를 base policy로 사용한다. 논문은 6개 task를 task-specific substep으로 나누고, episode duration 대비 완료한 substep 비율을 throughput으로 계산한다.
+
+| task | rubric / cutoff |
+| --- | --- |
+| Light candle | match를 집어 strike하고 candle에 불을 붙이는 5 steps, `40 s` cutoff |
+| Plug ethernet | ethernet cable insertion 6 steps, `120 s` cutoff |
+| Make bed, mobile | pillow straighten/blanket pull 등 3 steps, `200 s` cutoff |
+| Shirt folding | one-shirt fold, `300 s` cutoff |
+| Batch folding | 여러 옷을 접는 4 steps, `300 s` cutoff |
+| Dishes in sink, mobile | dish relocation 8 steps, `300 s` cutoff |
+
+평가는 각 task/method 조합당 10 trials이며, 총 `480` episodes와 약 `28`시간의 pure robot execution time을 사용한다. 이전 초안처럼 "6 tasks x 10 episodes = 60 episodes per latency point"로만 쓰면 전체 method/delay 조합 수가 빠져 부정확하다.
+
+결과 해석은 다음처럼 나눠 읽는 게 좋다.
+
+| metric | 무엇을 보여주나 |
+| --- | --- |
+| controller steps vs cumulative progress | inference pause를 제거하고 motion quality 자체를 비교한다. RTC는 초반 progress가 빠르고 mistake/retry가 적다. |
+| throughput vs injected delay | 실제 wall-clock execution에서 latency가 커질 때 성능이 유지되는지 본다. RTC는 +100/+200 ms에서도 best score를 유지한다. |
+| final score alone | synchronous도 시간이 충분하면 비슷한 final score에 도달할 수 있다. 그래서 throughput/progress timing이 중요하다. |
+
+## Latency and Compute
+
+<PaperFigure
+  src="/pi/rtc-paper/tables01-03-latency.png"
+  alt="Tables 1 to 3 latency measurements"
+  caption="Tables 1-3. RTC는 vanilla π0.5보다 denoising step이 느리지만 전체 model inference는 97 ms 수준이다. mobile setting에서는 network/image resize/other overhead를 합쳐 total 139 ms 정도가 된다."
+/>
+
+논문이 측정한 latency는 model-only와 system-level latency를 구분한다.
+
+| Method / Component | Latency |
+| --- | --- |
+| Vanilla π0.5 model inference | `76 ms` |
+| RTC model inference | `97 ms` |
+| BID `N=16`, no forward model | `115 ms` |
+| BID `N=16`, shared backbone | `169 ms` |
+| BID `N=16`, full | `223 ms` |
+
+system-level breakdown은 mobile과 static에서 다르다.
+
+| Component | Mobile | Static |
+| --- | --- | --- |
+| Model | `96.89 ± 0.16 ms` | `97.43 ± 0.28 ms` |
+| Network | `21.20 ± 3.12 ms` | `6.89 ± 2.39 ms` |
+| Image resize | `11.22 ± 5.00 ms` | `1.44 ± 0.27 ms` |
+| Other | `9.67 ± 3.20 ms` | `3.00 ± 0.68 ms` |
+| Total | `138.98 ± 6.71 ms` | `108.76 ± 2.34 ms` |
+
+model 내부 latency breakdown은 다음과 같다.
+
+| Component | no RTC | with RTC |
+| --- | --- | --- |
+| Image encoder, SigLIP | `18 ms` | `18 ms` |
+| LLM prefill, Gemma 2B | `44 ms` | `44 ms` |
+| Denoising step x5 | `14 ms` | `35 ms` |
+| Total | `76 ms` | `97 ms` |
+
+RTC는 guidance 계산 때문에 denoising step의 cost를 키운다. 하지만 전체 inference는 image encoder/LLM prefill이 이미 큰 비중을 차지하므로 total latency 증가가 `76 -> 97 ms`로 제한된다.
+
+## Appendix Notes: Guidance and Hyperparameters
+
+<PaperFigure
+  src="/pi/rtc-paper/fig07-guidance-weight-ablation.png"
+  alt="Figure 7 guidance weight clipping ablation"
+  caption="Fig. 7. guidance weight clipping beta가 너무 크거나 없으면 작은 denoising step 수에서 acceleration이 커질 수 있다. 논문은 beta=5를 기본값으로 쓴다."
+/>
+
+RTC의 inpainting guidance는 강할수록 previous chunk와 잘 맞지만, 너무 강하면 flow sampling 자체가 불안정해진다. 특히 robot control에서는 denoising step 수를 크게 늘리기 어렵다. 논문은 guidance weight clipping `beta`를 넣어 작은 `n=5` setting에서도 안정성을 확보한다.
+
+<PaperFigure
+  src="/pi/rtc-paper/fig08-soft-masking-ablation.png"
+  alt="Figure 8 soft masking and inpainting ablations"
+  caption="Fig. 8. exponential decay soft masking이 linear/no decay/hard masking보다 전반적으로 좋고, guidance-based inpainting이 simpler Diffuser-style inpainting보다 강하다."
+/>
+
+<PaperFigure
+  src="/pi/rtc-paper/table04-hyperparameters.png"
+  alt="Table 4 RTC hyperparameters"
+  caption="Table 4. real-world RTC는 `n=5`, `H=50`, `s_min=25`, `beta=5`, delay buffer size `b=10`을 사용한다."
+/>
+
+| Hyperparameter | Simulation | Real-world | 해석 |
+| --- | --- | --- | --- |
+| denoising steps `n` | `5` | `5` | low-latency control을 위해 sampling step 수를 작게 둔다. |
+| prediction horizon `H` | `8` | `50` | real-world π0.5는 1초 horizon action chunk를 쓴다. |
+| minimum execution horizon `s_min` | 없음 | `25` | real-world에서는 chunk의 절반 정도는 실행하도록 둔다. |
+| guidance clipping `beta` | `5` | `5` | guidance가 폭주하지 않게 자른다. |
+| delay buffer size `b` | 없음 | `10` | 최근 delay를 보고 다음 delay를 보수적으로 추정한다. |
+
+## Follow-Up Boundary: Training-Time RTC
+
+공식 article은 2025-12-08 update로 follow-up paper를 연결한다. 이 후속 논문은 "training-time RTC"를 제안한다. main RTC와의 차이는 다음처럼 정리할 수 있다.
+
+| 항목 | Inference-time RTC, main paper | Training-time RTC, follow-up |
+| --- | --- | --- |
+| 적용 위치 | inference loop에서 previous chunk를 constraint로 넣음 | training부터 previous action prefix를 condition으로 넣음 |
+| 재학습 필요 | 없음 | 필요 |
+| 계산 overhead | guidance/backprop 때문에 denoising step이 더 느림 | inference-time guidance가 없어 overhead가 줄어듦 |
+| 유연성 | soft masking으로 prefix 이후 overlap도 부드럽게 반영 가능 | training distribution에 정의한 prefix conditioning에 더 묶임 |
+| PI family 연결 | π0.5 real-world RTC 실험 | π*0.6 espresso/cardboard demo에서 사용 |
+
+따라서 이 페이지의 중심은 training-free inference-time RTC다. π*0.6/RECAP 쪽을 읽을 때는 follow-up RTC를 "deployment 중 얻은 experience를 다시 training loop로 넣는 흐름"과 함께 보는 것이 더 자연스럽다.
+
+## Code-Level Check
+
+public OpenPI의 π0 sampling path는 flow action chunk를 생성하는 구조를 보여준다. 다만 RTC scheduler/inpainting loop 자체는 OpenPI의 기본 `pi0.py` sample path에서 바로 보이지 않는다. 확인한 code에서는 `sample_actions(..., num_steps=10)`가 action chunk를 만들고 return하는 흐름이며, previous chunk overlap을 넣어 실시간으로 이어 붙이는 runtime logic은 별도 layer로 봐야 한다.
+
+반대로 GROOT N1.7 action head에는 RTC-style option이 명시적으로 들어 있다.
+
+```text
+if action_input has previous action:
+  require action_horizon, rtc_overlap_steps, rtc_frozen_steps, rtc_ramp_rate
+  copy previous action tail into current action prefix
+  set velocity strength of frozen prefix to 0
+  apply exponential ramp to intermediate overlap
+  run Euler denoising update with velocity strength mask
+```
+
+이 구현은 논문의 full Algorithm 1과 완전히 같은 코드라고 단정할 수는 없지만, "previous chunk tail을 새 chunk prefix에 넣고, frozen prefix와 ramped overlap을 두어 flow inference를 진행한다"는 RTC 핵심 아이디어와 맞물린다. GROOT 쪽 정리는 [GROOT N1.7 Survey](../../groot/n1-7-release/)의 `RTC Option과 Action Overlap` 섹션에서 연결해 읽으면 된다.
 
 ## PI Family 안에서의 위치
 
-RTC는 model architecture가 아니라 deployment/runtime layer다. `π0`와 `π0.5`가 action chunk를 생성하고, RTC가 chunk를 실시간으로 이어 붙인다. T-Rex의 tactile expert가 high-frequency correction module이라면, RTC는 modality-specific expert 없이 chunk consistency와 latency를 다루는 general inference algorithm이다.
+| 논문/모델 | RTC와의 연결 |
+| --- | --- |
+| [π0](../pi0-vla-flow-model/) | flow matching action expert로 chunk를 만든다. RTC가 붙을 수 있는 기본 형태다. |
+| [π0-FAST](../pi0-fast-action-tokenization/) | action chunk를 FAST token으로 AR decoding한다. article은 π0-FAST도 50-action chunk를 쓴다고 설명하지만, RTC의 guidance-based inpainting은 diffusion/flow policy에 가장 직접적이다. |
+| [π0.5](../pi05-open-world-generalization/) | real-world RTC 실험의 base VLA다. open-world generalist model을 실제 runtime에서 빠르게 쓰는 문제와 연결된다. |
+| [Knowledge Insulation](../knowledge-insulation/) | continuous flow action expert를 더 잘 학습하는 recipe다. RTC는 학습된 flow action expert를 deployment에서 실시간으로 쓰는 recipe다. |
+| [π*0.6 / RECAP](../pistar06-recap-learns-from-experience/) | follow-up training-time RTC와 espresso-making demo가 연결된다. |
+| [GROOT N1.7](../../groot/n1-7-release/) | code-level RTC option이 있는 humanoid/VLA family 비교 축이다. |
+
+T-Rex와 비교하면 관점이 다르다. T-Rex는 tactile signal을 써서 execution 중 action을 reactive하게 바꾸는 architecture를 만든다. RTC는 새 modality expert를 만들지 않고, action chunk policy가 이미 낸 trajectory 사이의 temporal consistency와 latency 문제를 해결한다. 즉 T-Rex는 "무엇을 보고 correction할 것인가", RTC는 "느린 chunked policy를 어떻게 끊김 없이 실행할 것인가"에 더 가깝다.
 
 ## 한계와 주의
 
-- RTC는 diffusion/flow action chunk model에 잘 맞는다. π0-FAST처럼 autoregressive token output인 경우 같은 방식으로 바로 적용되는지 별도 확인이 필요하다.
-- latency resilience가 있어도 very high-level planning delay는 다른 계층의 문제다.
-- action safety는 chunk consistency뿐 아니라 low-level controller limits와 함께 봐야 한다.
+| 한계 | 의미 |
+| --- | --- |
+| diffusion/flow policy 의존 | guidance/inpainting은 flow/diffusion action generation에 자연스럽다. 순수 autoregressive action token policy에는 같은 식을 그대로 넣기 어렵다. |
+| computation overhead | training-free인 대신 inference에서 vector-Jacobian product/guidance 계산이 들어간다. |
+| low-level safety 별도 필요 | chunk consistency가 smoothness를 높이지만 torque/velocity/force safety limit을 대체하지 않는다. |
+| high-level planning latency 미해결 | long-horizon plan 변경, task decomposition, recovery policy는 RTC 바깥 계층 문제다. |
+| delay estimate 가정 | Algorithm 1은 최근 delay buffer로 다음 delay를 보수적으로 추정한다. 네트워크 jitter가 큰 환경에서는 별도 system engineering이 필요하다. |
+
+## Citation Trail
+
+| 기반 논문/방법 | RTC에서의 역할 | 읽을 포인트 |
+| --- | --- | --- |
+| Flow Matching / Conditional Flow Matching | action chunk policy의 sampling backbone | velocity field를 적분해 noise action을 clean action chunk로 보낸다. |
+| Diffusion Policy / action chunking policy | chunked action generation의 직접 선행 흐름 | 긴 horizon action을 한 번에 뽑으면 inference latency를 amortize할 수 있지만, chunk transition 문제가 남는다. |
+| Inpainting guidance | previous chunk tail을 known region으로 쓰는 발상 | image inpainting의 "known pixels + generated unknown region"을 action sequence에 옮긴다. |
+| Temporal Ensembling | baseline smoothing method | action 평균이 항상 valid trajectory를 만들지는 않는다. |
+| BID / Best-of-N style inference | compute-heavy baseline | 여러 action chunk를 샘플링해 고르는 방식은 latency와 compute가 늘어난다. RTC는 더 작은 overhead로 delay robustness를 노린다. |
+| Kinetix | dynamic simulation benchmark | quasi-static benchmark만으로는 real-time correction 문제를 보기 어렵다. |
+
+## Study Takeaways
+
+1. action chunking은 latency를 숨기는 기법이지, 자동으로 real-time control을 보장하지 않는다.
+2. real-time VLA deployment에서 중요한 failure mode는 "chunk 내부 품질"보다 "chunk 사이 transition"일 수 있다.
+3. RTC는 previous chunk를 버리지 않고, 새 chunk generation의 constraint로 재사용한다.
+4. soft masking은 frozen prefix와 free future 사이의 급격한 boundary를 줄이는 핵심 장치다.
+5. π family의 흐름에서 RTC는 model scaling이 아니라 runtime scaling 문제를 푸는 paper다.
+6. follow-up training-time RTC는 이 아이디어를 model training distribution 안으로 옮겨 inference overhead를 줄이려는 방향이다.
 
 ## 5-Pass 검증 메모
 
 | Pass | 결과 |
 | --- | --- |
-| 1. 구조/coverage | latency problem, inpainting method, experiment, metric, PI 연결 포함 |
-| 2. 사실/수치 | chunk 50 actions=1 sec, +100/+200 ms, 6 tasks x 10 episodes, 300 ms+ delay 확인 |
-| 3. 코드 구현 | 공개 code 미확인 |
-| 4. 해석/연결 | π0/π0.5 deployment layer, T-Rex correction과 비교 |
-| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |
+| 1. 구조/coverage | metadata, source inventory, figure/table inventory, problem, method, runtime, simulation, real-world, latency, appendix, follow-up, code check, family connection을 포함했다. |
+| 2. 사실/수치 | PDF 기준으로 `H=50`, `Delta t=20 ms`, `n=5`, π0.5 latency `76 ms`, RTC latency `97 ms`, mobile total `138.98 ms`, total `480` episodes를 반영했다. |
+| 3. 이미지 근거 | PDF에서 Fig. 1-8, Algorithm 1, Tables 1-4를 crop해 `/pi/rtc-paper/`에 저장했다. |
+| 4. 코드 구현 | OpenPI는 기본 flow chunk sampling 확인, GROOT N1.7은 RTC overlap/freeze/ramp option 확인으로 분리해 서술했다. |
+| 5. 문서 품질/빌드 | `npm run build`와 `BASE_PATH=/robotics-study-notes SITE_URL=https://wons999.github.io npm run build`를 모두 통과했다. |
