@@ -1,6 +1,6 @@
 ---
 title: π0.7
-description: diverse multimodal prompt로 robot behavior를 steering하고 compositional generalization을 보이는 π0.7 Survey.
+description: π0.7 논문의 diverse multimodal prompting, steerable VLA 구조, world-model subgoal, cross-embodiment transfer, compositional generalization 실험을 정리한 Survey.
 sidebar:
   hidden: true
 ---
@@ -17,20 +17,69 @@ import PublicImage from '../../../../components/PublicImage.astro';
 
 | 항목 | 내용 |
 | --- | --- |
-| 글/논문 | π0.7: a Steerable Model with Emergent Capabilities |
-| 공개 | pi.website blog, 2026-04-16 |
-| 링크 | https://www.pi.website/blog/pi07 |
-| 태그 | VLA, steerable generalist policy, compositional generalization, multimodal prompt, visual subgoal |
+| 논문 | `π0.7: a Steerable Generalist Robotic Foundation Model with Emergent Capabilities` |
+| 저자/그룹 | Physical Intelligence |
+| 공개 | pi.website article, 2026-04-16 / PDF 25 pages |
+| 링크 | article: `https://www.pi.website/blog/pi07`, PDF: `https://www.pi.website/download/pi07.pdf` |
+| 문서 성격 | Research paper Survey + official article visual note |
+| 태그 | VLA, steerable generalist policy, diverse prompting, episode metadata, visual subgoal, world model, MEM, FAST/KI, RTC, compositional generalization |
 
 ## 한 줄 요약
 
-π0.7은 task뿐 아니라 strategy, quality, speed, control modality, visual subgoal 같은 diverse multimodal prompt를 학습해, 단일 generalist model이 specialist 수준의 dexterous skill과 compositional task generalization을 동시에 보이도록 만든 PI 계열의 최신 모델이다.
+π0.7은 단순 language instruction만 쓰는 VLA가 아니라, subtask instruction, generated visual subgoal, episode metadata, control mode를 함께 prompt로 넣어 mixed-quality robot/human/web/autonomous data를 학습 가능한 context로 정렬하고, 단일 generalist policy가 specialist-level dexterity, instruction following, cross-embodiment transfer, compositional task generalization을 보이도록 만든 PI 계열의 steerable VLA다.
+
+## Source/Image Inventory
+
+| Source | Local asset | 본문 반영 위치 | 읽을 때 주의할 점 |
+| --- | --- | --- | --- |
+| pi.website article | `/pi/pi07-og.png` | Official Visual Evidence | article 대표 visual이며 논문 Figure 1과 같은 주장을 압축한다. |
+| pi.website article | `/pi/pi07-current-*.png`, `/pi/pi07-subgoal-*.png` | Visual Subgoal 설명 | current observation과 visual subgoal의 차이를 보여주는 article asset이다. |
+| PDF Figure 1 | `/pi/pi07-paper/fig01-overview.png` | Overview, Dataset/Method | robot data, non-robot data, prompt modalities, inference steering을 한 장에 묶은 overview다. |
+| PDF Figure 2 | `/pi/pi07-paper/fig02-architecture.png` | Model Architecture | 5B VLA, 4B VLM, MEM-style video encoder, 860M action expert, high-level policy, world model 구조를 확인한다. |
+| PDF Figure 3 | `/pi/pi07-paper/fig03-prompt-overview.png` | Method: Diverse Prompting | observation, subgoal image, subtask instruction, metadata가 prompt context로 들어가는 예시다. |
+| PDF Figures 6-7 | `/pi/pi07-paper/fig06-out-of-box-dexterity.png`, `/pi/pi07-paper/fig07-prompt-ablation.png` | Out-of-Box Dexterity, Ablation | specialist 비교와 metadata/eval-data ablation을 분리해 읽는다. |
+| PDF Figures 9-11 | `/pi/pi07-paper/fig09-11-instruction-following.png` | Instruction Following | novel environment, referential instruction, dataset bias reversal을 묶은 결과다. |
+| PDF Figures 12-13 | `/pi/pi07-paper/fig12-13-cross-embodiment.png` | Cross-Embodiment Transfer | robot morphology gap이 커질수록 strategy adaptation이 중요해진다는 증거다. |
+| PDF Figures 14-18 | `/pi/pi07-paper/fig14-17-coaching-new-tasks.png`, `/pi/pi07-paper/fig18-scaling-context-data.png` | Coaching, Compositional Generalization, Scaling | unseen long-horizon task coaching, autonomous high-level policy, mixed-quality data scaling을 보여준다. |
+| OpenPI README | 표로 전사 | Code-Level Check | 2026-06-27 기준 public OpenPI는 π0, π0-FAST, π0.5 중심이고 π0.7 checkpoint/code는 확인되지 않는다. |
+
+## Figure / Table Inventory
+
+PDF는 formal table보다 figure 중심으로 구성된다. Survey에서는 Figure 1-22를 모두 확인하고, 핵심 figure는 local crop으로 첨부했다.
+
+| 항목 | 내용 | 반영 위치 |
+| --- | --- | --- |
+| Figure 1 | π0.7 overview: robot/non-robot data, prompt modalities, inference steering | Overview, Dataset |
+| Figure 2 | 5B VLA architecture, high-level policy, world model, 860M action expert | Model Architecture |
+| Figure 3 | prompt context example: observations, subgoal images, subtask instructions, metadata | Method |
+| Figure 4 | robot platforms: mobile bimanual, static bimanual, UR5e, single-arm | 시스템 설정 |
+| Figure 5 | selected long-horizon evaluation tasks: take out trash, toast a bagel | Experiments |
+| Figure 6 | out-of-box dexterity vs π*0.6/RL or π0.6 SFT specialists | Experiments |
+| Figure 7 | no metadata / no eval data ablation | Ablation |
+| Figure 8 | memory tasks vs MEM specialist | Experiments |
+| Figure 9 | 14 instruction scenarios across unseen kitchens/bedrooms | Instruction Following |
+| Figure 10 | standard vs complex referential instructions | Instruction Following |
+| Figure 11 | dataset-bias reversal tasks | Instruction Following |
+| Figure 12 | cross-embodiment transfer across object rearrangement and folding | Cross-Embodiment |
+| Figure 13 | emergent strategy adaptation to target embodiment | Cross-Embodiment |
+| Figure 14 | language coaching example for air fryer task | Coaching |
+| Figure 15 | coached long-horizon tasks | Compositional Generalization |
+| Figure 16 | autonomous high-level policy trained from coaching episodes | Compositional Generalization |
+| Figure 17 | new short-horizon tasks with no task-specific robot data | Compositional Generalization |
+| Figure 18 | metadata/data diversity scaling | Scaling |
+| Figure 19 | attention patterns for π0.7 and world model | Appendix Notes |
+| Figure 20 | joint vs end-effector control ablation for prior models | Appendix Notes |
+| Figure 21 | human teleoperator experience distribution | Appendix Notes |
+| Figure 22 | π0.7(GC) vs human on UR5e shirt folding | Appendix Notes |
+| Tables | formal table caption 없음 | task scoring rubric은 Appendix G text로 정리 |
 
 ## Official Visual Evidence
 
-<PaperFigure src="/pi/pi07-og.png" alt="π0.7 official overview image" />
-
-공식 π0.7 article의 overview visual이다. single generalist model을 prompt와 subgoal로 steer한다는 방향을 보여준다.
+<PaperFigure
+  src="/pi/pi07-og.png"
+  alt="π0.7 official overview image"
+  caption="공식 π0.7 article의 overview visual. single generalist model을 language, metadata, visual subgoal로 steer한다는 방향을 보여준다."
+/>
 
 | Current observations |  |  |  |  |
 | --- | --- | --- | --- | --- |
@@ -40,86 +89,360 @@ import PublicImage from '../../../../components/PublicImage.astro';
 | --- | --- | --- | --- | --- |
 | <PublicImage src="/pi/pi07-subgoal-1.png" alt="π0.7 subgoal 1" /> | <PublicImage src="/pi/pi07-subgoal-2.png" alt="π0.7 subgoal 2" /> | <PublicImage src="/pi/pi07-subgoal-3.png" alt="π0.7 subgoal 3" /> | <PublicImage src="/pi/pi07-subgoal-4.png" alt="π0.7 subgoal 4" /> | <PublicImage src="/pi/pi07-subgoal-5.png" alt="π0.7 subgoal 5" /> |
 
-공식 article의 visual subgoal example이다. language prompt만이 아니라 현재 관측과 목표 상태 image를 함께 넣어 behavior를 steer하는 구조를 확인한다.
+공식 article의 visual subgoal example이다. language prompt만으로는 “어떤 최종 배치가 좋은지”가 애매한 경우, 현재 관측과 목표 상태 image를 함께 넣어 behavior를 더 구체적으로 steer한다.
+
+<PaperFigure
+  src="/pi/pi07-paper/fig01-overview.png"
+  alt="π0.7 paper Figure 1 overview"
+  caption="논문 Figure 1. π0.7은 demonstration, autonomous data, multimodal web data, egocentric human data를 language instruction, subgoal image, episode metadata와 함께 학습한다. 핵심은 data를 많이 섞는 것이 아니라, data가 어떤 품질/전략/목표 상태를 의미하는지 prompt로 disambiguate하는 것이다."
+/>
 
 ## 문제의식
 
-LLM은 “영어를 프랑스어로 번역”과 “JSON format으로 출력” 같은 능력을 조합할 수 있다. VLA는 semantic concept을 이해하더라도 “새 도구를 쓰기”, “새 appliance 조작”, “새 robot embodiment에서 같은 task 수행”처럼 skill을 recombine하는 compositional generalization을 충분히 보여주지 못했다.
+기존 VLA는 semantic concept을 이해하더라도 skill을 새 방식으로 재조합하는 능력이 약했다. 예를 들어 “object label이 새롭다” 수준의 generalization은 가능해져도, 새 appliance를 조작하거나, 다른 robot embodiment에서 같은 dexterous skill을 수행하거나, 같은 task를 더 빠르고 안정적인 strategy로 수행하는 것은 별도 fine-tuning 또는 specialist policy가 필요했다.
 
-π0.7의 목표는 다음이다.
+π0.7의 문제 설정은 다음 질문으로 읽을 수 있다.
 
-| 목표 | 설명 |
+| 질문 | π0.7의 답 |
 | --- | --- |
-| out-of-box generalist | task별 specialist fine-tuning 없이 다양한 dexterous task 수행 |
-| compositional generalization | training에 없는 appliance/task를 prompt와 coaching으로 해결 |
-| cross-embodiment transfer | data가 없는 robot/task 조합에서도 수행 |
-| steerability | 무엇을 할지뿐 아니라 어떻게 할지 prompt로 제어 |
+| 다양한 품질의 data를 그냥 섞으면 되는가? | 아니며, episode quality/speed/mistake/control mode를 prompt metadata로 넣어야 한다. |
+| VLA가 “무엇”뿐 아니라 “어떻게”를 따를 수 있는가? | subtask instruction, metadata, visual subgoal을 통해 strategy와 desired behavior를 steer한다. |
+| task-specific specialist가 하던 dexterous task를 single model이 할 수 있는가? | π*0.6 specialist tasks에서 single π0.7이 비슷하거나 더 높은 throughput을 보인다. |
+| unseen task를 action demonstration 없이 가르칠 수 있는가? | live language coaching episode를 high-level policy로 distill해 autonomous execution으로 연결한다. |
+| cross-embodiment transfer가 단순 imitation인가? | UR5e transfer에서는 source strategy를 그대로 복사하지 않고 target morphology에 맞는 strategy가 나타난다. |
+
+## 시스템 설정
+
+논문은 single benchmark가 아니라 여러 robot platform에서 π0.7의 out-of-box, instruction-following, transfer, compositional generalization을 평가한다.
+
+| 축 | 내용 |
+| --- | --- |
+| robot platforms | bimanual mobile manipulators, static bimanual robots, bimanual UR5e with Robotiq grippers, single-arm 6 DoF systems |
+| gripper | 모든 manipulator는 parallel-jaw gripper |
+| cameras | front camera, wrist camera on each arm, mobile robots는 rear-facing camera 추가 |
+| control frequency | UR5e robots는 20 Hz, 그 외 robot은 50 Hz |
+| action application | simple PD controller |
+| end-effector commands | numerical IK로 target end-effector pose를 target joint position으로 변환 |
+| inference action chunk | 50-step action chunks |
+| denoising | 모든 실험에서 5 denoising steps |
+| execution horizon | chunk 중 `H_hat` in `{15, 25}` steps를 실행 |
+
+<PaperFigure
+  src="/pi/pi07-paper/fig02-architecture.png"
+  alt="π0.7 paper Figure 2 architecture"
+  caption="논문 Figure 2. π0.7은 4B Gemma3 기반 VLM backbone, MEM-style video history encoder, 860M action expert로 구성된 약 5B parameter VLA다. runtime에서는 high-level semantic policy가 subtask instruction을 만들고, BAGEL 기반 world model이 subgoal image를 생성한다."
+/>
+
+## Dataset
+
+논문은 exact total hour/frame count를 한 표로 공개하지 않는다. 대신 data source의 성격과 이들을 prompt metadata로 정렬하는 방식이 핵심이다.
+
+| Data source | 역할 |
+| --- | --- |
+| robot demonstrations | 다양한 task, robot platform, lab/home/in-the-wild environment의 기본 action data |
+| suboptimal demonstrations | failure episode 또는 mistake가 많은 success episode도 metadata와 함께 사용 |
+| autonomous evaluation episodes | prior policies, 특히 π*0.6 RL training 중 생성된 rollout을 distillation source로 사용 |
+| human interventions | policy rollout 중 사람이 개입한 data |
+| open-source robot datasets | cross-embodiment/generalist prior 강화 |
+| egocentric human videos | human-object interaction prior와 world model/subgoal generation 보조 |
+| multimodal web data | object localization, attribute prediction, visual QA, text-only prediction, video-language tasks |
+
+중요한 점은 π0.7이 “좋은 data만 골라 쓰는” 방향이 아니라, 낮은 품질의 data도 품질/속도/mistake metadata를 붙여 학습에 포함한다는 것이다. 이 때문에 test time에는 high quality, no mistake, desired speed 같은 metadata를 prompt로 넣어 desired behavior를 유도할 수 있다.
 
 ## Method: Diverse Multimodal Prompting
 
-π0.7은 단순 text instruction만 쓰지 않는다. 공식 글은 generalization의 key가 diverse data를 naive하게 섞는 것이 아니라, behavior를 disambiguate하는 diverse context를 prompt에 넣는 것이라고 설명한다.
+π0.7의 training objective는 trajectory action chunk를 최근 observation history와 context `C_t`에 조건화하는 VLA objective로 정리된다.
 
-| Prompt modality | 역할 |
+```text
+maximize E_D [ log πθ(a_{t:t+H} | o_{t-T:t}, C_t) ]
+```
+
+flow matching action expert는 이 likelihood를 직접 계산하지 않고, conditional flow objective로 action chunk를 생성한다. π0.7의 차이는 `C_t`를 단순 instruction으로 두지 않는 데 있다.
+
+| Prompt component | 기호/형태 | 역할 |
+| --- | --- | --- |
+| task instruction | `l_t` | 전체 task intent, 예: clean the kitchen |
+| subtask instruction | `l_hat_t` | 다음 semantic subtask, 예: open the fridge door |
+| visual subgoal | `g_t` | near-future desired scene state, multi-view goal image |
+| episode metadata | `m` | speed, quality, mistake label |
+| control mode | `c` in `{joint, ee}` | joint-level 또는 end-effector action mode를 명시 |
+| proprioception | `q_t` | robot state, model backbone token으로 embedding |
+
+<PaperFigure
+  src="/pi/pi07-paper/fig03-prompt-overview.png"
+  alt="π0.7 paper Figure 3 prompt overview"
+  caption="논문 Figure 3. π0.7의 prompt는 observation, subgoal image, subtask instruction, metadata를 함께 담는다. 각 component는 training 중 dropout되어 test time에 일부만 있어도 작동하게 만든다."
+/>
+
+### Subtask Instruction
+
+π0.5처럼 high-level semantic subtask를 low-level VLA prompt에 넣는다. 차이는 π0.7이 이 subtask instruction을 human live coaching, learned high-level policy, 또는 test-time generated plan에서 받아 유연하게 사용할 수 있다는 점이다.
+
+### Visual Subgoal
+
+subtask instruction은 “open the fridge door”처럼 intent는 주지만, 어느 손으로 어느 angle로 잡을지 같은 spatial detail은 부족할 수 있다. visual subgoal은 desired near-future image를 제공해 object-centric outcome과 arm/gripper outcome을 동시에 지정한다.
+
+world model은 `g_ψ(g* | o_t, l_hat_t, m)` 형태로 subgoal image를 생성하며, BAGEL 14B mixture-of-transformers image model에서 초기화된다. training target은 segment end frame 또는 future frame이고, web/non-robot/human video data를 섞어 semantic/physical concept을 보존한다.
+
+### Episode Metadata
+
+| Metadata | 정의 | test-time 사용 |
+| --- | --- | --- |
+| overall speed | episode length를 500-step bin으로 discretize | task별 episode length의 15th percentile을 넣어 빠른 실행 유도 |
+| overall quality | 1-5 score, 5가 highest quality | 항상 5로 설정해 high-quality behavior 유도 |
+| mistake | segment 안 mistake 여부 | 항상 false로 설정해 mistake-free behavior 유도 |
+
+이 metadata가 핵심이다. 낮은 품질의 autonomous data, failure, mistake 포함 episode도 학습에 넣되, model이 “이 data는 어떤 behavior quality를 나타내는지” 구분하게 만든다.
+
+### Control Mode
+
+control mode token은 `joint` 또는 `ee`를 prompt에 넣는다. Appendix E의 Figure 20은 prior models에서 EE control이 cross-embodiment tasks에 뚜렷한 이점을 주지 않았다고 보고하므로, main cross-embodiment 실험은 joint-space control 중심으로 정리된다.
+
+## Model Architecture
+
+| 구성 | 논문 기준 값/설명 |
 | --- | --- |
-| diverse language | task와 sub-step 설명 |
-| metadata | speed, quality, desired strategy 같은 “how” 정보 |
-| control modality | data source/robot/control style 차이를 명시 |
-| visual subgoal image | sub-step end state의 precise spatial layout 제공 |
-| world-model-generated subgoal | test-time visual generalization을 돕는 synthetic subgoal |
+| total parameter | 약 5B |
+| VLM backbone | Gemma3 4B VLM |
+| vision encoder | Gemma3/SigLIP 계열 400M vision encoder |
+| video history | MEM-style encoder, temporal/spatial compression |
+| action expert | 860M transformer, continuous action flow matching |
+| action tokens | fixed 50 tokens, 50-step action chunk |
+| timestep conditioning | adaptive RMSNorm |
+| action attention | 50 action tokens는 서로 bidirectional attention, VLM backbone activation에도 attend |
+| state/proprioception | MEM 방식처럼 linear projection으로 backbone dimension에 embedding |
+| KI/FAST relation | VLM backbone은 FAST token CE supervision으로 안정화하고, action expert gradient는 VLM backbone으로 흐르지 않게 하는 Knowledge Insulation recipe를 사용 |
 
-이 구조 덕분에 suboptimal autonomous data도 “lower quality/lower speed” metadata로 구분해 training에 포함할 수 있다. 즉 π0.7은 좋은 data만 골라 쓰는 것이 아니라 heterogeneous data의 behavior style을 prompt로 조건화한다.
+### Input Shape 관점
+
+논문은 exact tensor shape를 config table로 주지는 않지만, architectural contract는 명확하다.
+
+| Input | 범위 |
+| --- | --- |
+| camera observations | 최대 4 camera images: front, two wrist, optional rear |
+| history frames | camera마다 최대 6 history frames |
+| visual subgoals | 최대 3 subgoal images, rear view는 제외 |
+| image resolution | observation/subgoal images는 `448x448`로 resize |
+| history sampling | 1 second stride |
+| state tokens | history state를 individual token으로 처리 |
+| action chunk | 50 action tokens |
+
+### Attention Pattern
+
+π0.7은 image goals가 없으면 π0.5와 유사한 memory-aware image views attention pattern을 사용한다. image goals가 있으면 text prompt 뒤에 block-causal bidirectional block으로 추가한다. CFG inference에서는 positive/negative examples를 같은 sequence에 packing하되 서로 attend하지 않는 attention tree를 구성한다. world model도 current observation, VAE-encoded observation, noisy image goal group을 나눠 block-bidirectional attention을 사용한다.
+
+## Training Recipe
+
+| 학습 요소 | 내용 |
+| --- | --- |
+| backbone/action recipe | KI: VLM은 FAST CE loss로 안정화, action expert는 flow matching |
+| robot data | high-quality demo뿐 아니라 suboptimal demo, failure, autonomous rollout까지 포함 |
+| subgoal images in batch | visual subgoal은 batch example의 25%에만 추가 |
+| subtask dropout | subgoal이 있는 example에서 subtask instruction을 30% dropout |
+| metadata dropout | 전체 metadata는 15% dropout, speed/quality/mistake component는 각각 5% dropout |
+| control mode dropout | 적용하지 않음 |
+| history frame dropout | entire history frames 0.3 probability |
+| rear view dropout | rear view image가 있으면 0.3 probability |
+| subgoal real image sampling | 0.25 probability로 end-of-segment image, 0.75 probability로 0-4 seconds future image |
+| generated subgoal training | world model generated images를 추가 training example로 넣어 train-test mismatch 완화 |
+| RTC training | inference delay 0-12 timesteps를 simulate, 50Hz robot 기준 최대 240 ms |
+
+## Runtime Inference
+
+π0.7의 runtime은 single VLA call만이 아니라 high-level policy, world model, VLA가 비동기로 돌아가는 구조다.
+
+| 단계 | 설명 |
+| --- | --- |
+| initial context | initial observation, task instruction, episode metadata, control mode |
+| subtask generation | high-level policy 또는 human coaching이 `l_hat` 생성 |
+| subgoal generation | world model이 current observation, subtask, metadata로 `g*` 생성 |
+| context assembly | `{l, l_hat, g*, m, c}` |
+| VLA action | `πθ(a given observation history and context C)`로 50-step action chunk 생성 |
+| subgoal refresh | subtask가 바뀌거나 4 seconds가 지나면 non-blocking async로 새 subgoal 생성 |
+| action refresh | `H_hat` steps가 지나면 RTC overlap을 고려해 새 action chunk 생성 |
+| CFG | episode metadata 등 prompt component를 guidance target으로 사용, β in `{1.3, 1.7, 2.2}` |
+
+minimal π0.7 inference는 H100 1장 기준 3 camera inputs, 5 denoising steps, training-time RTC에서 38 ms까지 최적화되었다고 appendix가 설명한다. MEM encoder와 subgoal images까지 켜면 overhead가 커지고 worst case 127 ms까지 간다. world model은 14B급이고 4xH100 tensor parallelism, 8-bit large matmul, SageAttention 변형을 사용해 25 denoising steps subgoal generation을 1.25 seconds로 만든다. 그래서 runtime은 subgoal generation을 blocking하지 않고 async로 돌린다.
 
 ## Experiments and Results
 
-### Compositional Task Generalization: Air Fryer
+### 1. Out-of-Box Dexterity
 
-π0.7은 air fryer에 sweet potato를 넣는 task를 zero-shot으로 시도한다. 단순 prompt만으로는 reasonable attempt를 하지만 완전히 끝내지는 못한다. 사람이 step-by-step language coaching을 제공하면 훨씬 잘 수행한다. 여러 번 coaching한 뒤에는 high-level policy를 fine-tune해 language subgoals를 autonomously 생성하고, world model이 만든 visual subgoal image와 함께 π0.7에 제공해 task를 수행한다.
+π0.7은 task-specific post-training 없이 π*0.6 RL specialist 또는 π0.6 SFT specialist와 비교된다.
 
-중요한 분석:
+<PaperFigure
+  src="/pi/pi07-paper/fig06-out-of-box-dexterity.png"
+  alt="π0.7 Figure 6 out-of-box dexterity"
+  caption="논문 Figure 6. π0.7은 laundry, espresso, box building 같은 π*0.6 specialist tasks에서 success/throughput을 맞추거나 일부 task에서 더 높은 throughput을 보인다. bottom row는 Robot Olympics/추가 dexterous tasks에서 π0.6 SFT specialist와 task progress를 비교한다."
+/>
 
-- training set에는 해당 mobile robot의 air fryer loading demonstration이 없다.
-- 가까운 episode로 air fryer basket을 닫는 두 episode와 DROID Franka data가 발견되었다.
-- 실제 수행은 이 source episodes와 morphology/setting이 다르므로, 행동 조합 능력의 초기 신호로 해석한다.
+| Task group | 비교 대상 | 결과 해석 |
+| --- | --- | --- |
+| Laundry, espresso, box building | π*0.6 RL specialist | single π0.7이 specialist-level robustness/speed에 접근 |
+| PB sandwich, shirt inside-out, drive through door | π0.6 SFT specialist | task progress가 specialist와 비슷한 수준 |
+| slice zucchini, peel fruits/vegetables, take out trash | π0.6 SFT specialist | single model breadth를 보여주는 dexterous task set |
 
-### Cross-Embodiment Laundry Folding
+### 2. Prompt Composition / Evaluation Data Ablation
 
-π0.7은 bimanual UR5e system에서 laundry folding을 수행한다. 이 robot은 training set에서 underrepresented embodiment이며, 해당 robot/task 조합의 laundry folding data는 없다. Source robot과 UR5e는 size, positioning, morphology가 달라 strategy도 달라져야 한다.
+<PaperFigure
+  src="/pi/pi07-paper/fig07-prompt-ablation.png"
+  alt="π0.7 Figure 7 prompt ablation"
+  caption="논문 Figure 7. episode metadata를 빼거나 autonomous evaluation data를 빼면 throughput gap이 특히 커진다. mixed-quality autonomous rollout을 쓰려면 metadata가 behavior quality를 분리해줘야 한다."
+/>
 
-공식 글은 π0.7의 success rate가 source robot에서 folding data를 수집했던 expert teleoperators가 UR5e에서 처음 시도한 “zero-shot” success rate와 match한다고 설명한다. 이 teleoperators는 평균 375시간의 teleoperation experience를 가졌다.
+| Ablation | 의미 | 결론 |
+| --- | --- | --- |
+| `π0.7 (no metadata)` | episode quality/speed/mistake context 제거 | data quality 차이를 구분하지 못해 throughput/robustness 약화 |
+| `π0.7 (no eval data)` | autonomous evaluation episode 제거 | specialist/RL rollout distillation 효과 감소 |
+| full π0.7 | metadata + autonomous rollout 포함 | 다양한 품질의 data를 더 잘 흡수 |
 
-### RECAP Specialist와 비교
+### 3. Memory and Instruction Following
 
-π0.7은 RECAP으로 학습한 π*0.6 specialist가 수행하던 laundry folding, espresso making, box folding task를 단일 model로 수행한다. 공식 글은 autonomous data와 RL-trained specialist experience를 strategy metadata로 distill해, 단일 π0.7 model이 task-specific RECAP specialist와 비슷하거나 더 높은 throughput을 얻는다고 설명한다.
+Figure 8은 MEM paper task에서 π0.7이 task-specific memory specialist와 비슷하거나 더 나은 performance를 보인다고 보고한다. Figure 9-11은 instruction following을 세 갈래로 평가한다.
 
-### Out-of-Box Skill Breadth
+<PaperFigure
+  src="/pi/pi07-paper/fig09-11-instruction-following.png"
+  alt="π0.7 Figures 9 to 11 instruction following"
+  caption="논문 Figures 9-11. π0.7은 unseen kitchens/bedrooms에서 3-6 step open-ended instruction을 따르고, complex referential instruction 및 dataset bias를 깨는 reverse instruction에서 prior models보다 강하다. generated subgoal image가 특히 complex/reverse instruction에서 도움을 준다."
+/>
 
-공식 페이지는 vegetable peeling, glass door cleaning with Windex 등 다양한 platform/task examples를 보여준다. 이는 controlled benchmark 하나보다 “single unified model의 breadth”를 강조하는 evidence다.
+| 평가 | 설정 | 해석 |
+| --- | --- | --- |
+| broad instruction following | 4 unseen kitchens + 2 unseen bedrooms, 14 scenarios, 3-6 instructions | π0.5/π0.6보다 높은 instruction following success |
+| referential instruction | standard vs complex object reference | complex reference에서 π0.7과 π0.7(GC)가 우세 |
+| dataset bias reversal | reverse bussing, reverse fridge-to-microwave | language instruction이 dataset prior를 이길 수 있는지 평가 |
+
+### 4. Cross-Embodiment Transfer
+
+<PaperFigure
+  src="/pi/pi07-paper/fig12-13-cross-embodiment.png"
+  alt="π0.7 Figures 12 and 13 cross embodiment transfer"
+  caption="논문 Figures 12-13. π0.7은 table setting 같은 작은 embodiment gap뿐 아니라, static bimanual robot에서 수집한 folding skill을 더 크고 무거운 bimanual UR5e로 옮기는 setting에서도 transfer를 보인다. Figure 13은 source behavior를 복사하지 않고 target morphology에 맞는 grasp/placement strategy가 나타나는 장면을 보여준다."
+/>
+
+| Transfer setting | 난이도 | 결과 |
+| --- | --- | --- |
+| table setting | source robots가 다양함 | prior models도 강한 transfer |
+| bag in backpack / organize tupperware | source UR5e -> smaller static bimanual | π0.5는 약하고 π0.6/π0.7은 강함 |
+| shirt bagging | smaller static bimanual -> single-arm UR5e | π0.7이 prior models보다 크게 개선 |
+| towel/shirt folding | smaller static bimanual -> larger bimanual UR5e | π0.7(GC)가 human zero-shot teleop 수준에 접근 |
+
+human comparison은 appendix에서 더 구체화된다. 10명의 experienced teleoperators는 평균 약 375 hours teleoperation experience를 가졌고, UR5e shirt folding task는 practice/warm-up 없이 30 trials로 측정되었다. human은 90.9% task progress와 80.6% success rate, π0.7은 85.6% task progress와 80% success rate를 보였다.
+
+### 5. Coaching and Compositional Task Generalization
+
+<PaperFigure
+  src="/pi/pi07-paper/fig14-17-coaching-new-tasks.png"
+  alt="π0.7 Figures 14 to 17 coaching and new tasks"
+  caption="논문 Figures 14-17. air fryer 같은 unseen long-horizon task는 직접 한 문장 prompt만으로 충분하지 않지만, step-by-step language coaching으로 수행하고, 그 coaching data를 high-level policy로 distill하면 autonomous execution으로 이어질 수 있다."
+/>
+
+| Experiment | 의미 |
+| --- | --- |
+| Figure 14 | air fryer task를 step-by-step language coaching으로 가르치는 예시 |
+| Figure 15 | loading/unloading air fryer, toasting bagel 같은 unseen long-horizon tasks에서 coaching 효과 |
+| Figure 16 | coaching episodes로 high-level policy를 학습해 autonomous execution으로 전환 |
+| Figure 17 | french press plunger, rice cooker, office supplies wiping, spinning articulated objects 같은 short-horizon unseen tasks |
+
+여기서 “unseen”은 주의해서 읽어야 한다. 논문도 대규모 dataset에서는 truly unseen 여부를 완전히 판별하기 어렵다고 인정한다. 다만 해당 target task에 대해 action-level robot data를 일부러 수집하지 않았고, model이 관련 skill을 재조합해 task를 수행한다는 점을 compositional generalization의 근거로 제시한다.
+
+### 6. Data and Context Scaling
+
+<PaperFigure
+  src="/pi/pi07-paper/fig18-scaling-context-data.png"
+  alt="π0.7 Figure 18 scaling context and data diversity"
+  caption="논문 Figure 18. metadata가 있으면 더 크고 평균 품질이 낮은 data bucket을 써도 throughput이 계속 개선된다. 반대로 metadata 없이 섞으면 성능이 떨어질 수 있다. 오른쪽은 high-diversity data를 제거하면 unseen short-horizon task 성능이 크게 약해지는 것을 보여준다."
+/>
+
+| 비교 | 결론 |
+| --- | --- |
+| top 30/50/80/all data with metadata | data가 커지고 평균 품질이 낮아져도 performance 개선 |
+| without metadata | mixed-quality data가 오히려 성능을 해칠 수 있음 |
+| remove most diverse 20% | random 20% 제거보다 성능 하락이 크다 |
+
+## Appendix Notes
+
+| Appendix item | 핵심 내용 |
+| --- | --- |
+| Attention pattern | image goals가 있을 때 block-causal bidirectional block 추가, CFG는 positive/negative branch를 attention tree로 packing |
+| World model training | BAGEL 기반, high-quality segmented robot/human video + open-source image editing/video data 사용 |
+| Inference speed | π0.7 minimal variant 38 ms on H100, MEM/subgoal context worst case 127 ms |
+| Subgoal generation | 14B model, 4xH100 tensor parallelism, 8-bit matmul, SageAttention 변형, 25 denoising steps in 1.25 seconds |
+| Action-space comparison | prior models에서 joint vs EE control이 큰 차이를 보이지 않음 |
+| Human study | 10 expert operators, 평균 약 375 hours, no practice, 30 trials |
+| Task rubric | appendix G가 task별 max score와 partial credit을 제공 |
+
+### Scoring Rubric Examples
+
+| Task | Max score / success 기준 |
+| --- | --- |
+| Take out trash | 12 points: trash can access, bag removal, new bag placement, return/door close |
+| Shirt folding | 6 points: three fold stages + 0-3 fold quality, full score가 success |
+| Loading air fryer | 4 points: open air fryer, pick sweet potato, place into basket, close air fryer |
+| Toast a bagel | 7 points: open oven, insert bagel, close oven, turn knob, retrieve plate, retrieve toast, place on plate |
+| Reverse fridge to microwave | 6 points: microwave/fridge door and plate transfer steps |
+
+## Code-Level Check
+
+공식 OpenPI README를 2026-06-27 기준 확인하면 public repository는 `π0`, `π0-FAST`, `π0.5` checkpoint와 training/inference stack 중심이다.
+
+| 모델 | public OpenPI status |
+| --- | --- |
+| `π0` | base checkpoint와 several expert checkpoints 공개 |
+| `π0-FAST` | base checkpoint와 DROID checkpoint 공개 |
+| `π0.5` | base, LIBERO, DROID checkpoint 공개 |
+| `π0.7` | README checkpoint inventory에서 확인되지 않음 |
+
+따라서 이 Survey의 π0.7 model architecture, training recipe, runtime loop, experiment result는 PDF/article 기준이다. π0.7의 exact training code, model config, checkpoint, world-model code는 공개 OpenPI 구현으로 직접 검증하지 못했다. 다만 논문이 기반으로 삼는 π0/π0.5/FAST/KI/flow matching/RTC/MEM 계열의 일부 구현은 OpenPI와 기존 PI papers에서 추적 가능하다.
 
 ## PI Family 안에서의 위치
 
 | 이전 연구 | π0.7에서의 역할 |
 | --- | --- |
-| π0 | VLA + flow action foundation |
-| π0-FAST/KI | prompt/action representation과 semantic knowledge preservation |
-| π0.5 | open-world household generalization |
-| RECAP / π*0.6 | autonomous/RL data와 strategy metadata source |
-| MEM | long-horizon memory와 future integration |
-| RLT | future online refinement axis |
+| [π0](../pi0-vla-flow-model/) | flow-matching action VLA foundation |
+| [π0-FAST](../pi0-fast-action-tokenization/) | VLM backbone CE supervision과 action tokenization route |
+| [Knowledge Insulation](../knowledge-insulation/) | action expert gradient가 VLM knowledge를 망가뜨리지 않도록 분리하는 training recipe |
+| [π0.5](../pi05-open-world-generalization/) | high-level semantic subtask, open-world home generalization |
+| [MEM](../mem-multiscale-embodied-memory/) | video history encoder와 memory-aware image views |
+| [Real-Time Action Chunking](../real-time-action-chunking/) | latency를 고려한 training-time RTC/action continuity |
+| [π*0.6 / RECAP](../pistar06-recap-learns-from-experience/) | RL/autonomous specialist rollout을 generalist π0.7에 distill하는 source |
+| [RLT](../rlt-efficient-online-rl/) | future online refinement 축. π0.7은 RL token이라기보다 metadata/prompt distillation 축 |
 
-π0.7은 “더 큰 모델”보다 “다양한 data를 prompt context로 정렬해 behavior를 steerable하게 만드는 모델”로 읽어야 한다.
+π0.7은 “모델을 더 크게 만든다”보다 “data source와 behavior style을 prompt context로 정렬한다”가 핵심이다. PI family에서 π0.7은 specialist data/experience를 다시 single steerable generalist로 합치는 단계다.
+
+## Citation Trail
+
+| 분류 | 논문/방법 | π0.7과의 연결 |
+| --- | --- | --- |
+| 직접 비교 | π0.5, π0.6, π*0.6/RECAP specialists | instruction following, dexterity, cross-embodiment, specialist throughput 비교 |
+| 기반 VLA | π0, flow matching | continuous action chunk generation의 기반 |
+| knowledge preservation | FAST, Knowledge Insulation | VLM backbone을 discrete CE path로 안정화하고 action expert gradient를 분리 |
+| memory | MEM | video history encoder와 memory-aware image views |
+| runtime control | RTC | inference delay와 action chunk continuity 처리 |
+| visual goal | SuSIE, goal image/video conditioning works | world-model-generated subgoal image로 goal conditioning |
+| world model | BAGEL | subgoal image generation backbone |
+| generalist robot data | Open X-Embodiment/RT-X, RT-1/RT-2, OpenVLA | broad robot foundation model baseline/background |
+| human/non-robot data | human video transfer, egocentric human video works | robot data 밖의 semantic/physical prior를 subgoal/representation으로 흡수 |
 
 ## 한계와 주의
 
-- 공식 글은 broad capability demo와 qualitative evidence가 많고, full paper/PDF 수치 표는 별도 확인해야 한다.
-- air fryer는 완전 zero-shot success라기보다 coaching과 high-level policy fine-tuning이 결합된 흐름이다.
-- “specialist 수준” 비교는 normalized throughput 기준이며 task별 raw success/throughput table을 추가 확인해야 한다.
+- π0.7 code/checkpoint는 public OpenPI inventory에서 확인되지 않았다. 재현 가능한 open-source release로 읽으면 안 된다.
+- 논문은 exact total data hours/frames, optimizer, full training schedule을 모두 표로 공개하지 않는다.
+- “unseen task”는 대규모 mixed dataset에서 완전히 증명하기 어렵다. 논문도 관련 skill이 다른 label/context로 존재할 수 있음을 한계로 인정한다.
+- world model subgoal은 강력하지만 14B model과 4xH100 inference optimization이 필요하다. deployment cost가 작지 않다.
+- generated subgoal이 틀리면 VLA를 잘못 steer할 수 있다. paper는 positive result 중심이고 failure taxonomy는 제한적이다.
+- cross-embodiment result는 특정 robot/task set에 기반한다. tactile/contact-rich force feedback policy와는 modality setting이 다르다.
+
+## 스터디에서 기억할 점
+
+π0.7의 핵심은 “prompt를 instruction string에서 behavior contract로 확장했다”는 점이다. language는 task를 말하고, subtask는 다음 semantic step을 말하고, visual subgoal은 desired spatial state를 말하고, metadata는 speed/quality/mistake를 말하고, control mode는 action interface를 말한다. 이 context가 있기 때문에 mixed-quality data와 specialist/autonomous experience를 단일 generalist VLA로 되돌릴 수 있다.
 
 ## 5-Pass 검증 메모
 
 | Pass | 결과 |
 | --- | --- |
-| 1. 구조/coverage | prompt modalities, air fryer, UR5e laundry, RECAP specialist comparison, limitations 포함 |
-| 2. 사실/수치 | 평균 375h teleop, no UR5e laundry data, air fryer source episodes, specialist comparison 확인 |
-| 3. 코드 구현 | 공개 code/checkpoint 미확인 |
-| 4. 해석/연결 | π0.5, KI, RECAP, RLT/MEM과 연결 |
-| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |
+| 1. 구조/coverage | PDF 25 pages를 확인하고 문제의식, system, dataset, method, model architecture, training, runtime, experiments, appendix, code boundary, citation trail을 추가했다. |
+| 2. 사실/수치 | 5B total, 4B VLM, 400M vision encoder, 860M action expert, 50-step action chunks, 5 denoising steps, `H_hat` in `{15,25}`, 20/50 Hz robot frequency, 448x448 image resize, dropout rates, human study 90.9%/80.6% vs 85.6%/80%를 PDF와 대조했다. |
+| 3. 코드 구현 | OpenPI README를 확인해 public checkpoint/code inventory가 π0, π0-FAST, π0.5 중심이고 π0.7은 공개 구현 미확인임을 분리했다. |
+| 4. 해석/연결 | π0, π0.5, FAST, KI, MEM, RTC, RECAP, RLT, GR00T와 연결했다. |
+| 5. 문서 품질/build | PDF crop 9개를 `public/pi/pi07-paper/`에 저장하고 직접 확인했다. 최종 MDX는 build로 확인한다. |
