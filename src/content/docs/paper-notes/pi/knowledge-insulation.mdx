@@ -1,6 +1,6 @@
 ---
 title: Knowledge Insulation
-description: VLA가 robot skill을 학습하면서 VLM knowledge를 잃지 않도록 하는 Knowledge Insulation Survey.
+description: continuous action expert가 VLM backbone knowledge를 망가뜨리는 문제를 분석하고, discrete FAST action token과 flow action expert를 함께 쓰는 Knowledge Insulation recipe를 정리한 Survey.
 sidebar:
   hidden: true
 ---
@@ -16,84 +16,364 @@ import PaperFigure from '../../../../components/PaperFigure.astro';
 
 | 항목 | 내용 |
 | --- | --- |
-| 논문/글 | VLAs that Train Fast, Run Fast, and Generalize Better |
-| 방법/모델 | π0.5 + Knowledge Insulation, π0.5 + KI |
-| 공개 | pi.website research, 2025-05-28 |
-| 링크 | https://www.pi.website/research/knowledge_insulation |
-| 태그 | VLA, action expert, FAST token, flow matching, knowledge retention, semantic generalization |
+| 논문 | Knowledge Insulating Vision-Language-Action Models: Train Fast, Run Fast, Generalize Better |
+| pi.website 제목 | VLAs that Train Fast, Run Fast, and Generalize Better |
+| 저자/그룹 | Danny Driess, Jost Tobias Springenberg, Brian Ichter, Lili Yu, Adrian Li-Bell, Karl Pertsch, Allen Z. Ren, Homer Walke, Quan Vuong, Lucy Xiaoyang Shi, Sergey Levine / Physical Intelligence |
+| 공개 | pi.website research 2025-05-28, preprint PDF |
+| 링크 | [project article](https://www.pi.website/research/knowledge_insulation), [PDF](https://www.pi.website/download/pi05_KI.pdf), [OpenPI](https://github.com/Physical-Intelligence/openpi) |
+| 연결 모델 | π0, π0-FAST, π0.5, π0.5-DROID |
+| 태그 | VLA, knowledge insulation, action expert, flow matching, FAST token, stop-gradient, VLM knowledge retention |
 
 ## 한 줄 요약
 
-Knowledge Insulation은 continuous action expert의 gradient가 pretrained VLM backbone을 망가뜨리는 문제를 막기 위해, action expert gradient를 backbone에 흘리지 않고 π0-FAST action token objective와 VLM/web/high-level robot tasks를 함께 학습해 “train fast, run fast, generalize better”를 달성하는 recipe다.
+Knowledge Insulation은 action expert의 flow-matching gradient가 pretrained VLM backbone을 손상시키는 문제를 막기 위해, backbone은 FAST-tokenized discrete action과 VLM/web task로 학습하고 action expert는 continuous flow objective로 학습하되 action expert에서 backbone으로 가는 gradient를 끊는 single-stage VLA training recipe다.
+
+## Source/Image Inventory
+
+| Source | Local asset / code path | 본문 반영 위치 | 읽을 때 주의할 점 |
+| --- | --- | --- | --- |
+| Official PDF `pi05_KI.pdf` | `/pi/knowledge-insulation-paper/fig01-...`, `/pi/knowledge-insulation-paper/table01-...` | Figure/Table Inventory, Method, Model Architecture, Experiments, Appendix Notes | PDF는 18 pages이며 Figure 1-10과 Table 1이 핵심 근거다. Appendix에 dataset/task rubric과 architecture detail이 있다. |
+| Official article | `/pi/knowledge-insulation-page.png` | Official Visual Evidence, 문제의식 | article은 React-rendered diagram/video 중심이다. PDF가 formal 근거이므로 수치/figure는 PDF 기준으로 정리한다. |
+| Official OpenPI repository | `README.md`, `src/openpi/models/pi0_config.py`, `src/openpi/models/pi0.py`, `src/openpi/models/pi0_fast.py`, `src/openpi/training/config.py`, `src/openpi/transforms.py` | Code-Level Check | public OpenPI는 π0.5 checkpoint/fine-tuning/runtime path를 제공하지만, 논문 전체 KI co-training recipe를 그대로 재현하는 training code로 보기는 어렵다. |
+
+## Figure / Table Inventory
+
+| 원문 항목 | Survey 반영 위치 | 핵심으로 읽을 내용 |
+| --- | --- | --- |
+| Fig. 1 | Method, Model Architecture | backbone은 AR/FAST/VLM loss로 표현을 학습하고, action expert는 flow loss로 continuous action을 만든다. action expert gradient는 backbone으로 흐르지 않는다. |
+| Fig. 2 | 문제의식 | π0는 language를 무시하고, π0-FAST는 느리며, KI는 language following/fast inference/fast training을 동시에 노린다. |
+| Fig. 3 | 시스템 설정, Dataset | items in drawer, make bed, dish in sink, T-shirt folding, table bussing, DROID, LIBERO evaluation setup. |
+| Fig. 4 | Experiments | items in drawer에서 ours가 task completion과 language following 모두 최고다. |
+| Fig. 5 | Experiments | table bussing specialist 비교. ours는 performance, language following, 낮은 completion time을 동시에 보인다. |
+| Fig. 6 | Experiments | generalist table bussing에서 ours는 π0-FAST만큼 빠르게 수렴하고 π0보다 7.5배 적은 step으로 유사 성능에 도달한다. |
+| Fig. 7 | Experiments | novel object generalization에서 VLM data co-training이 OOD follow/performance에 중요하다. |
+| Fig. 8 | Experiments | shirt folding에서 freeze backbone과 OpenVLA-OFT는 거의 실패하고, ours/naive tokens/joint-training/π0-FAST가 상위권이다. |
+| Fig. 9 | Experiments | unseen mobile manipulation 4-task 평균에서 VLM data 포함 KI가 가장 높고 π0가 크게 낮다. |
+| Table 1 | Experiments | LIBERO success rate. Ours generalist fine-tune이 LIBERO-Spatial 98.0, LIBERO-90 96.0으로 SOTA claim의 근거다. |
+| Fig. 10 | Appendix Notes | state representation ablation. text/continuous state는 잘 작동하고 special token state는 낮다. |
 
 ## Official Visual Evidence
 
-<PaperFigure src="/pi/knowledge-insulation-page.png" alt="Knowledge Insulation official page screenshot" />
-
-공식 Knowledge Insulation page는 주요 method/result visual을 React-rendered component로 제공해 독립 이미지 URL이 없었다. Playwright full-page screenshot을 저장해 method diagram과 result visual을 함께 확인할 수 있게 했다.
+<PaperFigure
+  src="/pi/knowledge-insulation-page.png"
+  alt="Knowledge Insulation official article screenshot"
+  caption="공식 article 전체 screenshot. interactive/video component가 많아 PDF figure를 별도 asset으로 추출해 본문에 사용한다."
+/>
 
 ## 문제의식
 
-VLM은 web-scale knowledge와 language reasoning을 갖고 있지만 robot control을 위해 continuous motor cortex에 해당하는 action expert가 필요하다. π0 같은 second-generation VLA는 action expert/flow matching head를 붙여 복잡한 motor skill을 수행하지만, action expert gradient가 VLM backbone representation을 건드리면서 semantic knowledge와 language following을 해칠 수 있다.
+<PaperFigure
+  src="/pi/knowledge-insulation-paper/fig02-standard-vla-problems.png"
+  alt="Figure 2 standard VLA recipe problems"
+  caption="Fig. 2. continuous action expert, autoregressive FAST, KI recipe가 각각 language following, training speed, inference speed에서 어떤 trade-off를 갖는지 보여준다."
+/>
 
-공식 글의 예시는 “spoon을 dish container에 넣으라”는 instruction에서 naive action expert model이 trash를 집는 실패다. 이는 motor loss가 language understanding보다 easier correlation에 과적합하게 만들 수 있음을 보여준다.
+VLM은 web-scale semantic knowledge와 language reasoning을 갖고 있지만, robot control에는 high-frequency continuous action이 필요하다. 단순 autoregressive VLA는 action을 token으로 내보낼 수 있지만, action chunk를 순차 decoding해야 하므로 느리고 continuous precision에도 한계가 있다. 논문은 π0-FAST가 1초 action chunk를 예측하는 데 RTX4090에서 약 750 ms가 걸린다고 적고, autoregressive VLA control frequency를 약 1.3 Hz 수준으로 본다.
+
+π0 계열은 이 문제를 action expert와 flow matching으로 해결한다. action expert는 smaller module이므로 π0는 약 10 Hz control frequency를 달성할 수 있다. 하지만 새로 초기화한 action expert의 gradient가 pretrained VLM backbone을 직접 건드리면 language following과 training dynamics가 망가질 수 있다. 논문이 말하는 "knowledge insulation"은 바로 이 gradient interference를 막는 recipe다.
+
+핵심 문제는 세 가지다.
+
+| 문제 | 관찰 | 왜 중요한가 |
+| --- | --- | --- |
+| AR-VLA는 느림 | π0-FAST는 language following은 좋지만 task completion 시간이 길다. | real-time control과 dynamic manipulation에서 latency가 누적된다. |
+| action expert gradient가 VLM을 훼손 | π0/joint-training은 일부 task에서 language instruction을 덜 따른다. | VLA의 장점인 web-scale semantic transfer가 사라진다. |
+| backbone freeze만으로는 부족 | pretrained VLM은 robot control representation을 직접 갖고 있지 않다. | freeze는 knowledge는 보존하지만 action expert가 쓸 representation을 못 만든다. |
+
+## 시스템 설정
+
+<PaperFigure
+  src="/pi/knowledge-insulation-paper/fig03-evaluation-setups.png"
+  alt="Figure 3 evaluation setups"
+  caption="Fig. 3. real-world static/mobile manipulation과 public benchmark를 함께 평가한다."
+/>
+
+| 축 | 설정 |
+| --- | --- |
+| real-world static tasks | items in drawer, T-shirt folding, table bussing |
+| real-world mobile tasks | make bed, dish in sink, mobile items in drawer, laundry in basket |
+| public benchmark | real-world DROID, simulation LIBERO |
+| 평가 반복 | real-world task는 policy별 task당 10 episodes |
+| scoring | task별 partial progress score. items in drawer 최대 5점, table bussing 최대 12점, dish in sink 최대 8점 등 |
+| generalist setting | 12개 robot embodiment configuration과 non-action VLM task를 함께 학습 |
+| held-out setting | items in drawer와 mobile tasks는 unseen environment에서 평가 |
+
+이 논문은 특정 단일 task success보다 "continuous-action VLA를 어떻게 학습해야 VLM knowledge를 유지하면서 빠르게 실행되는가"를 보려는 논문이다. 그래서 real robot, DROID, LIBERO, static/mobile embodiment를 넓게 섞는다.
+
+## Dataset
+
+논문 Appendix A는 dataset과 task rubric을 꽤 구체적으로 설명한다.
+
+| 데이터/benchmark | 내용 | Survey에서 중요한 점 |
+| --- | --- | --- |
+| real-world specialist data | single-arm static, bimanual static 등 target embodiment별 task data | items in drawer, T-shirt folding, table bussing specialist model 비교에 사용 |
+| generalist robot data | 12개 robot embodiment configuration. ARX, UR5, Franka, AgileX, Trossen, mobile Trossen, ARX slate, Galaxea G1, Hexmove H1, Fibocom 등 | many-embodiment generalist table bussing과 mobile manipulation result의 기반 |
+| OXE | Open X-Embodiment dataset 포함 | broad robot prior를 늘리는 쪽 |
+| VLM data | image captioning, VQA, object localization | semantic knowledge 보존과 OOD object generalization에 직접 연결 |
+| DROID | Pertsch et al. π0-FAST와 같은 tabletop manipulation task set | real-world public benchmark 비교 |
+| LIBERO | Spatial, Object, Goal, Long, 90 suite | simulation benchmark. generalist model fine-tune과 from-scratch 비교 |
+
+VLM data source는 CapsFusion, COCO, Cambrian-7M, PixMo, VQAv2, object localization을 포함한다. object localization은 indoor scene과 household object web data를 추가해 확장했다고 설명한다. 이 지점이 π0.5와 연결된다. π0.5의 open-world generalization도 action data만으로는 부족하고 web/VLM/object data가 필요하다는 결론을 갖는다.
 
 ## Method
 
-Knowledge Insulation은 단순히 backbone을 freeze하는 것이 아니다. Freeze만 하면 VLM representation이 robot control에 맞게 adaptation되지 않아 action expert가 쓸 수 있는 representation을 얻기 어렵다.
+<PaperFigure
+  src="/pi/knowledge-insulation-paper/fig01-knowledge-insulation-architecture.png"
+  alt="Figure 1 Knowledge Insulation architecture"
+  caption="Fig. 1. discrete action token objective와 continuous action expert objective를 동시에 쓰되, action expert gradient는 backbone으로 보내지 않는다."
+/>
 
-π0.5 + KI의 핵심 구성:
+KI의 핵심은 "FAST와 flow 중 하나를 고르는 것"이 아니라, 둘을 학습 때 동시에 쓰고 inference 때는 continuous action expert를 쓰는 것이다.
 
-| 구성 | 역할 |
-| --- | --- |
-| Stop-gradient from action expert to VLM backbone | continuous action loss가 VLM knowledge를 훼손하지 않게 함 |
-| π0-FAST action token objective | backbone이 robot motor representation을 빠르게 배우도록 discrete token CE로 학습 |
-| continuous action expert | inference 때 fast continuous action을 flow matching으로 생성 |
-| VLM/web data co-training | pretrained semantic knowledge와 object/category generalization 유지 |
-| high-level robot commands | planning/subtask representation 강화 |
-
-학습 중에는 discrete FAST token objective와 continuous action expert objective를 같이 쓰지만, inference에서는 FAST token path를 버리고 action expert가 continuous action을 빠르게 생성한다.
-
-## 왜 FAST Token이 중요한가
-
-π0-FAST는 autoregressive라 inference가 느리지만, next-token CE objective는 VLM backbone을 망가뜨리지 않고 motor representation을 빠르게 학습시키는 데 유리하다. KI는 이 장점을 representation learning에만 사용하고, 실제 실행은 π0/π0.5류 flow action expert로 빠르게 수행한다.
-
-| 접근 | 장점 | 단점 |
+| 구성 | 학습 때 역할 | inference 때 역할 |
 | --- | --- | --- |
-| π0 action expert | fast inference, continuous action | naive gradient는 VLM knowledge 손상 가능 |
-| π0-FAST | train fast, language following 유지 | autoregressive inference가 느림 |
-| π0.5 + KI | train fast + run fast + generalize | training recipe가 복합적 |
+| FAST-tokenized discrete action | backbone이 robot action representation을 next-token CE로 빠르게 학습하게 함 | 사용하지 않음 |
+| VLM/web/high-level task | semantic knowledge와 language/object prior를 유지 | prompt/context understanding에 간접 기여 |
+| continuous action expert | flow matching으로 continuous action chunk 생성 능력을 학습 | 실제 action chunk를 빠르게 생성 |
+| stop-gradient | action expert loss가 pretrained VLM backbone을 망가뜨리지 않게 함 | inference에는 gradient가 없으므로 구조적 학습 효과만 남음 |
+
+논문은 standard VLA training을 두 loss로 정리한다.
+
+```text
+L_AR-VLA = E[- sum_j M_j log p_theta(y_{j+1} | x_{1:j})]
+
+L_FLOW-VLA = E[ || omega - a_{1:H} - f_theta^a(a_{1:H}^{tau,omega}) ||^2 ]
+
+a_{1:H}^{tau,omega} = tau * a_{1:H} + (1 - tau) * omega,
+omega ~ N(0, I)
+```
+
+KI의 co-training objective는 language/FAST token prediction과 flow matching을 함께 묶는다.
+
+```text
+L_CO-VLA =
+E[
+  - sum_j M_l_j log p_theta(l_hat_{j+1} | x_{1:j})
+  + alpha * M_act * || omega - a_{1:H} - f_theta^a(a_{1:H}^{tau,omega}) ||^2
+]
+```
+
+여기서 `l_hat`은 일반 language token과 FAST-tokenized action token을 모두 포함한다. `M_l`은 token loss mask이고, `M_act`는 해당 sample에서 continuous action을 예측할지 나타낸다. 이 설계 덕분에 image-text-only VLM data, action-only robot data, language+action robot data를 한 training mixture 안에 섞을 수 있다.
+
+중요한 attention rule은 FAST action token과 continuous action token이 서로 attend하지 못하게 하는 것이다. 둘이 서로를 보면 같은 action label의 두 표현이 shortcut처럼 새어 들어가 representation learning 실험이 흐려진다.
+
+## Knowledge Insulation Gradient
+
+논문의 stop-gradient는 "backbone을 전부 freeze한다"와 다르다. backbone은 FAST token/VLM objective로 계속 학습한다. 다만 continuous action expert의 flow loss gradient만 backbone으로 못 올라가게 한다.
+
+논문은 attention probability를 backbone token과 action expert token으로 나누어 설명한다.
+
+| block | 의미 |
+| --- | --- |
+| `P_bb` | backbone token이 backbone token에 attend |
+| `P_ab` | action expert token이 backbone token에 attend |
+| `P_aa` | action expert token이 action expert token에 attend |
+| backbone -> action expert | backbone token은 action expert token을 attend하지 않음 |
+| action expert -> backbone | forward 정보는 볼 수 있지만, `K_b`, `V_b` 쪽 gradient는 stop-gradient 처리 |
+
+즉 forward pass에서는 action expert가 VLM backbone representation을 조건으로 삼을 수 있다. 하지만 backward pass에서는 action expert loss가 backbone의 key/value representation을 바꾸지 못한다. 이 때문에 논문은 `alpha=1`을 쓸 수 있다고 설명한다. flow loss가 사실상 독립된 weight set에 적용되기 때문이다.
+
+## Model Architecture
+
+| 항목 | 논문 기준 |
+| --- | --- |
+| VLM backbone | PaliGemma VLM pretrained weights |
+| backbone scale | 2B language model backbone, `width=2048`, `depth=18`, `mlp_dim=16384`, `num_heads=18`, `num_kv_heads=1`, `head_dim=256` |
+| action expert | smaller transformer, 300M parameters |
+| action expert width | `width=1024`, `mlp_dim=4096`, 나머지 depth/head 계열은 backbone과 같은 설정 |
+| action horizon | `H=50` |
+| noisy action input | `a_tau = tau * action + (1 - tau) * noise` |
+| timestep conditioning | sinusoidal encoding `phi(tau)` -> MLP -> adaptive RMSNorm으로 action expert 각 layer에 주입 |
+| interaction | VLM/backbone token과 action expert token은 self-attention에서 상호작용하지만, 정보 흐름은 VLM -> action expert 방향으로 제한 |
+
+state representation은 세 가지를 실험한다.
+
+| state 방식 | 설명 | 장단점 |
+| --- | --- | --- |
+| text state | discretized state bin을 숫자 text로 입력 | VLM pretraining 분포와 가장 가깝지만 token 수가 많다. |
+| special token state | bin을 special token으로 입력 | token 수가 적지만 새 embedding이 필요하다. |
+| continuous state | real-valued `q`를 affine projection으로 embedding | compact하지만 projection이 새로 학습된다. |
+
+## Training Recipe
+
+| 단계/요소 | 내용 |
+| --- | --- |
+| action tokenization | FAST tokenizer로 continuous action chunk를 discrete token sequence로 압축 |
+| continuous action | flow matching action expert를 동시에 학습 |
+| co-training | VLM data, robot action data, language+action robot task를 함께 학습 |
+| masking | FAST action token과 continuous action token은 서로 attend하지 않음 |
+| gradient insulation | action expert에서 backbone key/value로 가는 gradient stop |
+| timestep sampling | π0를 따라 low timestep을 강조하는 `Beta((s - tau) / s; alpha=1.5, beta=1), s=0.999` 계열 분포 사용 |
+| inference | FAST token path는 버리고, action expert가 continuous action chunk를 생성 |
+| compute overhead | continuous+discrete output을 같이 학습하므로 training compute는 약 20% 증가 |
+
+compute overhead가 20% 늘어도, 논문은 convergence speed가 훨씬 빨라 wall-clock 기준으로 π0 같은 pure diffusion/flow VLA보다 빠르게 학습된다고 해석한다.
 
 ## Experiments and Results
 
-공식 페이지의 주요 결과:
+### Items in Drawer
 
-| 실험 | 결과/해석 |
+<PaperFigure
+  src="/pi/knowledge-insulation-paper/fig04-items-in-drawer-baselines.png"
+  alt="Figure 4 items in drawer baseline comparison"
+  caption="Fig. 4. held-out kitchen drawer task에서 ours가 task completion과 language following 모두 최고다."
+/>
+
+items in drawer는 object를 고르고 drawer를 열고 넣고 닫아야 하는 held-out environment task다. π0와 joint-training은 language following이 약하고, π0-FAST는 language following은 높지만 task completion이 낮다. HybridVLA와 frozen backbone도 viable하지 않게 나온다. 이 figure가 KI 논문의 central evidence다. 단순히 continuous action expert가 있으면 빠른 것이 아니라, action expert gradient를 어떻게 다루는지가 language following을 좌우한다.
+
+### Table Bussing Specialist
+
+<PaperFigure
+  src="/pi/knowledge-insulation-paper/fig05-table-bussing-architectures.png"
+  alt="Figure 5 table bussing architecture comparison"
+  caption="Fig. 5. table bussing specialist model 비교. ours는 높은 performance, 높은 language following, 낮은 completion time을 같이 달성한다."
+/>
+
+table bussing은 12개 object와 두 receptacle이 있는 task다. policy는 language command에 맞는 object를 골라 올바른 receptacle에 넣어야 한다. 논문은 π0-FAST가 language following과 performance는 좋지만 task 완료 시간이 ours보다 약 2배 길다고 설명한다. OpenVLA-OFT는 language following과 inference time은 괜찮지만 overall performance가 낮다.
+
+### Generalist Table Bussing
+
+<PaperFigure
+  src="/pi/knowledge-insulation-paper/fig06-generalist-table-bussing.png"
+  alt="Figure 6 generalist table bussing results"
+  caption="Fig. 6. generalist setting에서 ours는 π0-FAST만큼 빠르게 수렴하고 π0보다 7.5배 적은 step으로 유사 성능에 도달한다."
+/>
+
+generalist model은 many-embodiment robot data와 VLM data를 같이 학습한다. Fig. 6a에서는 VLM data를 제거하면 language following과 performance가 흔들리고, Fig. 6b에서는 π0가 flow-only learning으로 훨씬 느리게 수렴한다. 논문은 π0가 유사 performance에 도달하려면 7.5배 많은 training steps가 필요하다고 적는다.
+
+### Novel Objects and Mobile Manipulation
+
+<PaperFigure
+  src="/pi/knowledge-insulation-paper/fig07-novel-object-generalization.png"
+  alt="Figure 7 novel object generalization"
+  caption="Fig. 7. novel object generalization에서 VLM data co-training이 특히 OOD follow rate와 OOD performance에 중요하다."
+/>
+
+<PaperFigure
+  src="/pi/knowledge-insulation-paper/fig09-mobile-manipulation-average.png"
+  alt="Figure 9 mobile manipulation average"
+  caption="Fig. 9. unseen mobile manipulation 4-task 평균에서 ours with VLM data가 가장 높고 π0는 크게 낮다."
+/>
+
+novel object 실험은 robot이 training에서 보지 못한 object를 drawer에 넣는 setting이다. 여기서 VLM data co-training은 단순 regularizer가 아니라 OOD object semantics를 action expert로 전달하는 통로다. Fig. 9의 mobile manipulation 평균에서도 ours w/ VLM data가 가장 높고, π0는 `p<0.001` 수준으로 크게 낮게 나온다.
+
+### Shirt Folding
+
+<PaperFigure
+  src="/pi/knowledge-insulation-paper/fig08-shirt-folding.png"
+  alt="Figure 8 shirt folding"
+  caption="Fig. 8. shirt folding은 continuous precision이 중요한 dexterous task라 freeze backbone/OpenVLA-OFT가 특히 약하게 나온다."
+/>
+
+shirt folding은 semantic instruction보다 continuous dexterity와 action precision이 강하게 필요한 task다. frozen backbone이 0% 수준이고 OpenVLA-OFT도 거의 실패한다는 점은, "knowledge 보존"만으로 충분하지 않고 backbone이 robot control representation을 학습해야 함을 보여준다.
+
+### DROID and LIBERO
+
+<PaperFigure
+  src="/pi/knowledge-insulation-paper/table01-libero-success-rates.png"
+  alt="Table 1 LIBERO success rates"
+  caption="Table 1. LIBERO success rates. Ours from generalist model은 Spatial 98.0, 90 suite 96.0으로 가장 높은 수치를 보인다."
+/>
+
+논문은 DROID real-world tabletop benchmark에서 ours `0.55 ± 0.09`, π0 `0.49 ± 0.09`, π0-FAST `0.45 ± 0.09`를 보고한다.
+
+LIBERO Table 1은 다음처럼 읽으면 된다.
+
+| Method | Spatial | Object | Goal | 10 (Long) | 90 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Baku | - | - | - | 86.0 | 90.0 |
+| MoDE | - | - | - | 94.0 | 95.0 |
+| OpenVLA-OFT | 97.6 | 98.4 | 97.9 | 94.5 | - |
+| π0 | 96.8 | 98.8 | 95.8 | 85.2 | - |
+| π0-FAST | 96.4 | 96.8 | 88.6 | 60.2 | - |
+| Ours from scratch | 96.6 | 97.2 | 94.6 | 84.8 | 92.7 |
+| Ours from generalist model | 98.0 | 97.8 | 95.6 | 85.8 | 96.0 |
+
+논문은 LIBERO-Spatial과 LIBERO-90에서 SOTA를 주장하지만, LIBERO-10/Long에서는 OpenVLA-OFT가 더 높다. 따라서 "모든 LIBERO suite에서 최고"라고 쓰면 안 된다.
+
+## Appendix Notes
+
+<PaperFigure
+  src="/pi/knowledge-insulation-paper/fig10-state-representations.png"
+  alt="Figure 10 state representation ablation"
+  caption="Fig. 10. text state와 continuous state는 모두 잘 작동하지만 special token state는 낮고, π0는 두 state 표현 모두에서 ours보다 낮다."
+/>
+
+Appendix에서 중요한 내용은 세 가지다.
+
+| 항목 | 내용 |
 | --- | --- |
-| shirt-folding | π0.5 + KI가 가장 높은 performance. 단순 backbone freeze는 task 수행 불가 수준 |
-| bussing training steps | π0 대비 7.5배 적은 training steps로 action expert 기반 fast inference 달성 |
-| object generalization | unseen objects / in-distribution objects in unseen environments에서 web-data co-training이 OOD object 성능에 가장 크게 기여 |
-| bussing single embodiment | π0.5 + KI가 highest performance, language following, low execution time을 동시에 보임 |
-| π0-FAST comparison | π0-FAST는 language following은 좋지만 task completion time이 약 2배 길다고 설명 |
+| task rubric | real-world task는 binary success가 아니라 stage별 partial progress score다. 예를 들어 table bussing은 12개 object를 올바른 receptacle에 넣는 점수다. |
+| dataset breadth | generalist model은 target evaluation task보다 훨씬 넓은 task/embodiment mixture를 학습한다. |
+| model detail | action horizon `H=50`, action expert 300M, VLM backbone/action expert attention flow, timestep sampling, state representation ablation이 appendix에 있다. |
 
-핵심 결과는 “continuous action expert를 쓰면 빠르지만 knowledge를 잃기 쉽고, FAST token은 지식을 잘 보존하지만 느리다”는 trade-off를 KI가 둘 다 활용해 깬다는 것이다.
+Fig. 10은 state representation 차이가 π0와 KI 성능 차이를 설명하지 못한다는 근거다. ours text state와 continuous state가 모두 높고, π0 continuous/text state는 둘 다 낮다.
 
-## π0.5와의 연결
+## Code-Level Check
 
-공식 글은 KI가 π0.5에서 사용한 method를 formalize하고 single-stage training recipe로 refined한 것이라고 설명한다. 따라서 π0.5 Survey를 읽을 때 “co-training으로 open-world generalization”만 보면 부족하고, KI 관점에서 action expert와 VLM backbone 사이 gradient/representation 문제가 핵심임을 같이 봐야 한다.
+공식 OpenPI repository를 확인했다. 중요한 경계는 다음과 같다.
+
+| 코드/문서 | 확인 내용 |
+| --- | --- |
+| `README.md` | π0.5는 Knowledge Insulation으로 학습된 open-world generalization 개선 모델이라고 설명한다. 단, repository는 π0.5 training/inference에서 현재 flow matching head만 지원한다고 명시한다. |
+| `src/openpi/models/pi0_config.py` | `Pi0Config(pi05=True)`는 `ModelType.PI05`, `max_token_len=200`, `discrete_state_input=True`, `action_expert_variant="gemma_300m"`로 설정된다. |
+| `src/openpi/models/pi0.py` | public π0/π0.5 model은 flow matching loss를 구현한다. `compute_loss`는 noise/time을 sample하고 `v_t - u_t` MSE를 계산한다. `sample_actions`는 기본 10 denoising steps를 사용한다. |
+| `src/openpi/models/pi0_fast.py` | π0-FAST autoregressive FAST tokenizer/action generation path가 별도 model로 존재한다. |
+| `src/openpi/training/config.py` | `pi05_droid`, `pi05_libero`, `pi05_full_droid_finetune`, `pi05_droid_finetune` public configs가 있다. |
+| `src/openpi/transforms.py` | PI0/PI05는 Paligemma prompt tokenization + resize + state/action padding path, PI0_FAST는 FAST input/output transform path를 쓴다. |
+
+public OpenPI에서 확인되는 것은 π0.5/π0.5-DROID checkpoint와 fine-tuning/runtime support다. 논문 Figure 1의 full KI single-stage recipe, 즉 FAST-token CE와 flow objective를 동시에 두고 action expert gradient를 backbone으로 stop하는 전체 co-training loop가 그대로 공개 training config로 노출되어 있다고 단정하면 안 된다. Survey에서는 논문 method와 public implementation boundary를 분리해 읽어야 한다.
 
 ## 한계와 주의
 
-- KI는 training recipe가 복합적이므로 ablation 없이 “web data가 좋다” 또는 “stop-gradient가 좋다”로 단순화하면 안 된다.
-- π0-FAST token objective는 inference에 남는 것이 아니라 representation learning objective로 쓰이는 점이 중요하다.
-- 공개 openpi가 이 full KI recipe를 그대로 제공하는지 별도 확인이 필요하다.
+| 한계 | 의미 |
+| --- | --- |
+| training compute 증가 | discrete+continuous output을 같이 학습해 약 20% compute overhead가 있다. |
+| language following은 완벽하지 않음 | 논문도 data correlation 때문에 language instruction을 가끔 무시할 수 있다고 적는다. |
+| full recipe 공개 범위 제한 | OpenPI는 π0.5 flow matching head와 public fine-tuning path를 제공하지만, KI paper의 전체 co-training recipe 공개와는 다르다. |
+| graph 수치 판독 | 여러 real-world result는 figure bar plot 중심이므로, 명시 수치가 아닌 값은 대략적 경향으로만 해석해야 한다. |
+| task score 해석 | real-world score는 task progress rubric이다. 완전 성공률과 동일시하면 안 된다. |
 
-## 5-Pass 검증 메모
+## Citation Trail
+
+### 직접 비교/상대화 논문
+
+| 논문/모델 | 현재 논문에서의 연결 |
+| --- | --- |
+| [π0](./pi0-vla-flow-model/) | continuous action expert/flow VLA baseline. fast inference는 가능하지만 naive training은 language following과 convergence가 약하다. |
+| [π0-FAST](./pi0-fast-action-tokenization/) | FAST token representation. train fast/language following 장점은 있지만 autoregressive inference가 느리다. |
+| [π0.5](./pi05-open-world-generalization/) | π0.5의 two-stage idea를 formalize하고 single-stage KI recipe로 확장한다. |
+| [OpenVLA](../openvla-open-source-vla/) / OpenVLA-OFT | autoregressive VLA와 parallel decoding 계열 비교 축. language following은 가능하지만 일부 real-world task performance가 낮다. |
+| HybridVLA | autoregressive/diffusion hybrid baseline. KI와 비슷해 보이지만 action representation 사이 attention/masking 차이가 중요하다. |
+| Transfusion | 한 transformer 안에서 token prediction과 continuous denoising을 함께 하는 multimodal generation 기반 비교 축. |
+| [GROOT N1](../groot/n1-open-foundation-model/) | 논문은 robotics-specific modules가 포함된 fast inference VLA 예로 GROOT를 언급한다. KI 관점에서는 새 robot-specific module gradient가 VLM knowledge를 어떻게 건드리는지가 공통 질문이다. |
+
+### 기반 방법론
+
+| 기반 | KI에서의 역할 |
+| --- | --- |
+| PaliGemma | pretrained VLM backbone. KI가 보호하려는 semantic knowledge의 출처다. |
+| Flow Matching / Rectified Flow | continuous action expert 학습 objective의 기반이다. |
+| Action Chunking | `H=50` action chunk를 예측하는 control interface의 기반이다. |
+| FAST / DCT action tokenization | backbone을 robot control에 맞게 빠르게 adaptation하는 discrete action learning signal이다. |
+| Mixture-of-Transformers / modality-specific experts | backbone/action expert를 다른 weight set으로 처리하고 attention으로 상호작용시키는 설계 배경이다. |
+| DROID / LIBERO / Open X-Embodiment | public benchmark와 broad robot data mixture의 기반이다. |
+| RT-2 / PaLM-E | web-scale VLM knowledge를 robot action으로 transfer한다는 VLA 흐름의 초기 기반이다. |
+
+## 스터디에서 기억할 점
+
+1. KI는 "backbone freeze"가 아니라 "action expert gradient만 backbone에 못 가게 하고, backbone은 FAST/VLM objective로 계속 학습"하는 방법이다.
+2. FAST token은 inference를 위한 것이 아니라 representation learning signal로 쓰인다. 실행은 continuous action expert가 담당한다.
+3. VLM data co-training은 language following regularization을 넘어서 OOD object generalization에 중요하다.
+4. π0-FAST는 train fast/language following, π0는 run fast/continuous precision, KI는 둘의 장점을 single-stage recipe로 결합하려는 시도다.
+5. OpenPI의 public π0.5 support는 KI로 학습된 checkpoint와 flow runtime/fine-tuning path 중심이다. 논문 recipe 전체 공개로 오해하지 말아야 한다.
+
+## 검증 메모
 
 | Pass | 결과 |
 | --- | --- |
-| 1. 구조/coverage | 문제, stop-gradient, FAST objective, action expert, experiments 포함 |
-| 2. 사실/수치 | 7.5x fewer training steps, 2x π0-FAST time, OOD object/web-data 결과 확인 |
-| 3. 코드 구현 | 공식 code 미확인 |
-| 4. 해석/연결 | π0.5, π0-FAST, π0와 trade-off 연결 |
-| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |
+| 1. 구조/coverage | `rules/survey.md` 기준으로 source inventory, figure/table inventory, 문제의식, system, dataset, method, model architecture, training, experiments, appendix, code-level check, 한계, citation trail을 재구성했다. |
+| 2. 사실/수치 | official PDF 18 pages를 확보해 Figure 1-10, Table 1을 전수 확인했다. 750 ms, 10 Hz, 1.3 Hz, 7.5x training steps, DROID `0.55/0.49/0.45`, LIBERO table, 20% compute overhead, 300M action expert, `H=50`, timestep sampling을 PDF와 대조했다. |
+| 3. 코드 구현 | OpenPI `README.md`, `pi0_config.py`, `pi0.py`, `pi0_fast.py`, `training/config.py`, `transforms.py`를 확인해 public π0.5 flow path와 KI paper full recipe의 공개 범위를 분리했다. |
+| 4. 시각 자료 | PDF page render에서 Figure 1-10과 Table 1을 `/public/pi/knowledge-insulation-paper/`에 crop했고 contact sheet로 품질을 확인했다. |
+| 5. 문서 품질/빌드 | `npm run build`와 GitHub Pages base path build로 MDX/image route를 확인한다. |
