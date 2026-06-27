@@ -35,6 +35,36 @@ import PublicImage from '../../../../components/PublicImage.astro';
 
 공식 FAST article이 π0/π0-FAST 계열의 high-dexterity task 예시로 사용하는 folding visual이다. FAST의 핵심 figure는 DCT/BPE tokenization diagram이 React-rendered graphic이므로, 본문에서는 공식 설명의 token 길이와 압축률을 표로 전사하고 대표 qualitative visual을 함께 둔다.
 
+## Source/Image Inventory
+
+| Source | Local asset / code path | 본문 반영 위치 | 읽을 때 주의할 점 |
+| --- | --- | --- | --- |
+| arXiv PDF `2501.09747` | PDF 직접 확인, 별도 crop 미추출 | PDF Figure/Table Inventory, Experiments | FAST는 논문 figure가 tokenization/result 중심이다. 현재 문서는 공식 article visual을 쓰되, 수치와 실험 구조는 PDF 기준으로 대조한다. |
+| PI website FAST article | `/pi/fast-fold-shirt-1.jpg`, `/pi/fast-fold-shirt-2.jpg`, `/pi/fast-fold-shirt-3.jpg` | Official Visual Evidence | qualitative folding example이며 정량 result figure를 대체하지 않는다. |
+| Official OpenPI repository | `src/openpi/models/pi0_fast.py`, `src/openpi/models/tokenizer.py`, `src/openpi/training/config.py`, `src/openpi/transforms.py`, `src/openpi/models/model.py` | OpenPI Config Snapshot, Code-Level Check | public `π0-FAST`는 JAX path 중심이다. README의 PyTorch support caveat와 분리해서 읽는다. |
+
+## PDF Figure/Table Inventory
+
+이번 pass에서는 FAST PDF를 직접 확보하고 text extraction으로 Figure/Table inventory를 확인했다. 본문은 이미 공식 article visual을 사용하고 있으므로, 이번 커밋에서는 PDF crop을 새로 늘리지 않고 어떤 figure/table이 어떤 주장에 대응되는지 추적 가능하게 남긴다.
+
+| 원문 항목 | Survey 반영 위치 | 읽어야 할 핵심 |
+| --- | --- | --- |
+| Figure 1 | 한 줄 요약, Family 위치 | FAST가 action sequence를 language-token route로 넣는 전체 아이디어 |
+| Figure 2 | 문제의식 | standard discretization이 high-frequency dexterous task에서 깨지는 이유 |
+| Figure 3 | Experiments | sampling rate가 올라갈 때 naive tokenization prediction error가 어떻게 나빠지는지 |
+| Figure 4 | Method | normalized action chunk -> DCT -> quantization -> BPE tokenization pipeline |
+| Figure 5 | Experiments | evaluation environments: table bussing, shirt folding, grocery bagging 등 |
+| Table I | Method/Experiments | 평균 token count와 compression-reconstruction trade-off 비교 |
+| Figure 6 | Experiments | tokenization approach별 policy performance 비교 |
+| Figure 7 | Experiments | FAST policy의 real-world/university setup qualitative evaluation |
+| Figure 8 / Table III | Dataset | universal tokenizer 평가 dataset inventory |
+| Figure 9 | π0와 비교 | diffusion π0와 autoregressive FAST route의 performance/convergence 비교 |
+| Figure 10 | Official Visual Evidence | laundry folding rollout qualitative example |
+| Figure 11 / Figure 15 | Experiments | π0-FAST와 diffusion π0, compute-matched π0 비교 |
+| Figure 12 | Experiments | compression-reconstruction trade-off appendix result |
+| Figure 13 / Table II | Appendix | DROID evaluation initial configuration/task list |
+| Figure 14 | Appendix | quantitative DROID evaluation setup |
+
 ## Family 안에서의 위치
 
 `π0`가 continuous action chunk를 flow matching으로 직접 생성한다면, `π0-FAST`는 action chunk를 token sequence로 바꾸어 language-model style next-token prediction을 쓴다. FAST paper의 핵심은 “기존 per-dimension/per-timestep discretization은 high-frequency dexterous skill에서 깨지지만, frequency-space compression은 fidelity와 token budget 사이 trade-off를 훨씬 낫게 만든다”는 것이다.
@@ -82,6 +112,55 @@ openpi 구현에서 `Pi0FAST`는 flow head를 쓰지 않는다.
 | output transform | `ExtractFASTActions`가 generated tokens를 continuous actions로 복원 |
 
 openpi `Pi0FAST.compute_loss`는 input token embeddings를 만들고, `token_loss_mask`가 켜진 target token에 대해서만 CE loss를 계산한다. `sample_actions`는 prefix를 KV cache로 prefill한 뒤 token을 autoregressive로 생성하고, EOS 또는 max decoding step에서 멈춘다.
+
+## OpenPI Config Snapshot
+
+아래 값은 공식 `Physical-Intelligence/openpi` repository의 `Pi0FASTConfig`와 `ModelTransformFactory` 기준이다.
+
+| 항목 | OpenPI 기본값 | 의미 |
+| --- | --- | --- |
+| `model_type` | `ModelType.PI0_FAST` | `Pi0FASTConfig.model_type`이 반환하는 모델 타입 |
+| `dtype` | `bfloat16` | PaliGemma/Gemma-Fast embedding/cache dtype |
+| `paligemma_variant` | `gemma_2b` | FAST용 autoregressive backbone variant |
+| `action_dim` | 32 | base π0-FAST의 padded action dimension. downstream config에서 override 가능 |
+| `action_horizon` | 32 | base π0-FAST action chunk length. π0 flow model default 50과 다르다. |
+| `max_token_len` | 250 | prompt + discretized state + FAST action tokens를 담는 non-image token budget |
+| tokenizer | `FASTTokenizer(max_token_len)` | default tokenizer path는 `physical-intelligence/fast` |
+| image transform | `ResizeImages(224, 224)` | public OpenPI input preprocessing |
+| output transform | `ExtractFASTActions(tokenizer, action_horizon, action_dim)` | generated token sequence를 continuous action chunk로 복원한다. |
+
+OpenPI `inputs_spec` 기준 대표 shape는 다음과 같다.
+
+| 입력/출력 | Shape |
+| --- | --- |
+| `base_0_rgb`, `base_1_rgb`, `wrist_0_rgb` | `[B, 224, 224, 3]` |
+| image masks | `[B]` per camera |
+| state | `[B, action_dim=32]` |
+| tokenized prompt/action sequence | `[B, max_token_len=250]` |
+| `token_ar_mask` | `[B, max_token_len=250]` |
+| `token_loss_mask` | `[B, max_token_len=250]` |
+| decoded actions | `[B, action_horizon=32, action_dim=32]` |
+
+Downstream config는 이 기본값을 자주 override한다. 예를 들어 `pi0_fast_libero`는 `action_dim=7`, `action_horizon=10`, `max_token_len=180`이고, `pi0_fast_full_droid_finetune`은 `action_dim=8`, `action_horizon=16`, `max_token_len=180`, `batch_size=256`, `num_train_steps=100_000`이다. 따라서 base model config와 benchmark/fine-tuning config를 같은 값처럼 쓰면 안 된다.
+
+## FAST Token Contract
+
+`FASTTokenizer` 구현 기준으로 token sequence는 다음 구조를 갖는다.
+
+| 단계 | 구현상 의미 |
+| --- | --- |
+| prompt cleaning | prompt를 lowercase/strip하고 `_`를 space로 바꾼다. |
+| state discretization | normalized state를 `[-1, 1]` 범위의 256 bins로 discretize한다. |
+| prefix string | `Task: PROMPT, State: STATE_STR;\n` 형식으로 만든다. |
+| prefix mask | prefix는 bidirectional attention을 쓰도록 `token_ar_mask=0`이 된다. |
+| action tokenization | `physical-intelligence/fast` processor가 action chunk를 FAST token으로 바꾼다. |
+| Paligemma vocab mapping | FAST action token을 PaliGemma vocab 끝쪽 token으로 mapping한다. 마지막 128 special token은 skip한다. |
+| postfix string | `Action: FAST_TOKENS|EOS` 구조다. |
+| loss mask | prefix는 false, action postfix는 true다. CE loss는 action token 구간에만 걸린다. |
+| padding/truncation | token 길이가 `max_token_len`보다 짧으면 padding하고, 길면 truncation warning을 낸다. |
+| action extraction | generated token을 decode해 `Action:`과 `|` 사이 token만 FAST processor로 continuous action에 복원한다. |
+
+이 계약 때문에 π0-FAST의 “모델 출력”은 곧바로 robot action이 아니다. 먼저 PaliGemma token id sequence가 나오고, `ExtractFASTActions`가 그 token을 FAST tokenizer로 decode해야 `[H, action_dim]` continuous action chunk가 된다.
 
 ## Dataset
 
@@ -148,6 +227,20 @@ OpenPI article은 별도 caveat도 제공한다. `π0-FAST base`는 language fol
 
 구현에서 특히 중요한 점은 `Pi0FAST.sample_actions`의 출력이 처음에는 token sequence라는 것이다. 실제 continuous action은 policy output transform의 `ExtractFASTActions`를 거친 뒤 얻어진다. 따라서 raw model output과 robot action을 혼동하면 안 된다.
 
+### OpenPI Loss / Decoding Contract
+
+| 단계 | 공개 코드 기준 |
+| --- | --- |
+| input embedding | three image streams와 tokenized prompt/action sequence를 embedding한 뒤 concat한다. |
+| attention mask | image/prefix token은 bidirectional, action postfix token은 causal AR mask를 쓴다. |
+| CE target | `tokenized_prompt[:, 1:]`를 next-token target으로 사용한다. |
+| loss mask | `token_loss_mask[:, 1:]`가 true인 action postfix token에만 CE loss를 건다. |
+| memory saving | full vocab logits는 target token 구간에 대해서만 decode한다. |
+| inference prefill | prefix token을 KV cache에 먼저 채운다. |
+| decoding | argmax 또는 temperature sampling으로 left-to-right token을 생성한다. |
+| stop condition | batch 전체가 EOS를 내거나 `max_decoding_steps=256`에 도달하면 멈춘다. |
+| output | raw `output_tokens`; continuous action은 transform에서 별도 추출한다. |
+
 ## 한계와 주의
 
 - tokenization이 좋아져도 AR decoding length가 길어지면 latency가 증가한다.
@@ -169,8 +262,8 @@ OpenPI article은 별도 caveat도 제공한다. `π0-FAST base`는 language fol
 
 | Pass | 결과 |
 | --- | --- |
-| 1. 구조/coverage | FAST tokenizer, π0-FAST model, dataset mixture, experiments, code path를 분리했다. |
-| 2. 사실/수치 | pi.website FAST article의 30-60 tokens/chunk, 10x compression, 1M sequences, 5x training speed, DROID zero-shot, OpenPI 4-5x inference caveat를 대조했다. |
-| 3. 코드 구현 | `pi0_fast.py`, `transforms.py`, `training/config.py`, `model.py`를 확인했다. |
+| 1. 구조/coverage | FAST tokenizer, π0-FAST model, PDF figure/table inventory, dataset mixture, experiments, code path를 분리했다. |
+| 2. 사실/수치 | FAST PDF와 pi.website FAST article의 30-60 tokens/chunk, 10x compression, 1M sequences, 5x training speed, DROID zero-shot, OpenPI 4-5x inference caveat를 대조했다. |
+| 3. 코드 구현 | `pi0_fast.py`, `tokenizer.py`, `transforms.py`, `training/config.py`, `model.py`를 확인해 `action_dim=32`, `action_horizon=32`, `max_token_len=250`, FAST token mapping, CE loss mask, AR decoding path를 반영했다. |
 | 4. 해석/연결 | π0 flow route, OpenVLA/RT-2 token route, PI family 안의 위치를 정리했다. |
-| 5. 문서 품질/빌드 | Docker Node 24 `npm run build`로 MDX와 route 생성을 확인했다. |
+| 5. 문서 품질/빌드 | `npm run build`와 GitHub Pages base path build로 MDX와 route 생성을 확인한다. |
