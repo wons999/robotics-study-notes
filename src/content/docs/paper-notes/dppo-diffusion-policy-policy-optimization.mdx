@@ -1,0 +1,154 @@
+---
+title: Diffusion Policy Policy Optimization
+description: DPPO가 diffusion policy의 denoising process를 MDP로 보고 PPO fine-tuning을 적용하는 방식을 정리한다.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+# Diffusion Policy Policy Optimization
+
+<SectionFeedback page="Diffusion Policy Policy Optimization" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Diffusion Policy Policy Optimization |
+| 저자/그룹 | Allen Z. Ren, Justin Lidard, Lars L. Ankile, Anthony Simeonov, Pulkit Agrawal, Anirudha Majumdar, Benjamin Burchfiel, Hongkai Dai, Max Simchowitz |
+| 공개 | arXiv 2024-09-01, revised 2024-12-09 |
+| 링크 | [paper](https://arxiv.org/abs/2409.00588), [project](https://diffusion-ppo.github.io/), [code](https://github.com/irom-lab/dppo) |
+| 태그 | DPPO, diffusion policy, PPO, reinforcement learning, robot learning |
+
+## 한 줄 요약
+
+DPPO는 pretrained Diffusion Policy를 그대로 policy-gradient fine-tuning 대상으로 삼기 위해 denoising process를 inner MDP로, robot environment를 outer MDP로 보는 two-layer Diffusion Policy MDP를 구성한다.
+
+## 문제의식
+
+Behavior cloning으로 학습한 robot policy는 demonstration coverage 밖에서 recovery가 약하고, long-horizon sparse reward task에서는 작은 실패가 누적된다. 일반적인 Gaussian policy는 PPO 같은 policy gradient와 잘 맞지만, diffusion policy는 여러 denoising step을 거쳐 action을 만들기 때문에 log-probability, credit assignment, exploration variance가 까다롭다.
+
+DPPO가 푸는 질문은 다음과 같다.
+
+- Diffusion Policy를 Gaussian policy처럼 PPO로 fine-tune할 수 있는가?
+- denoising step의 stochasticity가 단순한 noise가 아니라 structured exploration으로 작동할 수 있는가?
+- simulation fine-tuning이 real hardware zero-shot transfer에서 Gaussian policy보다 안정적인가?
+
+## 시스템 설정
+
+| 항목 | 논문 기준 정리 |
+| --- | --- |
+| Base policy | behavior cloning으로 pretrained diffusion policy |
+| Fine-tuning | PPO 기반 policy-gradient update |
+| Observation | state input과 pixel input을 모두 평가 |
+| Benchmarks | Gym locomotion, Robomimic, Furniture-Bench, real hardware One-leg |
+| Hardware | simulation-trained One-leg policy를 physical hardware에 zero-shot deployment |
+| Control | real hardware One-leg에서는 10 Hz 실행으로 보고 |
+
+## Dataset
+
+DPPO의 데이터는 두 종류로 나뉜다.
+
+| 단계 | 데이터 |
+| --- | --- |
+| Pretraining | expert demonstrations로 diffusion policy를 behavior cloning |
+| Fine-tuning | environment interaction에서 reward를 받아 PPO update |
+
+Robomimic과 Furniture-Bench에서는 pretrained policy가 초기 behavior distribution을 제공하고, DPPO가 environment feedback으로 성능을 올린다. Furniture-Bench One-leg, Lamp, Round-table은 long-horizon multi-stage manipulation으로, sparse reward와 stability가 핵심이다.
+
+## Method
+
+DPPO는 diffusion policy의 denoising sequence를 MDP로 해석한다.
+
+![DPPO overview](/diffusion-flow/dppo-overview-fig01.png)
+
+Figure 1의 핵심은 diffusion policy 내부의 denoising MDP가 environment MDP 안에 들어간다는 점이다. 각 environment step에서 policy는 여러 denoising transition을 거쳐 action을 만들고, PPO는 각 denoising step의 tractable Gaussian likelihood를 통해 gradient를 계산한다.
+
+| 개념 | DPPO에서의 의미 |
+| --- | --- |
+| Environment MDP | robot state, action, reward가 정의되는 실제 task MDP |
+| Diffusion MDP | action denoising 과정의 inner MDP |
+| Policy gradient | denoising step별 likelihood를 통해 PPO objective를 적용 |
+| Exploration | denoising noise가 pretrained data manifold 근처의 structured exploration을 만든다는 해석 |
+| Fine-tuning scope | 전체 denoising step이 아니라 마지막 일부 step 또는 DDIM step만 fine-tune할 수 있다 |
+
+## Model Architecture
+
+DPPO는 특정 perception architecture를 새로 제안하기보다 diffusion policy parameterization을 RL fine-tuning에 맞게 다룬다. 논문은 U-Net backbone과 MLP backbone diffusion policy를 모두 비교하고, pixel input에서는 ViT image encoder를 둔 variant를 사용한다.
+
+| 구성 | 역할 |
+| --- | --- |
+| Diffusion policy | action distribution의 expressive parameterization |
+| U-Net / MLP denoiser | state 또는 visual feature를 조건으로 action denoising |
+| Value estimator | PPO advantage estimation에 사용 |
+| Noise schedule | exploration 강도와 안정성을 조절하는 핵심 hyperparameter |
+| DDIM / partial-step fine-tuning | inference/runtime과 performance trade-off를 조절 |
+
+## Training Recipe
+
+DPPO는 behavior cloning으로 pretrained diffusion policy를 시작점으로 삼고, 이후 PPO objective로 online fine-tuning한다. state input Robomimic 실험에서는 pretraining 20 denoising steps 후 마지막 10 steps를 fine-tune하고, pixel input에서는 100 denoising steps pretraining 후 5 DDIM steps fine-tuning을 사용한다고 본문에서 설명한다.
+
+중요한 ablation 결론은 다음과 같다.
+
+- value estimator가 performance에 중요하지만 denoised action과 독립인 environment state 기반 estimator가 잘 작동한다.
+- denoising noise clipping에는 sweet spot이 있어, 너무 작으면 exploration이 부족하고 너무 크면 action noise가 과해진다.
+- denoising step 일부만 fine-tune해도 runtime을 줄이면서 성능을 유지할 수 있다.
+- DPPO는 demonstration data 양이 달라도 Gaussian-MLP baseline 대비 개선을 보인다.
+
+## Experiments and Results
+
+| 실험 | 결과 해석 |
+| --- | --- |
+| Robomimic state | Square, Transport 같은 어려운 task에서 Gaussian/GMM policy보다 빠르게 높은 success로 수렴한다. |
+| Robomimic pixel | Transport pixel input에서 Gaussian-ViT-MLP가 0% pretrained success에서 개선되지 않는 반면, DPPO-ViT-MLP는 높은 success로 학습된다. |
+| Transport claim | 논문은 DPPO가 state 또는 pixel input에서 Transport를 high success rate, 즉 50% 초과로 푸는 첫 RL algorithm이라고 주장한다. |
+| Furniture-Bench | One-leg, Lamp, Round-table에서 DPPO-UNet이 Gaussian-MLP보다 안정적으로 개선된다. |
+| Sim-to-real | One-leg real hardware에서 DPPO fine-tuning policy가 80%, Gaussian fine-tuning policy가 0%, Gaussian with BC loss가 50% real success를 기록한다. |
+
+![DPPO Furniture-Bench and sim-to-real result](/diffusion-flow/dppo-furniture-fig08.png)
+
+Figure 8은 DPPO의 실용적 의미를 잘 보여준다. top row에서는 Furniture-Bench의 One-leg, Lamp, Round-table에서 DPPO가 long-horizon fine-tuning 동안 안정적으로 성공률을 올린다. bottom row에서는 simulation fine-tuning만 한 policy를 real hardware로 옮겼을 때 DPPO가 16/20, 즉 80% success를 기록한다.
+
+## Appendix Notes
+
+Appendix는 DPPO에서 중요하다. off-policy Q-learning 계열, demo-augmented RL, 다른 diffusion RL method, policy parameterization, pretraining data ablation, noise schedule, robustness perturbation, iterative refinement가 모두 appendix와 보조 실험에서 보강된다. 이 논문은 “PPO를 diffusion policy에 붙였다”보다 “어떤 denoising step을 fine-tune하고 어떤 noise schedule을 쓰면 안정적인가”가 핵심이므로 ablation을 함께 읽어야 한다.
+
+## Code-Level Check
+
+공식 repository tree 기준 구현 위치는 다음과 같다.
+
+| 항목 | 코드 경로 |
+| --- | --- |
+| DPPO diffusion module | `model/diffusion/diffusion_ppo.py` |
+| Exact variant | `model/diffusion/diffusion_ppo_exact.py` |
+| Diffusion backbone | `model/diffusion/diffusion.py`, `sampling.py`, `unet.py`, `mlp_diffusion.py` |
+| Diffusion pretraining | `agent/pretrain/train_diffusion_agent.py` |
+| State fine-tuning | `agent/finetune/train_ppo_diffusion_agent.py` |
+| Image fine-tuning | `agent/finetune/train_ppo_diffusion_img_agent.py` |
+| Baseline fine-tuning | `train_dipo_diffusion_agent.py`, `train_dql_diffusion_agent.py`, `train_idql_diffusion_agent.py`, `train_qsm_diffusion_agent.py` 등 |
+| Environment wrapper | `env/gym_utils/wrapper/robomimic_lowdim.py`, `robomimic_image.py`, `furniture.py` |
+
+코드 구조는 논문 설명처럼 pretraining agent와 fine-tuning agent를 분리하고, diffusion policy family와 Gaussian/GMM/off-policy baseline을 같은 benchmark wrapper에서 비교할 수 있게 구성되어 있다.
+
+## 한계와 주의
+
+- DPPO는 off-policy method보다 sample efficiency가 낮을 수 있다고 논문이 직접 인정한다.
+- reward 설계와 simulator fidelity가 여전히 중요하다.
+- real hardware result는 One-leg 중심이므로 모든 Furniture-Bench task나 다른 robot embodiment로 바로 일반화하면 안 된다.
+- diffusion policy의 denoising stochasticity는 장점이지만, noise schedule을 잘못 잡으면 action variance가 실패 원인이 된다.
+
+## Citation Trail
+
+| 흐름 | 연결 이유 |
+| --- | --- |
+| Diffusion Policy | DPPO가 fine-tune하는 pretrained policy family |
+| PPO / policy gradient | DPPO의 online optimization backbone |
+| Robomimic / Furniture-Bench | long-horizon manipulation과 sim-to-real 평가 축 |
+| DP3 | representation 개선 route와 RL fine-tuning route의 대비점 |
+| Flow Matching | diffusion action generation을 flow/vector-field action generation으로 확장할 때 비교해야 하는 기반 |
+
+## 검증 메모
+
+- PDF를 다운로드해 Figure/Table inventory와 본문 수치를 확인했다.
+- Figure 1과 Figure 8을 PDF render에서 crop해 local asset으로 저장했다.
+- 공식 code repository tree에서 diffusion module, PPO fine-tuning agent, pretraining agent, environment wrapper 경로를 확인했다.
+- 수치 해석은 PDF 본문과 figure caption 기준으로 작성했고, project page의 headline 수치는 본문 결과와 충돌하지 않는 범위에서만 반영했다.

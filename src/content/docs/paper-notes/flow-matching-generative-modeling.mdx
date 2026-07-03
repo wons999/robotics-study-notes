@@ -54,6 +54,19 @@ Flow Matching은 fixed conditional probability path를 정하고, 그 path 위�
 
 따라서 Flow Matching은 특정 논문 하나의 부속 개념이라기보다, continuous robot action을 “생성 모델”로 다루는 여러 논문의 공통 언어다.
 
+## Diffusion / Flow Robot Policy 지도에서의 위치
+
+Diffusion Policy, DP3, DPPO, Flow Matching은 같은 질문을 서로 다른 위치에서 푼다.
+
+| 흐름 | 핵심 변화 | 읽을 포인트 |
+| --- | --- | --- |
+| Diffusion Policy | action chunk를 denoising diffusion으로 생성 | multimodal BC, receding-horizon execution, latency |
+| DP3 | diffusion policy의 observation representation을 3D point cloud로 변경 | geometry/view/clutter generalization |
+| DPPO | pretrained diffusion policy를 PPO로 fine-tune | recovery, sparse reward, sim-to-real |
+| Flow Matching | denoising 대신 probability path의 vector field를 regression | continuous VLA action expert, sampling/integration trade-off |
+
+robot learning survey에서는 Flow Matching을 단독 generative modeling 논문으로만 읽기보다, [Diffusion / Flow Action Generation](../../robot-learning/diffusion-flow-action-generation/) 지도와 함께 두는 것이 좋다. 특히 π0, GR00T, MolmoB0T처럼 continuous action expert를 쓰는 VLA에서는 action head가 diffusion인지 flow matching인지, 그리고 action chunk가 어떤 controller interface로 실행되는지를 함께 기록해야 한다.
+
 ## 읽을 때 주의할 점
 
 - Flow Matching 자체는 robot control 방법이 아니다.

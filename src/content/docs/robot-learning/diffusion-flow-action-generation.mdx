@@ -1,0 +1,84 @@
+---
+title: Diffusion / Flow Action Generation
+description: robot learning에서 diffusion policy, flow matching, DP3, DPPO가 어디에 위치하는지 정리하는 지도.
+---
+
+# Diffusion / Flow Action Generation
+
+## 왜 이 축을 따로 보나
+
+최근 robot learning에서 action은 더 이상 단순한 deterministic delta command만이 아니다. Demonstration에서 가능한 여러 action mode를 보존하고, action chunk를 통째로 생성하며, language/vision/proprioception 조건을 넣기 위해 diffusion이나 flow matching 같은 continuous generative model이 policy head로 들어온다.
+
+이 축의 핵심 질문은 다음 네 가지다.
+
+- action distribution을 얼마나 expressive하게 모델링하는가?
+- inference latency와 closed-loop replanning을 어떻게 감당하는가?
+- observation representation이 2D image, 3D point cloud, tactile, proprioception 중 무엇인가?
+- behavior cloning 이후 recovery와 task reward 최적화를 어떻게 보강하는가?
+
+## 읽기 순서
+
+| 순서 | 논문/노트 | 먼저 볼 질문 |
+| --- | --- | --- |
+| 1 | [Diffusion Policy](https://diffusion-policy.cs.columbia.edu/) | action chunk를 denoising diffusion으로 생성하면 BC policy의 multimodality 문제가 어떻게 줄어드는가 |
+| 2 | [Flow Matching](../../paper-notes/flow-matching-generative-modeling/) | diffusion-style generation을 vector field regression으로 바꾸면 어떤 일반화된 언어가 생기는가 |
+| 3 | [3D Diffusion Policy](../../paper-notes/3d-diffusion-policy-dp3/) | action generator는 그대로 두고 observation representation을 3D로 바꾸면 무엇이 좋아지는가 |
+| 4 | [Diffusion Policy Policy Optimization](../../paper-notes/dppo-diffusion-policy-policy-optimization/) | pretrained diffusion policy를 PPO로 fine-tune할 때 denoising process를 어떻게 MDP로 볼 수 있는가 |
+| 5 | [Reactive Diffusion Policy](../../paper-notes/reactive-diffusion-policy/) | 느린 visual policy와 빠른 tactile correction을 어떻게 나눌 수 있는가 |
+| 6 | [MolmoB0T](../../paper-notes/molmobot-large-scale-simulation/) | flow matching action expert와 simulation-only data scaling이 VLA policy에서 어떤 역할을 하는가 |
+
+## 방법별 위치
+
+| 방법 | policy가 배우는 것 | 강점 | 위험 |
+| --- | --- | --- | --- |
+| Diffusion Policy | observation 조건 action chunk denoising | multimodal demonstration과 receding-horizon control에 강하다 | denoising step 때문에 latency와 tuning 부담이 있다 |
+| Flow Matching | noise에서 action/data로 가는 vector field | diffusion과 비슷한 continuous generation을 더 직접적인 velocity regression으로 설명할 수 있다 | robot control 성능은 conditioning, controller, latency에 크게 의존한다 |
+| DP3 | compact 3D representation으로 조건화된 diffusion policy | geometry/view/clutter generalization이 좋아진다 | point cloud 품질과 3D preprocessing 가정이 중요하다 |
+| DPPO | diffusion policy denoising MDP에 PPO fine-tuning | BC 이후 reward 기반 recovery와 long-horizon 성능을 개선할 수 있다 | online interaction, reward, simulator fidelity가 필요하다 |
+| Reactive Diffusion Policy | fast tactile feedback을 action refinement에 사용 | contact-rich manipulation에서 빠른 correction을 넣을 수 있다 | tactile sensor와 frequency mismatch를 설계해야 한다 |
+
+## Diffusion Policy에서 시작하는 baseline
+
+Diffusion Policy의 기본 아이디어는 action sequence를 직접 예측하지 않고, noisy action chunk를 observation 조건으로 반복 denoising하는 것이다. 이때 policy는 한 step action이 아니라 prediction horizon 전체를 만들고, 그중 일부 action horizon만 실행한 뒤 다음 observation에서 다시 replanning한다.
+
+로봇 관점에서 중요한 design choice는 다음과 같다.
+
+- action horizon이 너무 짧으면 replanning overhead가 커지고, 너무 길면 open-loop 구간이 길어진다.
+- position control과 velocity control의 차이가 real robot 안정성에 영향을 준다.
+- image encoder와 action denoiser를 end-to-end로 학습할 때 data scale과 augmentation이 중요하다.
+
+![Diffusion Policy overview](/diffusion-flow/dp-overview-fig02.png)
+
+## DP3: representation을 3D로 바꾸는 route
+
+DP3는 Diffusion Policy의 decision module을 유지하되, perception side에서 single-view point cloud를 compact 3D representation으로 바꾼다. 성능 향상은 더 복잡한 planner를 추가해서가 아니라, action policy가 보아야 할 workspace geometry를 더 직접적인 형태로 제공하는 데서 온다.
+
+논문 기준 DP3는 72개 simulation task 평균에서 Diffusion Policy 대비 24.2% relative improvement를 보고하고, real-world 4개 task 평균 success도 DP3 85.0%, Diffusion Policy 35.0%로 보고한다. 따라서 DP3는 “action generator 개선”보다 “observation representation 개선” 사례로 보는 것이 좋다.
+
+## DPPO: pretrained diffusion policy를 RL로 보강하는 route
+
+DPPO는 diffusion policy의 denoising 과정을 inner MDP로 보고 PPO를 적용한다. 이 route는 demonstration으로 배운 policy가 long-horizon sparse reward나 recovery에서 부족할 때 중요하다.
+
+Diffusion policy의 stochastic denoising은 단순히 불안정한 noise가 아니라 pretrained data manifold 근처의 structured exploration으로 작동할 수 있다. 다만 online interaction과 reward가 필요하므로, offline survey에서는 benchmark success뿐 아니라 simulator quality, reward design, real transfer evidence를 함께 봐야 한다.
+
+## Flow Matching으로 확장하기
+
+Flow Matching은 robot control 논문이라기보다 continuous generative modeling의 기반 언어다. 하지만 VLA policy가 discrete action token 대신 continuous action chunk를 직접 생성하는 방향으로 갈수록 중요해진다.
+
+| 비교 축 | Diffusion | Flow Matching |
+| --- | --- | --- |
+| 학습 대상 | noise prediction 또는 denoising transition | probability path 위의 velocity/vector field |
+| sampling | 여러 denoising step | learned vector field integration |
+| robot policy 해석 | action chunk를 점진적으로 정제 | random action trajectory를 expert-like trajectory로 이동 |
+| 읽을 때 확인 | denoising steps, horizon, scheduler, latency | path choice, integration steps, conditioning, controller interface |
+
+π0, GR00T, MolmoB0T 같은 VLA 흐름에서 flow matching은 “continuous action expert”를 읽는 공통 배경이 된다. 다만 flow matching을 썼다는 사실만으로 closed-loop control, tactile recovery, safety가 보장되는 것은 아니다. 어떤 observation을 얼마나 자주 condition으로 넣고, action chunk를 어떤 controller에 연결하는지가 실제 robot learning 성능을 가른다.
+
+## Survey 체크리스트
+
+- 논문이 imitation learning만 하는가, RL fine-tuning까지 하는가?
+- action head가 diffusion, flow matching, autoregressive token, Gaussian 중 무엇인가?
+- observation representation이 2D image feature인지, 3D point cloud인지, tactile/proprioception을 포함하는지 확인한다.
+- action dimension, prediction horizon, action horizon, control frequency를 기록한다.
+- reported success가 simulation 평균인지, task별 real robot trial인지, partial progress metric인지 분리한다.
+- official code에서 policy wrapper, denoiser, scheduler, dataset loader, environment runner 경로를 확인한다.

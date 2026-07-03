@@ -10,10 +10,21 @@ description: 최신 로봇 러닝 연구를 따라가기 위한 정리 지도.
 | 방법 | 강점 | 위험 |
 | --- | --- | --- |
 | Behavior cloning | 단순하고 안정적이며 데이터 기반으로 시작하기 좋다 | distribution shift와 recovery가 약하다 |
-| Diffusion policy | multimodal action 분포를 잘 모델링한다 | latency와 데이터 요구량이 크다 |
+| Diffusion / Flow action generation | multimodal continuous action chunk를 직접 생성한다 | latency, scheduler, controller interface를 함께 튜닝해야 한다 |
 | Reinforcement learning | contact-rich behavior를 직접 최적화할 수 있다 | reward design과 sim-to-real gap이 어렵다 |
 | VLA | language instruction 기반 general behavior에 강하다 | embodiment mismatch와 low-level control 부담이 크다 |
 | Residual learning | 기존 controller 위에 학습 보정을 얹기 좋다 | residual이 모델/제어 문제를 가릴 수 있다 |
+
+## Diffusion / Flow Action Generation 축
+
+continuous robot action을 생성 모델로 다루는 흐름은 별도 지도로 관리한다.
+
+| Survey | 핵심 질문 |
+| --- | --- |
+| [Diffusion / Flow Action Generation](./diffusion-flow-action-generation/) | Diffusion Policy, DP3, DPPO, Flow Matching을 robot learning policy head 관점에서 어떻게 이어 읽을 것인가 |
+| [Flow Matching](../../paper-notes/flow-matching-generative-modeling/) | continuous action chunk를 vector field regression 언어로 이해할 수 있는가 |
+| [3D Diffusion Policy](../../paper-notes/3d-diffusion-policy-dp3/) | 2D image policy의 bottleneck을 point cloud representation으로 줄일 수 있는가 |
+| [Diffusion Policy Policy Optimization](../../paper-notes/dppo-diffusion-policy-policy-optimization/) | pretrained diffusion policy를 RL fine-tuning으로 recovery와 long-horizon task에 맞출 수 있는가 |
 
 ## 시스템 관점 체크리스트
 

@@ -1,0 +1,150 @@
+---
+title: 3D Diffusion Policy
+description: DP3가 single-view point cloud와 diffusion action policy를 결합해 3D visuomotor policy를 구성하는 방식을 정리한다.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+# 3D Diffusion Policy
+
+<SectionFeedback page="3D Diffusion Policy" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | 3D Diffusion Policy: Generalizable Visuomotor Policy Learning via Simple 3D Representations |
+| 저자/그룹 | Yanjie Ze, Gu Zhang, Kangning Zhang, Chenyuan Hu, Muhan Wang, Huazhe Xu |
+| 공개 | arXiv 2024-03-06, RSS 2024 |
+| 링크 | [paper](https://arxiv.org/abs/2403.03954), [project](https://3d-diffusion-policy.github.io/), [code](https://github.com/YanjieZe/3D-Diffusion-Policy) |
+| 태그 | DP3, diffusion policy, point cloud, visuomotor policy, robot learning |
+
+## 한 줄 요약
+
+DP3는 RGB image feature 대신 sparse single-view point cloud를 compact 3D representation으로 인코딩한 뒤 diffusion policy에 조건으로 넣어, 적은 demonstration에서도 2D Diffusion Policy보다 geometry와 view 변화에 강한 action chunk를 생성한다.
+
+## 문제의식
+
+Diffusion Policy는 multimodal action sequence를 안정적으로 모델링하지만, 2D image observation에 의존하면 camera view, depth ambiguity, clutter, embodiment geometry가 바뀔 때 policy가 보아야 할 3D 구조를 간접적으로 배워야 한다. DP3의 질문은 “복잡한 3D backbone 없이도 point cloud를 단순하고 compact하게 넣으면 diffusion action policy의 일반화가 얼마나 좋아지는가”이다.
+
+핵심 가정은 다음과 같다.
+
+- Manipulation task에서 action decision에 중요한 정보는 고해상도 RGB texture 전체보다 object, robot, workspace의 3D 배치인 경우가 많다.
+- single-view point cloud만으로도 policy가 필요한 geometry cue를 얻을 수 있다.
+- perception module과 diffusion decision module을 end-to-end로 함께 학습하면 representation이 task에 맞게 정렬된다.
+
+## 시스템 설정
+
+| 항목 | 논문 기준 정리 |
+| --- | --- |
+| Observation | single-view point cloud, robot state |
+| Representation | point cloud crop, farthest point sampling, color 제거 또는 선택적 color 사용, compact 3D representation |
+| Policy | conditional denoising diffusion policy |
+| Action | action chunk; 논문 구현 detail 기준 DP3와 diffusion baselines는 observation horizon 2, prediction horizon 4, action horizon 3 설정을 사용 |
+| Evaluation | 72개 simulation task와 Allegro hand real-world manipulation task |
+| Real-world tasks | Roll-Up, Dumpling, Drill, Pour 등 dexterous manipulation |
+
+## Dataset
+
+DP3는 단일 데이터셋 하나를 제안한다기보다 여러 simulation benchmark와 real robot demonstration setting에서 같은 policy 구조를 평가한다.
+
+| 범주 | 구성 |
+| --- | --- |
+| Simulation | Adroit, Bi-DexHands, DexArt, DexDeform, DexMV, HORA, MetaWorld 계열 task |
+| 규모 | main simulation table은 72개 task 평균을 보고한다 |
+| Demonstration 조건 | 적은 demonstration 조건을 강조하며, MetaWorld Reach 예시는 5 demonstrations에서 일반화를 시각화한다 |
+| Real robot | Allegro hand 기반 4개 task, task당 40 demonstrations 조건으로 보고 |
+| 공개 상태 | project page는 code, data, video 공개를 연결한다 |
+
+## Method
+
+DP3는 policy를 perception과 decision 두 단계로 나눈다.
+
+| 단계 | 역할 |
+| --- | --- |
+| Point cloud processing | single-view point cloud를 crop하고 farthest point sampling으로 policy 입력 크기를 줄인다 |
+| Compact 3D encoder | point-wise MLP와 pooling으로 compact 3D representation을 만든다 |
+| Conditioning | compact 3D representation과 robot state를 diffusion policy 조건으로 넣는다 |
+| Action generation | noised action chunk를 denoising하면서 robot command sequence를 만든다 |
+| Receding-horizon execution | 생성된 action chunk 중 일부를 실행하고 다음 observation에서 다시 replanning한다 |
+
+![DP3 overview and main simulation result](/diffusion-flow/dp3-overview-fig02-table01.png)
+
+Figure 2와 Table I은 DP3의 주장을 한 장에 보여준다. 위쪽은 end-to-end training과 evaluation loop이고, 아래쪽은 single-view point cloud가 compact 3D representation으로 변환된 뒤 diffusion backbone을 조건화하는 흐름이다. Table I에서 DP3는 72개 simulation task 평균 74.4를 기록하고, 2D Diffusion Policy의 59.8 대비 24.2% relative improvement를 보고한다.
+
+## Model Architecture
+
+| 구성요소 | 내용 |
+| --- | --- |
+| 3D input | single-view point cloud |
+| Point encoder | compact 3D representation을 만드는 lightweight MLP encoder |
+| Diffusion backbone | conditional 1D U-Net 계열 diffusion action model |
+| Conditioning | robot state와 compact 3D representation |
+| Simple DP3 | project/code에는 더 빠른 inference를 목표로 한 Simple DP3 variant도 포함된다 |
+
+이 논문의 architecture contribution은 “더 큰 model”보다 “관측 표현의 inductive bias”에 가깝다. 2D policy가 image feature에서 geometry를 암묵적으로 복원해야 하는 반면, DP3는 point cloud를 통해 object/hand/workspace의 공간 배치를 더 직접적으로 제공한다. 이 차이가 view generalization, cluttered scene, safety violation에서 성능 차이로 이어진다는 해석을 논문은 제시한다.
+
+## Training Recipe
+
+논문 본문 기준으로 DP3는 Diffusion Policy 계열의 DDIM noise scheduler와 sample prediction 설정을 사용한다. 학습은 expert demonstrations로 end-to-end behavior cloning을 수행하며, 다른 simulation 및 real-world task에서는 3000 epochs, MetaWorld task에서는 1000 epochs를 사용했다고 설명한다. batch size는 DP3와 baseline 모두 128로 맞춘다.
+
+중요한 점은 DP3가 RL fine-tuning이 아니라 imitation learning 기반 diffusion policy라는 것이다. 따라서 성능 향상은 reward optimization이 아니라 관측 representation과 diffusion action generation의 결합에서 온다.
+
+## Experiments and Results
+
+| 실험 | 결과 해석 |
+| --- | --- |
+| Main simulation | 72개 task 평균에서 DP3 74.4, Diffusion Policy 59.8. 논문은 24.2% relative improvement로 보고한다. |
+| More baselines | IBC, BCRNN 및 3D variant와 비교해 DP3가 평균 74.4로 가장 높다. |
+| Few-data generalization | MetaWorld Reach에서 5 demonstrations 조건을 시각화하며, DP3가 더 넓은 3D 공간을 성공적으로 커버한다고 주장한다. |
+| Real-world | 4개 Allegro hand task 평균에서 DP3 85.0% success, Diffusion Policy 35.0%, Diffusion Policy with depth 20.0%를 보고한다. |
+| Safety | real-world safety violation rate에서 DP3는 0.0 평균을 보고하고, image/depth diffusion baselines는 violation이 발생한다. |
+
+![DP3 view generalization table](/diffusion-flow/dp3-view-generalization-table12.png)
+
+![DP3 safety violation table](/diffusion-flow/dp3-safety-violation-table14.png)
+
+real-world 결과는 DP3의 장점을 더 명확히 보여준다. Roll-Up view generalization에서는 DP3만 모든 view에서 성공으로 표시되고, safety violation table에서는 DP3가 4개 task 모두 0 violation으로 보고된다. 다만 논문도 safety 평가가 정성적 성격을 갖는다고 명시하므로, 이 수치는 formal safety proof가 아니라 deployment 관찰 결과로 읽어야 한다.
+
+## Appendix Notes
+
+Appendix에는 simulation task별 상세 결과, 더 많은 baseline 비교, real-world view generalization, cluttered scene, safety violation 예시가 들어간다. 특히 평균 결과만 보면 DP3가 항상 모든 task에서 우세한 것처럼 보일 수 있지만, Table I에서도 DexDeform에서는 Diffusion Policy가 90.5, DP3가 87.8로 더 낮다. 따라서 DP3의 결론은 “모든 개별 task에서 우월”이 아니라 “3D representation이 평균 및 일반화 관점에서 더 좋은 trade-off를 만든다”로 읽어야 한다.
+
+## Code-Level Check
+
+공식 repository tree를 확인한 기준으로 구현 위치는 다음과 같다.
+
+| 항목 | 코드 경로 |
+| --- | --- |
+| DP3 policy | `3D-Diffusion-Policy/diffusion_policy_3d/policy/dp3.py` |
+| Simple DP3 | `3D-Diffusion-Policy/diffusion_policy_3d/policy/simple_dp3.py` |
+| PointNet-style extractor | `3D-Diffusion-Policy/diffusion_policy_3d/model/vision/pointnet_extractor.py` |
+| Conditional U-Net | `3D-Diffusion-Policy/diffusion_policy_3d/model/diffusion/conditional_unet1d.py` |
+| Simple U-Net | `3D-Diffusion-Policy/diffusion_policy_3d/model/diffusion/simple_conditional_unet1d.py` |
+| Dataset loaders | `adroit_dataset.py`, `dexart_dataset.py`, `metaworld_dataset.py`, `realdex_dataset.py` |
+| Training / eval | `train.py`, `eval.py`, `env_runner/*_runner.py` |
+
+코드 구조도 논문 설명처럼 3D encoder와 diffusion policy가 분리되어 있으며, policy wrapper가 dataset loader와 environment runner를 통해 benchmark별 observation/action interface를 맞춘다.
+
+## 한계와 주의
+
+- 최적의 3D representation은 아직 확정되지 않았다고 논문이 직접 언급한다.
+- very long horizon task는 해결하지 못하며 future work로 남긴다.
+- point cloud 품질, depth sensor noise, camera calibration이 실제 성능에 영향을 줄 수 있다.
+- 72개 simulation 평균은 강하지만 task별 편차가 있으므로 평균만으로 모든 manipulation setting에 일반화하면 안 된다.
+
+## Citation Trail
+
+| 흐름 | 연결 이유 |
+| --- | --- |
+| Diffusion Policy | DP3의 decision backbone이 되는 action diffusion policy |
+| IBC / BCRNN | simulation baseline으로 비교되는 imitation learning 계열 |
+| DexArt, Adroit, MetaWorld | DP3의 3D generalization을 평가하는 benchmark 기반 |
+| DPPO | DP3가 representation을 바꾸는 imitation learning route라면, DPPO는 diffusion policy를 RL로 fine-tune하는 route |
+
+## 검증 메모
+
+- PDF를 다운로드해 Figure/Table inventory를 확인했다.
+- Figure 2, Table I, real-world/view/safety table을 PDF render에서 crop해 local asset으로 저장했다.
+- 공식 code repository tree에서 policy, encoder, diffusion backbone, dataset loader, training/eval 경로를 확인했다.
+- 공개 site 문서에는 private robot/system detail을 추가하지 않았다.

@@ -22,7 +22,7 @@ description: 로보틱스와 VLA 논문을 문제 설정, 데이터셋, 방법�
 | --- | --- | --- |
 | VLA 지형도 | VLA, tactile VLA, flow action generation, robot data scaling 논문들의 큰 지도 | [VLA Survey Map](./vla-survey-map/) |
 | Tactile / Force | 촉각, force, visuotactile feedback을 robot policy에 넣는 논문 | [T-Rex](./t-rex-tactile-reactive-dexterous-manipulation/), [ForceVLA](./forcevla-force-aware-moe/), [Tactile-VLA](./tactile-vla-physical-knowledge/) |
-| Flow / Diffusion Action | continuous action을 flow matching이나 diffusion policy로 생성하는 흐름 | [PI Model Family](./pi/), [Flow Matching](./flow-matching-generative-modeling/), [Reactive Diffusion Policy](./reactive-diffusion-policy/) |
+| Flow / Diffusion Action | continuous action을 flow matching이나 diffusion policy로 생성하고 RL fine-tuning으로 확장하는 흐름 | [PI Model Family](./pi/), [Flow Matching](./flow-matching-generative-modeling/), [3D Diffusion Policy](./3d-diffusion-policy-dp3/), [DPPO](./dppo-diffusion-policy-policy-optimization/), [Reactive Diffusion Policy](./reactive-diffusion-policy/) |
 | Robot Data Scaling | large-scale robot/human/video/simulation dataset과 cross-embodiment learning 흐름 | [MolmoB0T](./molmobot-large-scale-simulation/), [Open X-Embodiment / RT-X](./open-x-embodiment-rt-x/), [EgoScale](./egoscale-scaling-dexterous-manipulation/), [Ego4D](./ego4d-egocentric-video/) |
 | Model Family | 여러 version/checkpoint가 있는 연구 흐름을 family 단위로 정리 | [GR00T Model Family](./groot/), [PI Model Family](./pi/) |
 
@@ -32,5 +32,7 @@ description: 로보틱스와 VLA 논문을 문제 설정, 데이터셋, 방법�
 | --- | --- |
 | [T-Rex](./t-rex-tactile-reactive-dexterous-manipulation/) | 느린 VLA reasoning과 빠른 tactile correction을 어떻게 한 policy 안에서 나눌 것인가 |
 | [MolmoB0T](./molmobot-large-scale-simulation/) | real robot demonstration 없이 simulation-only data scale과 diversity만으로 manipulation sim-to-real을 어디까지 밀 수 있는가 |
+| [3D Diffusion Policy](./3d-diffusion-policy-dp3/) | 2D image diffusion policy의 representation bottleneck을 sparse 3D point cloud로 줄일 수 있는가 |
+| [Diffusion Policy Policy Optimization](./dppo-diffusion-policy-policy-optimization/) | pretrained diffusion policy를 PPO로 fine-tune해 long-horizon recovery와 sim-to-real을 개선할 수 있는가 |
 | [GR00T Model Family](./groot/) | GR00T N1/N1.5/N1.6/N1.7이 backbone, data, action interface, deployment에서 어떻게 달라지는가 |
 | [PI Model Family](./pi/) | pi.website의 π0, π0-FAST, OpenPI, HI Robot, π0.5, Knowledge Insulation, RTC, π*0.6, MEM, RLT, π0.7 흐름이 어떻게 이어지는가 |
