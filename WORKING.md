@@ -1,8 +1,8 @@
 # WORKING.md
 
-Last updated: 2026-06-25
+Last updated: 2026-07-03
 
-This document is a handoff note for continuing the robotics-study-notes site, especially the T-Rex seminar deck. For repository-level agent rules, feedback repo workflow, and privacy constraints, also read `AGENTS.md`.
+This document is a handoff note for continuing the robotics-study-notes site, especially the T-Rex seminar deck and paper survey sections. For repository-level agent rules, feedback repo workflow, and privacy constraints, also read `AGENTS.md`.
 
 ## Current Workspace
 
@@ -11,6 +11,8 @@ This document is a handoff note for continuing the robotics-study-notes site, es
 - Public site target: `https://wons999.github.io/robotics-study-notes/`
 - Admin feedback repo: `wons999/robotics-study-notes-feedback`
 - Local seminar URL: `http://localhost:4321/seminars/t-rex/`
+- Local paper survey URL: `http://localhost:4321/paper-notes/`
+- Local robot learning URL: `http://localhost:4321/robot-learning/diffusion-flow-action-generation/`
 - Build system: Astro + Starlight
 
 Useful commands:
@@ -26,6 +28,16 @@ The host Node version may be older than Astro's supported range. Use Docker Node
 
 ## Important Files
 
+- `src/content/docs/paper-notes/`
+  - Main paper survey area.
+  - Recent survey additions include MolmoB0T, 3D Diffusion Policy, DPPO, Flow Matching links, and VLA survey maps.
+- `src/content/docs/robot-learning/`
+  - Robot learning maps and topic-level reading routes.
+  - `diffusion-flow-action-generation.mdx` links Diffusion Policy, Flow Matching, DP3, DPPO, Reactive Diffusion Policy, and MolmoB0T.
+- `public/diffusion-flow/`
+  - Local figure/table crops for Diffusion Policy, DP3, and DPPO survey pages.
+- `public/molmobot/`
+  - Local figure/table crops for the MolmoB0T survey page.
 - `src/components/TRexSeminarDeck.astro`
   - Main interactive web slide deck.
   - Contains slide data, deck controls, fallback fullscreen behavior, `returnTo` exit behavior, image lightbox, and most CSS for seminar layout.
@@ -54,13 +66,29 @@ Always check the current state before editing or committing:
 git status --short
 ```
 
-Recent seminar work was committed and pushed to `origin/main`:
+Recent paper survey work was committed locally:
+
+- `a99fe6e Add diffusion and flow action surveys`
+- `76634e4 Add MolmoB0T survey notes`
+
+Recent seminar work previously committed and pushed to `origin/main`:
 
 - `9eb0027 docs: record seminar deck local workflow`
 - `f603769 feat: refine T-Rex seminar deck`
 - `d54ac5c feat: simplify seminar slide entry`
 
 Do not assume future work is committed unless `git status` confirms it.
+
+## Paper Survey Workflow
+
+- Before substantive survey or seminar work, read `rules/survey.md`.
+- For paper survey updates, obtain and inspect the paper PDF when available.
+- Build a figure/table inventory before writing conclusions.
+- Crop method/result figures into local assets under `public/<topic>/` when they support the survey.
+- Inspect every generated image asset directly before committing; avoid crops that cut labels or include unrelated body text.
+- Check official code repositories when available and record implementation paths separately from paper claims.
+- Keep public content free of private workplace details, private project details, and sensitive robot/system information.
+- Run the Docker Node 24 build before committing meaningful content changes.
 
 ## User Preferences For This Deck
 
