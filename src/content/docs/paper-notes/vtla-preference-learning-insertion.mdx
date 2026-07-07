@@ -1,31 +1,264 @@
 ---
 title: VTLA
-description: insertion manipulation을 위한 vision-tactile-language-action 모델 노트.
+description: insertion manipulation을 위한 vision-tactile-language-action 모델과 preference learning survey.
 ---
 
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
 # VTLA
+
+<SectionFeedback page="VTLA" section="메타데이터" />
 
 ## 메타데이터
 
 | 항목 | 내용 |
 | --- | --- |
 | 논문 | VTLA: Vision-Tactile-Language-Action Model with Preference Learning for Insertion Manipulation |
+| 저자 | Chaofan Zhang, Peng Hao, Xiaoge Cao, Xiaoshuai Hao, Shaowei Cui, Shuo Wang |
 | 연도 | arXiv, 2025 |
 | 링크 | https://arxiv.org/abs/2505.09577 |
-| 태그 | tactile, VLA, insertion, preference learning |
+| 프로젝트 | https://sites.google.com/view/vtla |
+| 태그 | tactile, VLA, insertion, preference learning, sim-to-real |
+
+<SectionFeedback page="VTLA" section="한 줄 요약" />
 
 ## 한 줄 요약
 
-VTLA는 insertion task에서 vision, touch, language, action을 함께 다루고 preference learning으로 action quality를 더 잘 학습하려는 모델이다.
+VTLA는 peg-in-hole처럼 접촉 정렬이 핵심인 insertion manipulation에서 vision, tactile image sequence, language instruction을 Qwen2-VL 기반 VLA에 넣고, DPO preference learning으로 next-token prediction과 continuous action regression 사이의 mismatch를 줄이려는 모델이다.
+
+![VTLA overview](/vtla/fig01-overview.png)
+
+## 왜 중요한가
+
+기존 VLA는 pick-and-place처럼 시각 정보가 충분한 작업에서는 강하지만, 삽입 작업은 접촉 순간의 작은 오차가 성공/실패를 가른다. 이 논문은 tactile signal을 단순 보조 센서가 아니라 language-conditioned policy 안에 직접 넣어 contact-rich control을 다루려 한다.
+
+핵심 문제는 세 가지다.
+
+| 문제 | VTLA의 접근 |
+| --- | --- |
+| contact-rich insertion은 시각만으로 정렬 상태를 알기 어렵다 | 좌/우 fingertip visuotactile image sequence와 wrist camera image를 함께 사용 |
+| VLM은 long video보다 short tactile sequence의 미세한 시간 변화를 잘 다루기 어렵다 | tactile observation을 image-like representation으로 만들고 temporal-aware tactile token으로 인코딩 |
+| action은 연속값인데 VLA 학습은 next-token classification loss에 가깝다 | SFT 이후 sampled action을 ground-truth와 비교해 chosen/rejected preference pair를 만들고 DPO 적용 |
+
+<SectionFeedback page="VTLA" section="데이터셋과 문제 설정" />
 
 ## 데이터셋과 문제 설정
 
-주요 task는 peg-in-hole이나 fingertip insertion처럼 접촉 정렬이 중요한 조작이다. simulation 기반의 vision-tactile-action-instruction 데이터를 사용해 real-world transfer를 노린다.
+![VTLA data collection](/vtla/fig02-data-collection.png)
 
-## 방법론
+VTLA는 NVIDIA Isaac Gym 위에 만든 peg-in-hole assembly simulation과 self-built visuotactile simulator에서 데이터를 만든다. 로봇은 peg를 잡고 hole 위로 이동한 뒤, x, y, z-axis rotation 방향의 3-DoF misalignment가 들어간 상태에서 삽입을 시도한다. collision이 발생하면 실패로 보고 retract 후 재시도하며, 최대 15번 시도 안에 insertion depth에 도달하면 성공으로 처리한다.
 
-VLA 학습에서 단순 token prediction loss만으로는 continuous manipulation quality를 잘 표현하기 어렵다. VTLA는 preference learning을 사용해 더 나은 trajectory/action을 선호하도록 학습한다.
+데이터 구성은 다음과 같다.
+
+| 항목 | 내용 |
+| --- | --- |
+| task | fingertip peg-in-hole insertion |
+| peg shape | triangle, round, square, hexagon, pentagon |
+| clearance | 0.6, 1.0, 1.6, 2.0 mm |
+| sample 수 | 28,000 assembly samples |
+| observation | left/right tactile image sequences, wrist camera visual image |
+| label | action label `[Δx, Δy, Δrz]` |
+| instruction format | tactile image, visual image, task instruction, action answer를 dialogue 형태로 구성 |
+
+논문 예시는 `TactileLeftHand.png`, `TactileRightHand.png`, `WristImage.png`를 `<|vision_start|>`와 `<|vision_end|>` 사이에 넣고, “given tactile images from robot left/right fingertips and a wrist camera image...” 형태의 instruction 뒤에 action vector를 답하게 만든다. MDX에서는 angle-bracket token이 markup으로 해석될 수 있으므로 이런 special token은 항상 code span으로 기록한다.
+
+## 모델 구조
+
+![VTLA pipeline](/vtla/fig03-pipeline.png)
+
+VTLA의 pipeline은 두 stage다.
+
+| Stage | 목적 | 핵심 구현 |
+| --- | --- | --- |
+| Stage 1: SFT | simulation instruction dataset으로 VTLA를 next-token prediction 형태로 fine-tune | tactile/vision observation을 pretrained vision encoder와 modality adapter로 token화하고 QwenLM decoder가 action token을 예측 |
+| Stage 2: Preference learning | SFT 모델의 action prediction을 ground truth와 비교해 더 가까운 출력을 선호하도록 학습 | same sample에서 여러 action을 random generation하고 chosen/rejected pair를 만든 뒤 DPO 적용 |
+
+모달리티 순서도 설계 포인트다. 논문은 LLM recency bias와 초기 조작 단계에서 visual observation이 중요하다는 점을 고려해 tactile input 뒤에 visual input을 배치한다. 즉 action prediction에 가까운 위치에 vision token을 두어 시각 정보가 더 직접적으로 action decision에 반영되도록 한다.
+
+학습 recipe는 다음과 같다.
+
+| 항목 | 설정 |
+| --- | --- |
+| base model | Qwen2-VL 7B |
+| framework | LlamaFactory |
+| SFT | learning rate 5e-4, batch size 64, 10 epochs |
+| DPO | SFT checkpoint에서 시작, learning rate 5e-6, batch size 32, 3 epochs |
+| tuned part | prior VLA work를 따라 vision encoder와 modality adapter는 freeze하고 language model만 tune |
+
+## Preference Learning 해석
+
+VTLA가 DPO를 쓰는 이유는 “정답 action token을 맞히는가”와 “continuous control에서 더 좋은 action인가”가 완전히 같지 않기 때문이다. SFT는 classification-oriented NTP loss로 학습되므로, `[Δx, Δy, Δrz]`의 작은 연속값 차이가 실제 삽입 성공률에 미치는 영향을 충분히 반영하지 못할 수 있다.
+
+VTLA는 같은 입력에서 SFT 모델이 만든 여러 action sample을 ground-truth action과 비교해 더 가까운 action을 chosen, 먼 action을 rejected로 둔다. 그 뒤 DPO objective로 chosen response likelihood를 rejected보다 높인다. trajectory-level human preference가 아니라, ground-truth와의 거리 기반 preference를 만든다는 점이 이 논문의 pragmatic한 선택이다.
+
+## 실험 설정
+
+비교 대상은 네 종류다.
+
+| 모델 | observation | 설명 |
+| --- | --- | --- |
+| DP | vision + tactile | Diffusion Policy baseline |
+| VLA | wrist camera image | visual image만 쓰는 language-action model |
+| TLA | tactile image sequence | tactile만 쓰는 tactile-language-action model |
+| VTLA | vision + tactile | VTLA full model |
+
+평가 지표는 dataset evaluation과 insertion task evaluation으로 나뉜다.
+
+| 지표 | 의미 |
+| --- | --- |
+| GCR | x, y, rz 방향 action이 모두 correct인 비율 |
+| L1 x/y/rz | output action과 label 사이의 L1 distance |
+| Success | insertion task 성공률 |
+| Step | 성공까지 평균 attempt step |
+
+Real-world setup은 UR3 6-DoF arm, Robotiq 2F-85 gripper, wrist-mounted Intel RealSense D405, fingertip GelStereo 2.0 tactile sensor 2개로 구성된다.
+
+![VTLA real setup](/vtla/fig05-real-setup.png)
+
+<SectionFeedback page="VTLA" section="결과" />
+
+## 결과 1: Dataset Evaluation
+
+| Method | ID GCR | ID L1 x | ID L1 y | ID L1 rz | OOD GCR | OOD L1 x | OOD L1 y | OOD L1 rz |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| DP | 7.8 | 0.826 | 0.819 | 1.421 | 8.5 | 0.821 | 0.843 | 1.407 |
+| VLA | 46.1 | 0.210 | 0.247 | 0.886 | 29.5 | 0.353 | 0.351 | 1.221 |
+| TLA | 15.3 | 0.531 | 0.677 | 1.427 | 14.4 | 0.509 | 0.675 | 1.462 |
+| VTLA | 47.3 | 0.181 | 0.224 | 0.904 | 31.2 | 0.305 | 0.324 | 1.136 |
+
+DP는 dataset-level action prediction에서 매우 낮은 GCR을 보인다. LLM 기반 VLA/TLA/VTLA는 DP보다 훨씬 높고, VTLA는 VLA보다 ID/OOD 모두에서 약간 더 좋다. 특히 OOD GCR이 31.2로 VLA 29.5, TLA 14.4보다 높다.
+
+해석할 때 중요한 점은 “tactile만 있으면 충분한가”가 아니라 “vision이 기본 정렬 정보를 주고 tactile이 contact ambiguity를 줄이는가”다. TLA는 simulation에서는 일부 성공하지만 dataset metric과 real-world transfer에서 약하다.
+
+## 결과 2: Simulation Insertion
+
+Square peg clearance별 simulation 결과다.
+
+| Method | 2.0 mm Suc | 2.0 mm Step | 1.6 mm Suc | 1.6 mm Step | 1.0 mm Suc | 1.0 mm Step | 0.6 mm Suc | 0.6 mm Step |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| DP | 42 | 2.47 | 32 | 2.63 | 28 | 4.85 | 22 | 3.54 |
+| VLA | 100 | 2.28 | 98 | 3.24 | 90 | 3.28 | 80 | 5.55 |
+| TLA | 94 | 3.27 | 90 | 3.60 | 80 | 4.97 | 80 | 5.48 |
+| VTLA | 100 | 2.12 | 98 | 2.87 | 96 | 4.64 | 90 | 5.91 |
+
+가장 어려운 0.6 mm clearance에서 VTLA는 90% 성공률로 VLA/TLA의 80%보다 높다. 평균 step은 VTLA가 항상 최소는 아니지만, 성공률 관점에서는 contact-rich setting에서 multimodal fusion의 이득이 드러난다.
+
+0.6 mm clearance에서 shape generalization 결과는 다음과 같다.
+
+| Method | Square Suc | Square Step | Triangle Suc | Triangle Step | Hexagon Suc | Hexagon Step | Pentagon Suc | Pentagon Step | Round Suc | Round Step |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| DP | 22 | 3.54 | 30 | 3.87 | 28 | 3.00 | 26 | 5.61 | 10 | 3.80 |
+| VLA | 80 | 5.55 | 82 | 5.02 | 84 | 3.83 | 82 | 4.41 | 94 | 4.81 |
+| TLA | 80 | 5.48 | 74 | 4.27 | 80 | 5.25 | 80 | 4.60 | 92 | 3.54 |
+| VTLA | 90 | 5.91 | 88 | 4.53 | 90 | 4.68 | 92 | 3.97 | 92 | 4.74 |
+
+Square, triangle, hexagon, pentagon에서는 VTLA가 가장 높은 성공률을 보인다. Round peg에서는 VLA/TLA도 높은데, 논문은 round shape의 geometric isotropy 때문에 task가 상대적으로 덜 어려울 수 있다고 해석한다.
+
+## 결과 3: DPO Ablation
+
+| Method | ID GCR | ID L1 x | ID L1 y | ID L1 rz | OOD GCR | OOD L1 x | OOD L1 y | OOD L1 rz |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| VTLA w/o DPO | 47.5 | 0.184 | 0.227 | 0.907 | 27.0 | 0.349 | 0.367 | 1.223 |
+| VTLA w/ DPO-1k | 47.5 | 0.181 | 0.224 | 0.906 | 31.4 | 0.305 | 0.324 | 1.137 |
+| VTLA w/ DPO-2k | 47.3 | 0.181 | 0.224 | 0.904 | 31.2 | 0.305 | 0.324 | 1.136 |
+
+DPO의 효과는 ID보다 OOD에서 더 뚜렷하다. OOD GCR은 27.0에서 31.4로 증가하고, OOD L1 error도 전반적으로 줄어든다. 반면 1k preference data에서 2.4k로 늘려도 추가 이득은 거의 없다. 논문은 preference data를 단순히 늘리는 것보다 sampling configuration 다양성을 늘리는 편이 더 중요할 수 있다고 본다.
+
+## 결과 4: Real-World Sim-to-Real
+
+Real-world square peg clearance 결과다.
+
+| Method | 1.6 mm Suc | 1.6 mm Step | 1.0 mm Suc | 1.0 mm Step | 0.6 mm Suc | 0.6 mm Step |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| VTLA | 100 | 1.60 | 100 | 1.95 | 95 | 4.31 |
+
+0.6 mm clearance에서 shape별 real-world 결과다.
+
+| Method | Square Suc | Square Step | Triangle Suc | Triangle Step | Hexagon Suc | Hexagon Step | Pentagon Suc | Pentagon Step | Round Suc | Round Step |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| VTLA | 95 | 4.31 | 95 | 3.94 | 95 | 3.52 | 100 | 1.85 | 100 | 5.2 |
+
+VLA/TLA와 real-world에서 직접 비교한 표는 triangle, pentagon 두 shape만 제공된다.
+
+| Method | Triangle Suc | Triangle Step | Pentagon Suc | Pentagon Step |
+| --- | ---: | ---: | ---: | ---: |
+| VLA | 90 | 4.06 | 100 | 2.3 |
+| TLA | 30 | 2.00 | 40 | 1.88 |
+| VTLA | 95 | 3.94 | 100 | 1.85 |
+
+여기서 가장 큰 메시지는 TLA의 sim-to-real gap이다. Tactile-only model은 simulation에서는 70-90%대 성공률을 보이지만, real world triangle/pentagon에서는 30-40%까지 떨어진다. 반대로 VTLA와 VLA는 모두 90% 이상을 유지하고, VTLA는 pentagon에서 평균 step 1.85로 VLA 2.3보다 효율적이다.
+
+![VTLA real comparison](/vtla/fig04-real-comparison.png)
+
+## Poor Lighting 결과
+
+부록은 poor lighting condition에서 VTLA와 VLA를 비교한다. 조명이 어두워지면 wrist camera image quality가 떨어져 hole position 인식이 어려워진다. VTLA는 tactile observation을 함께 써서 3 step 만에 성공하지만, VLA는 같은 initial state에서 15 step까지 가도 실패한다.
+
+![VTLA poor lighting comparison](/vtla/fig06-07-poor-lighting.png)
+
+이 실험은 “tactile이 항상 성능을 크게 올린다”보다 더 좁게 해석해야 한다. 시각이 나빠진 조건에서 tactile이 fallback sensory channel이 되고, contact-rich insertion에서는 이 보조 채널이 success/failure를 가를 수 있다는 증거에 가깝다.
+
+<SectionFeedback page="VTLA" section="Domain Randomization" />
+
+## Domain Randomization
+
+![VTLA domain randomization](/vtla/table08-domain-randomization.png)
+
+부록 Table 8의 domain randomization은 sim-to-real 성능을 이해하는 핵심이다.
+
+| 범주 | 랜덤화 |
+| --- | --- |
+| Physical | Young's modulus `U(1.0e5, 5.0e5)`, Poisson ratio `U(0.3, 0.48)`, friction coefficient `U(0.2, 0.7)` |
+| Task-related | peg offset x/z in gripper `U(-1.0, 1.0)` mm, contact depth `U(0.6, 0.9)` mm |
+| Tactile images | brightness, contrast, saturation, hue color jittering |
+| Vision images | lighting direction/intensity, image scale/translation/rotation/shearing, color jittering, Gaussian noise, motion blur |
+
+논문은 silicone layer aging, material/environment differences, robot grasping pose와 force variation 때문에 tactile/physical parameters를 randomize해야 한다고 설명한다. 즉 VTLA의 real-world 성능은 “VLA architecture만의 결과”라기보다, simulation data generation과 randomization recipe가 함께 만든 결과로 봐야 한다.
+
+## Figure / Table Inventory
+
+| 항목 | 내용 | 노트 반영 |
+| --- | --- | --- |
+| Figure 1 | VTLA overview | overview 이미지 |
+| Figure 2 | data collection and VTLA dataset examples | dataset 섹션 이미지 |
+| Figure 3 | SFT + DPO pipeline | 모델 구조 섹션 이미지 |
+| Figure 4 | real-world VTLA/VLA/TLA comparison snapshots | real-world 결과 섹션 이미지 |
+| Figure 5 | real-world robot setup and observations | 실험 설정 이미지 |
+| Figure 6-7 | poor lighting VTLA vs VLA | poor lighting 이미지 |
+| Table 1 | dataset ID/OOD GCR and L1 | markdown table로 재작성 |
+| Table 2 | square peg clearance simulation | markdown table로 재작성 |
+| Table 3 | 0.6 mm shape generalization simulation | markdown table로 재작성 |
+| Table 4 | DPO ablation | markdown table로 재작성 |
+| Table 5-7 | real-world insertion results | markdown table로 재작성 |
+| Table 8 | domain randomization parameters | 이미지와 markdown 요약 |
+
+## Code / Asset 확인
+
+arXiv paper, arXiv HTML, project site를 확인했다. 2026-07-07 기준 project site에는 simulation/real-world/supplementary videos가 있지만, 공식 GitHub code나 dataset download link는 보이지 않았다. 논문 구현 세부는 LlamaFactory, Qwen2-VL 7B, Isaac Gym, GelStereo 2.0 sensor setup 수준까지만 공개되어 있다.
 
 ## 이 논문의 위치
 
-VTLA는 insertion 계열 contact-rich task에서 tactile grounding과 preference learning이 어떤 역할을 하는지 보여준다. 정밀 삽입처럼 성공/실패 경계가 좁은 과제에서는 tactile signal과 평가 기준을 함께 설계해야 한다.
+VTLA는 “VLA에 tactile을 붙이면 된다”보다 구체적인 질문을 던진다.
+
+| 축 | VTLA가 주는 힌트 |
+| --- | --- |
+| tactile VLA | tactile-only보다 vision+tactile fusion이 real-world transfer에 유리할 수 있다 |
+| action learning | NTP loss만으로 continuous action quality를 맞히기 어렵고, preference-style objective가 OOD action error를 줄일 수 있다 |
+| sim-to-real | domain randomization과 multimodal observation 설계가 architecture만큼 중요하다 |
+| evaluation | success rate와 step efficiency를 함께 봐야 하며, round peg처럼 geometry가 쉬운 case는 분리해서 해석해야 한다 |
+
+## 한계와 주의점
+
+- 실험은 peg-in-hole insertion에 집중되어 있어, 넓은 manipulation skill generalization을 주장하기는 어렵다.
+- DPO preference는 human preference가 아니라 ground-truth action distance 기반이다. 따라서 “선호 학습”이라기보다 continuous action supervision을 강화하는 proxy objective에 가깝다.
+- Vision encoder를 tactile image에도 재사용하는 방식은 간단하지만, tactile modality 고유의 deformation/contact semantics를 충분히 살리는지는 추가 검증이 필요하다.
+- 공식 코드가 공개되어 있지 않아 architecture detail과 preprocessing을 완전히 재현하기 어렵다.
+
+## 다음에 읽을 연결 논문
+
+| 연결 | 이유 |
+| --- | --- |
+| [Tactile-VLA](./tactile-vla-physical-knowledge/) | tactile을 VLA의 physical knowledge와 연결한다는 관점 비교 |
+| [Reactive Diffusion Policy](./reactive-diffusion-policy/) | tactile feedback을 빠른 action refinement로 쓰는 diffusion 계열 비교 |
+| [DP3](./3d-diffusion-policy-dp3/) | 3D representation 기반 diffusion policy와 insertion/contact-rich task baseline 비교 |
+| [DPPO](./dppo-diffusion-policy-policy-optimization/) | behavior cloning 이후 preference/RL-style objective로 policy를 개선하는 관점 비교 |
