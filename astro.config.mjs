@@ -79,6 +79,29 @@ export default defineConfig({
                 { label: 'RLT', slug: 'paper-notes/pi/rlt-efficient-online-rl' },
                 { label: 'π0.7', slug: 'paper-notes/pi/pi07-steerable-model' }
               ]
+            },
+            {
+              label: 'Molmo Model Family',
+              items: [
+                { label: 'Overview', slug: 'paper-notes/molmo' },
+                { label: 'MolmoB0T', slug: 'paper-notes/molmo/molmobot-large-scale-simulation' },
+                { label: 'MolmoAct', slug: 'paper-notes/molmo/molmoact-action-reasoning-models' },
+                { label: 'MolmoAct2', slug: 'paper-notes/molmo/molmoact2-real-world-deployment' }
+              ]
+            },
+            {
+              label: 'ECoT Reasoning Family',
+              items: [
+                { label: 'Overview', slug: 'paper-notes/ecot' },
+                { label: 'Original ECoT', slug: 'paper-notes/ecot/embodied-chain-of-thought' },
+                { label: 'RAD', slug: 'paper-notes/ecot/rad-action-free-reasoning' },
+                { label: 'CoT-VLA', slug: 'paper-notes/ecot/cot-vla-visual-chain-of-thought' },
+                { label: 'ECoT-Lite', slug: 'paper-notes/ecot/ecot-lite-efficient-embodied-reasoning' },
+                { label: 'Fast ECoT', slug: 'paper-notes/ecot/fast-ecot-thoughts-reuse' },
+                { label: 'ERVLA', slug: 'paper-notes/ecot/ervla-revisiting-embodied-cot' },
+                { label: 'RoboPIN', slug: 'paper-notes/ecot/robopin-pinned-chain-of-thought' },
+                { label: 'Pinocchio', slug: 'paper-notes/ecot/pinocchio-faithfulness-embodied-reasoning' }
+              ]
             }
           ]
         },
