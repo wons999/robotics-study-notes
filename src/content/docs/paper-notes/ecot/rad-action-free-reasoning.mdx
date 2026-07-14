@@ -1,0 +1,53 @@
+---
+title: RAD
+description: Action-Free Reasoning for Policy Generalization 논문 survey note.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# RAD
+
+<SectionFeedback page="RAD" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Action-Free Reasoning for Policy Generalization |
+| 저자/그룹 | Jaden Clark, Suvir Mirchandani, Dorsa Sadigh, Suneel Belkhale |
+| 공개 | arXiv:2502.03729, 2025-02 |
+| 링크 | https://arxiv.org/abs/2502.03729, https://rad-generalization.github.io |
+| 태그 | action-free data, human video, reasoning supervision, Bridge V2 |
+
+## 한 줄 요약
+
+RAD는 robot action label이 없는 human video에도 language reasoning annotation을 붙여, robot demonstration은 reasoning-to-action mapping을 배우고 human video는 reasoning capability를 확장하는 데 쓰는 ECoT data-scaling branch다.
+
+## 문제의식
+
+Robot demonstration은 비싸고 scale이 어렵다. Human video는 풍부하지만 robot action label이 없고 embodiment gap이 있다. RAD는 hand pose나 pseudo action을 억지로 추출하기보다, human video에서 task-relevant reasoning을 학습해 robot policy의 high-level generalization을 높이려 한다.
+
+| 데이터 | label | 역할 |
+| --- | --- | --- |
+| robot demonstration | reasoning + action | reasoning을 low-level robot action으로 연결 |
+| action-free human video | reasoning only | 새로운 object/task 상황에서 reasoning capability 확장 |
+
+## 핵심 주장
+
+RAD는 action-free data만으로 action policy를 학습하는 것이 아니라, action-free reasoning data와 robot action data를 결합한다. 즉 embodiment gap을 직접 action으로 건너뛰지 않고, reasoning이라는 중간 표현을 공유 공간으로 사용한다.
+
+## 공개 수치/자료
+
+arXiv abstract 기준 RAD는 Bridge V2 benchmark와 호환되는 3,377 human-hand demonstrations with reasoning annotations를 release할 계획/보고한다. 실험은 action-free data에서 본 task가 robot으로 transfer될 수 있고, action-free reasoning data scale을 늘리면 policy performance와 novel-task generalization이 개선된다고 보고한다.
+
+## ECoT family에서의 위치
+
+RAD는 ECoT의 “reasoning supervision”을 robot data 밖으로 확장한다. Original ECoT가 robot trajectory에 synthetic reasoning을 붙이는 방향이라면, RAD는 action이 없는 human video에서도 reasoning만은 학습할 수 있다고 본다.
+
+## 주의점
+
+- Human-video reasoning annotation의 품질과 visual domain gap이 policy에 영향을 준다.
+- Low-level action은 여전히 robot demonstration에서 배워야 한다.
+- Action-free data가 늘어도 reasoning-to-action bridge가 약하면 deployment 성능이 제한된다.

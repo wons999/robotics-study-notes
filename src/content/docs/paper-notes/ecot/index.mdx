@@ -1,0 +1,110 @@
+---
+title: ECoT Reasoning Family
+description: Embodied Chain-of-Thought 계열 논문을 시간 순서와 기술 발전 축으로 정리한 survey map.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# ECoT Reasoning Family
+
+<SectionFeedback page="ECoT Reasoning Family" section="메타데이터" />
+
+## 범위
+
+이 문서는 2026-07-14 기준 공개된 robot/VLA embodied reasoning 계열을 시간 순서와 기술 발전 축으로 정리한다. “ECoT 계열”은 좁게는 Zawalski et al.의 Embodied Chain-of-Thought, 넓게는 robot policy가 action 전에 intermediate reasoning, visual goal, spatial trace, depth token, 또는 reasoning-supervised representation을 사용하는 흐름을 포함한다.
+
+## 시간 순서
+
+| 순서 | 공개 | 논문 | 핵심 변화 |
+| --- | --- | --- | --- |
+| 1 | 2024-07 | [Robotic Control via Embodied Chain-of-Thought Reasoning](./embodied-chain-of-thought/) | 원조 ECoT. plan, subtask, motion, object bbox, end-effector position 같은 embodied reasoning을 action 앞에 생성. OpenVLA challenging generalization에서 +28%p absolute success 보고 |
+| 2 | 2025-02 | [Action-Free Reasoning for Policy Generalization / RAD](./rad-action-free-reasoning/) | action 없는 human video를 reasoning supervision으로 사용. robot data는 reasoning-to-action mapping, human video는 reasoning capability 확장 |
+| 3 | 2025-03 | [CoT-VLA](./cot-vla-visual-chain-of-thought/) | text reasoning 대신 future image frame을 visual goal로 autoregressively 예측한 뒤 action chunk 생성. real-world +17%, simulation +6% 개선 보고 |
+| 4 | 2025-05 | [ECoT-Lite](./ecot-lite-efficient-embodied-reasoning/) | ECoT의 이득을 representation/curriculum/expressivity로 분해하고, test-time reasoning 없이 빠른 inference를 유지하는 recipes 제안 |
+| 5 | 2025-06 | [Fast ECoT](./fast-ecot-thoughts-reuse/) | ECoT를 제거하지 않고 high-level reasoning cache/reuse, modular reasoning parallelization, async scheduler로 inference 가속 |
+| 6 | 2025-08 | [MolmoAct](../molmo/molmoact-action-reasoning-models/) | text CoT가 아니라 depth perception token + visual reasoning trace + action token으로 “reason in space” 하는 ARM |
+| 7 | 2026-05 | [MolmoAct2](../molmo/molmoact2-real-world-deployment/) | Molmo2-ER, OpenFAST, flow expert, KV conditioning, adaptive depth reasoning으로 real-world deployment route 제시 |
+| 8 | 2026-06 | [ERVLA](./ervla-revisiting-embodied-cot/) | 978,743 trajectories, 226.3M samples, 2592.5 hours 규모로 재검토. explicit CoT prefix는 scale에서 불안정할 수 있고, CoT를 representation-shaping supervision으로 쓰는 reasoning-dropout route 제안 |
+| 9 | 2026-06 | [RoboPIN](./robopin-pinned-chain-of-thought/) | Pinned CoT와 reasoning anchor로 multi-view/entity grounding drift를 줄이는 structured reasoning route |
+| 10 | 2026-07 | [Pinocchio](./pinocchio-faithfulness-embodied-reasoning/) | reasoning trace가 실제 decision process와 맞는지 평가. functional reasoning과 faithful reasoning을 분리하고 learned critic으로 faithfulness post-training |
+
+## 기술 발전 축
+
+### 1. Explicit Text Reasoning
+
+ECoT의 출발점은 action prediction 전에 robot-specific reasoning text를 생성하는 것이다. Pure semantic subtask만으로는 부족해서, object bounding box, end-effector position, motion description처럼 observation과 robot state에 grounded된 reasoning을 포함한다. 장점은 성능과 interpretability이고, 단점은 annotation cost와 slow autoregressive inference다.
+
+### 2. Reasoning Data Scaling
+
+RAD는 action label이 없는 human video에도 reasoning annotation을 붙여 policy generalization에 쓸 수 있다는 방향을 연다. 이 branch의 핵심은 robot demonstration이 부족할 때, reasoning label을 action-free data에서 scale할 수 있는지다.
+
+### 3. Visual / Spatial CoT
+
+CoT-VLA와 MolmoAct는 reasoning의 형식을 language에서 visual/spatial representation으로 옮긴다.
+
+| 논문 | reasoning 형식 |
+| --- | --- |
+| [CoT-VLA](./cot-vla-visual-chain-of-thought/) | future image frames as visual goals |
+| [MolmoAct](../molmo/molmoact-action-reasoning-models/) | depth perception tokens + image-space visual reasoning trace |
+| [MolmoAct2-Think](../molmo/molmoact2-real-world-deployment/) | adaptive depth tokens for changed scene regions |
+
+이 흐름은 language CoT보다 robot control에 가까운 중간 표현을 사용한다는 점에서 중요하다.
+
+### 4. Training-Only Reasoning
+
+ECoT-Lite와 ERVLA는 explicit CoT를 test-time에 항상 생성해야 하는지 의심한다. ECoT-Lite의 reasoning dropout은 Full ECoT와 비슷한 LIBERO average를 내면서 inference에서는 reasoning을 생략할 수 있음을 보인다. ERVLA는 대규모 데이터에서 autoregressive CoT prefix가 compounding error와 unstable reasoning-action coupling을 만들 수 있다고 보고, CoT를 representation-shaping supervision으로 재정의한다.
+
+### 5. Latency / Deployment
+
+| 접근 | 아이디어 |
+| --- | --- |
+| Fast ECoT | 기존 ECoT를 유지하고 cache/reuse/parallelization/async scheduler로 빠르게 함 |
+| ECoT-Lite | reasoning을 training signal로 쓰고 test-time reasoning을 제거 |
+| MolmoAct2 | continuous flow expert와 KV conditioning으로 action generation을 빠르게 만들고, depth reasoning은 adaptive하게 수행 |
+| ERVLA | CoT decoding 없이 direct action prediction |
+
+## 설계 선택 가이드
+
+| 상황 | 우선 볼 논문 |
+| --- | --- |
+| interpretability와 human correction이 중요 | ECoT, MolmoAct |
+| control frequency/latency가 중요 | ECoT-Lite, Fast ECoT, MolmoAct2 |
+| action-free human video를 쓰고 싶음 | RAD |
+| visual planning/future state가 중요 | CoT-VLA |
+| 3D spatial grounding이 중요 | MolmoAct, MolmoAct2 |
+| scale에서 CoT prefix 안정성이 걱정 | ERVLA |
+| reasoning faithfulness를 검증하고 싶음 | Pinocchio |
+
+## 주요 수치 스냅샷
+
+| 논문 | 대표 수치 |
+| --- | --- |
+| ECoT | OpenVLA challenging generalization tasks에서 +28%p absolute success |
+| RAD | 3,377 human-hand demonstrations with reasoning annotations 공개 예정/보고 |
+| CoT-VLA | real-world +17%, simulation +6% over SOTA VLA |
+| ECoT-Lite | LIBERO-90 average: Full ECoT 76.6, Standard VLA 67.4, Reasoning Dropout 76.4; inference 3x speedup claim |
+| Fast ECoT | up to 7.5% latency reduction with comparable/improved task success and reasoning faithfulness |
+| MolmoAct | SimplerEnv Visual Matching 70.5, LIBERO 86.6, real-world π0-FAST 대비 +10.0/+22.7 task progression |
+| MolmoAct2 | MolmoBot 20.6 vs π0.5 10.0, DROID real-world 87.1 vs π0.5 45.2, LIBERO 97.2/98.1 |
+| ERVLA | LIBERO-Plus 86.9, VLABench 53.2 |
+| Pinocchio | faithfulness post-training improves policy responsiveness on synthetic OOD by 1.6x vs SOTA policy |
+
+## 읽는 순서
+
+1. ECoT original로 “robot-specific CoT가 무엇인가”를 잡는다.
+2. ECoT-Lite로 “이득이 test-time reasoning 때문인가 training signal 때문인가”를 분해한다.
+3. MolmoAct로 “language reasoning 대신 spatial trace/depth reasoning을 쓰는 route”를 본다.
+4. MolmoAct2로 deployment latency, flow expert, adaptive depth reasoning까지 확장한다.
+5. ERVLA, RoboPIN, Pinocchio로 scale, grounding, faithfulness 문제를 검토한다.
+
+## 한계와 주의
+
+- “Reasoning trace가 보인다”는 것과 “그 trace가 action decision의 causal explanation이다”는 다르다.
+- Text CoT, visual future, depth token, trajectory trace는 모두 중간 supervision이지만, control loop에서 쓰이는 방식과 latency가 크게 다르다.
+- Benchmark별 robot embodiment, action representation, trial count, success metric이 달라 수치를 직접 단순 비교하면 안 된다.
+
+## 검증 메모
+
+arXiv metadata/abstract, ECoT-Lite HTML/PDF, MolmoAct/MolmoAct2 PDF와 AllenAI blog/code 링크를 확인했다. MolmoAct/MolmoAct2/ECoT-Lite는 PDF를 직접 확보하고 대표 Figure 1/3 crop을 local asset으로 저장했다. ECoT family의 일부 논문은 현재 overview 수준으로 정리했으며, 각 논문별 full figure/table deep dive는 후속 개별 survey로 분리하는 것이 맞다.

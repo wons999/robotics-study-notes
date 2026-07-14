@@ -1,0 +1,58 @@
+---
+title: CoT-VLA
+description: Visual Chain-of-Thought Reasoning for Vision-Language-Action Models 논문 survey note.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# CoT-VLA
+
+<SectionFeedback page="CoT-VLA" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | CoT-VLA: Visual Chain-of-Thought Reasoning for Vision-Language-Action Models |
+| 저자/그룹 | Qingqing Zhao, Yao Lu, Moo Jin Kim, Zipeng Fu, Zhuoyang Zhang, Yecheng Wu, Zhaoshuo Li, Qianli Ma, Song Han, Chelsea Finn, Ankur Handa, Ming-Yu Liu, Donglai Xiang, Gordon Wetzstein, Tsung-Yi Lin |
+| 공개 | arXiv:2503.22020, 2025-03 |
+| 링크 | https://arxiv.org/abs/2503.22020, https://cot-vla.github.io/ |
+| 태그 | visual CoT, future image, VLA, temporal planning |
+
+## 한 줄 요약
+
+CoT-VLA는 action 전에 자연어 reasoning을 생성하는 대신 future image frames를 visual goal로 autoregressive하게 예측하고, 그 goal을 달성하는 action chunk를 생성하는 visual chain-of-thought VLA다.
+
+## 문제의식
+
+기존 VLA는 observation과 instruction에서 action으로 바로 가는 input-output mapping에 가깝다. 복잡한 manipulation에서는 몇 step 뒤 장면이 어떻게 변해야 하는지에 대한 temporal planning이 필요하지만, text CoT가 항상 low-level visual change를 잘 표현하지는 못한다.
+
+## Method 관점
+
+| 구성 | 역할 |
+| --- | --- |
+| Visual CoT | future image frames를 autoregressive prediction |
+| Action generation | visual goal을 달성하기 위한 short action sequence 생성 |
+| 7B VLA backbone | visual token과 action token을 함께 이해/생성 |
+
+Visual future frame은 “무엇이 어디로 이동해야 하는가”를 image domain에서 직접 표현하므로, language-only plan보다 manipulation state transition을 더 구체적으로 담을 수 있다.
+
+## 결과와 위치
+
+arXiv abstract 기준 CoT-VLA는 SOTA VLA 대비 real-world manipulation tasks에서 17%, simulation benchmarks에서 6% 성능 향상을 보고한다. ECoT family 안에서는 text reasoning에서 visual future-goal reasoning으로 넘어가는 대표 branch다.
+
+## 비교 포인트
+
+| 비교 대상 | 차이 |
+| --- | --- |
+| Original ECoT | text/object/EEF reasoning 중심 vs future visual frame 중심 |
+| MolmoAct | MolmoAct는 depth/visual trace/action token, CoT-VLA는 future frame visual goal |
+| ECoT-Lite | CoT-VLA는 test-time visual reasoning을 생성, ECoT-Lite는 reasoning을 training signal로 줄이는 방향 |
+
+## 주의점
+
+- Future frame prediction이 action feasibility를 자동으로 보장하지는 않는다.
+- Visual goal은 contact force, proprioception, hidden state를 직접 담기 어렵다.
+- Generated frame 품질과 action decoder coupling이 성능 병목이 될 수 있다.

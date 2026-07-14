@@ -31,9 +31,19 @@ VLA는 visual observation과 language instruction을 받아 robot action을 생�
 
 | Survey | 핵심 질문 |
 | --- | --- |
-| [MolmoB0T](./molmobot-large-scale-simulation/) | real robot demonstration 없이 procedural simulation data만으로 DROID/RB-Y1 manipulation에 zero-shot transfer할 수 있는가 |
+| [MolmoB0T](./molmo/molmobot-large-scale-simulation/) | real robot demonstration 없이 procedural simulation data만으로 DROID/RB-Y1 manipulation에 zero-shot transfer할 수 있는가 |
 | [GR00T Model Family](./groot/) | real, synthetic, human video, neural-generated data를 하나의 humanoid foundation model training recipe로 어떻게 섞는가 |
 | [PI Model Family](./pi/) | real robot data 중심의 flow/action-token route가 simulation-only route와 어떤 baseline 관계를 만드는가 |
+| [Molmo Model Family](./molmo/) | open action reasoning model이 spatial reasoning과 deployment data를 어떻게 결합하는가 |
+
+## Reasoning / Action Reasoning 축
+
+| Survey | 핵심 질문 |
+| --- | --- |
+| [ECoT Reasoning Family](./ecot/) | explicit embodied CoT, visual CoT, training-only reasoning, adaptive spatial reasoning이 시간 순서로 어떻게 이어지는가 |
+| [ECoT-Lite](./ecot/ecot-lite-efficient-embodied-reasoning/) | CoT reasoning을 test-time에 생성하지 않아도 representation/curriculum signal로 성능을 유지할 수 있는가 |
+| [MolmoAct](./molmo/molmoact-action-reasoning-models/) | text CoT 대신 depth perception token과 visual reasoning trace로 robot action을 spatially ground할 수 있는가 |
+| [MolmoAct2](./molmo/molmoact2-real-world-deployment/) | action reasoning model을 real-world deployment에 맞게 flow expert, OpenFAST, adaptive depth reasoning으로 빠르게 만들 수 있는가 |
 
 ## Continuous Action Generation 축
 

@@ -1,0 +1,62 @@
+---
+title: Original ECoT
+description: Robotic Control via Embodied Chain-of-Thought Reasoning 논문 survey note.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# Original ECoT
+
+<SectionFeedback page="Original ECoT" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Robotic Control via Embodied Chain-of-Thought Reasoning |
+| 저자/그룹 | Michał Zawalski, William Chen, Karl Pertsch, Oier Mees, Chelsea Finn, Sergey Levine |
+| 공개 | arXiv:2407.08693, 2024-07 |
+| 링크 | https://arxiv.org/abs/2407.08693 |
+| 태그 | embodied chain-of-thought, OpenVLA, robot reasoning, synthetic reasoning data |
+
+## 한 줄 요약
+
+Original ECoT는 VLA가 action을 바로 예측하기 전에 plan, subtask, motion, object bounding box, end-effector position 같은 robot-grounded reasoning을 생성하도록 학습해 generalization과 interpretability를 높이는 출발점 논문이다.
+
+## 핵심 아이디어
+
+Naive CoT prompting은 robot policy에 잘 맞지 않는다. 이유는 일반 LLM식 semantic reasoning이 robot state, object pose, end-effector motion 같은 물리적 grounding을 충분히 담지 못하기 때문이다. ECoT는 reasoning token을 다음처럼 robot-specific intermediate representation으로 바꾼다.
+
+| Reasoning | 역할 |
+| --- | --- |
+| Plan / subtask | instruction을 실행 가능한 단계로 분해 |
+| Motion description | 어떤 방향/대상으로 움직일지 설명 |
+| Object bounding box | language reference를 visual object grounding으로 연결 |
+| End-effector position | action 전 robot state와 target motion을 연결 |
+
+## 결과와 위치
+
+논문 abstract 기준 ECoT는 추가 robot training data 없이 OpenVLA의 challenging generalization tasks absolute success rate를 28%p 높인다. 또한 reasoning trace가 사람이 policy failure를 해석하고 natural language로 고치는 데 도움이 된다고 주장한다.
+
+이 논문은 이후 세 갈래를 만든다.
+
+| 후속 갈래 | 대표 논문 |
+| --- | --- |
+| reasoning data scaling | [RAD](./rad-action-free-reasoning/) |
+| reasoning latency reduction | [ECoT-Lite](../ecot-lite-efficient-embodied-reasoning/), [Fast ECoT](../fast-ecot-thoughts-reuse/) |
+| visual/spatial reasoning | [CoT-VLA](../cot-vla-visual-chain-of-thought/), [MolmoAct](../../molmo/molmoact-action-reasoning-models/) |
+
+## 주의점
+
+- 성능 이득과 interpretability를 함께 주장하지만, reasoning trace가 실제 action decision의 causal explanation인지까지는 이 논문만으로 충분히 보장되지 않는다.
+- Test-time에 reasoning을 autoregressive하게 생성하므로 latency가 deployment bottleneck이 된다.
+- 이후 ERVLA는 explicit CoT prefix가 scale에서 불안정할 수 있다고 재해석한다.
+
+## 후속 deep dive 체크리스트
+
+- PDF 기준 figure/table inventory 작성
+- ECoT synthetic reasoning data generation pipeline 확인
+- OpenVLA fine-tuning setup, task split, success metric 확인
+- human correction / failure interpretability experiment 세부 확인

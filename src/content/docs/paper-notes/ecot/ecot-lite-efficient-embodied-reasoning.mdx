@@ -1,0 +1,110 @@
+---
+title: ECoT-Lite
+description: embodied chain-of-thought reasoning을 training signal로 분해해 빠른 VLA inference를 유지하는 survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# ECoT-Lite
+
+<SectionFeedback page="ECoT-Lite" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Training Strategies for Efficient Embodied Reasoning |
+| 저자/그룹 | William Chen, Suneel Belkhale, Suvir Mirchandani, Oier Mees, Danny Driess, Karl Pertsch, Sergey Levine |
+| 공개 | arXiv:2505.08243, v1 2025-05-13, CoRL 2025 |
+| 링크 | [arXiv](https://arxiv.org/abs/2505.08243), [HTML](https://arxiv.org/html/2505.08243v1), [project](https://ecot-lite.github.io) |
+| 태그 | embodied reasoning, ECoT, VLA, reasoning dropout, training recipe |
+
+## 한 줄 요약
+
+ECoT-Lite는 ECoT가 성능을 올리는 이유를 representation learning, curriculum, expressivity 세 가설로 분해하고, test-time reasoning을 생성하지 않아도 일반화 성능을 상당 부분 유지하는 lightweight training recipe를 제안한다.
+
+![ECoT-Lite overview](/ecot/ecot-lite-fig01-overview.png)
+
+## 문제의식
+
+원조 ECoT는 action 전에 plan, subtask, motion, bounding box, end-effector position 같은 reasoning을 생성하게 해 VLA generalization을 높인다. 그러나 reasoning annotation이 필요하고, inference step마다 긴 reasoning text를 autoregressive decode하므로 속도가 느려진다. 논문은 conventional embodied CoT가 1-1.2 Hz 수준인 반면, ECoT-Lite recipe는 standard VLA 수준인 3.5+ Hz로 빠르다고 보고한다.
+
+## 왜 ECoT가 도움이 되는가
+
+| 가설 | 의미 | ECoT-Lite에서의 실험적 분리 |
+| --- | --- | --- |
+| Representation learning | reasoning target을 예측하면서 policy representation이 task-relevant feature에 더 민감해짐 | reasoning pre-training, co-training, reasoning dropout |
+| Learning curriculum | 쉬운 reasoning target을 먼저/함께 보며 observation-to-action mapping을 단계적으로 학습 | reasoning scaffolding |
+| Effective expressivity | reasoning token이 sequence length와 compute를 늘려 model capacity처럼 작동 | thinking tokens |
+
+## ECoT-Lite Recipes
+
+![ECoT-Lite training recipes](/ecot/ecot-lite-fig03-recipes.png)
+
+| Recipe | Training | Inference | 해석 |
+| --- | --- | --- | --- |
+| Full ECoT | reasoning + action을 모두 autoregressive 생성 | reasoning 생성 후 action | 성능은 높지만 느림 |
+| Reasoning pre-training | 먼저 reasoning만 학습, 이후 action 학습 | standard VLA처럼 action만 | reasoning을 auxiliary representation pretrain으로 사용 |
+| Reasoning co-training | batch 절반은 reasoning objective, 절반은 action objective | action만 | auxiliary loss route |
+| Reasoning dropout | reasoning+action sequence를 학습하되 일부 sample은 reasoning을 dropout | action만 또는 reasoning on/off 비교 가능 | training에서는 reasoning을 사용하고 test에서는 제거 |
+| Reasoning scaffolding | reasoning을 context로 주지만 loss는 주지 않음 | action만 | curriculum/scaffold 역할 검증 |
+| Thinking tokens | semantic 없는 `<THINKING>` token을 추가 | token compute 증가 | expressivity/sequence length 효과 분리 |
+
+## Experiments
+
+| 항목 | 설정 |
+| --- | --- |
+| Environments | LIBERO-90 simulation, BridgeData V2 real-robot-style evaluation |
+| Train data | public LIBERO and Bridge V2 training datasets |
+| Comparisons | Standard VLA, Full ECoT, ECoT-Lite recipes |
+| 규모 | 논문 기준 121,500 simulated trials, 444 real-robot trials |
+
+LIBERO-90 결과는 다음과 같다.
+
+| Method | Standard | Perturb | Perturb + Distractors | Average |
+| --- | ---: | ---: | ---: | ---: |
+| Full ECoT | 90.8 | 70.8 | 68.2 | 76.6 |
+| Standard VLA | 82.0 | 61.4 | 58.9 | 67.4 |
+| Reasoning Pre-training | 87.1 | 67.6 | 63.9 | 72.8 |
+| Reasoning Co-training | 84.2 | 63.1 | 60.5 | 69.3 |
+| Reasoning Dropout | 89.4 | 70.8 | 69.1 | 76.4 |
+| Reasoning Scaffolding | 84.1 | 65.4 | 61.3 | 70.3 |
+| 100 Thinking Tokens | 79.5 | 58.3 | 54.0 | 63.9 |
+| 200 Thinking Tokens | 79.8 | 56.8 | 54.4 | 63.7 |
+| 300 Thinking Tokens | 78.9 | 57.2 | 54.0 | 63.4 |
+
+핵심 결론은 reasoning dropout이 Full ECoT와 거의 같은 average 성능을 내면서 inference에서는 reasoning을 제거할 수 있다는 점이다. Thinking token은 성능을 높이지 못해, 단순 sequence length/compute 증가만으로 ECoT 이득을 설명하기 어렵다.
+
+## Figure / Table Inventory
+
+| 항목 | 내용 | 노트 반영 |
+| --- | --- | --- |
+| Figure 1 | ECoT-Lite overview: Full ECoT 대비 빠른 lightweight recipes | overview 이미지 |
+| Figure 2 | embodied reasoning step examples | family map에 반영 |
+| Figure 3 | pre/co-training, dropout, scaffolding, thinking token recipes | recipe 이미지 |
+| Figure 4 | LIBERO/Bridge reasoning examples | dataset/eval 설명 |
+| Figure 5 | LIBERO-90 full method comparison | result 표로 재작성 |
+| Table 1 | LIBERO-90 results | result 표 |
+| Table 2 | Bridge per-task results | 세부 전사는 후속 |
+| Figure 6-15 | appendix examples, prompts, task prompts, reasoning generation prompts | appendix inventory |
+
+## 이 논문의 위치
+
+ECoT-Lite는 “reasoning을 잘 생성하면 좋은가?”보다 더 실용적인 질문을 던진다. 실제 robot policy에서는 latency와 control frequency가 중요하므로, reasoning을 꼭 test-time output으로 생성해야 하는지 따져야 한다. 이 점에서 ECoT-Lite는 후속 ERVLA의 “CoT를 representation-shaping supervision으로 쓰고 action은 직접 예측한다”는 방향과 연결된다.
+
+## 한계와 주의
+
+- LIBERO/Bridge 중심이므로 dexterous hand, humanoid, tactile/contact-rich tasks까지 일반화한다고 단정하면 안 된다.
+- Reasoning annotation pipeline 자체의 품질과 bias가 policy representation에 들어간다.
+- Reasoning dropout은 test-time interpretability를 희생한다. 성능과 해석 가능성 사이 trade-off를 별도 평가해야 한다.
+
+## 연결
+
+| 연결 | 이유 |
+| --- | --- |
+| [ECoT Family](../) | ECoT 계열 전체에서 latency/representation route의 중심 논문 |
+| [Original ECoT](../embodied-chain-of-thought/) | Full ECoT baseline과 reasoning format의 출발점 |
+| [MolmoAct](../../molmo/molmoact-action-reasoning-models/) | language ECoT가 아니라 spatial depth/trace reasoning을 직접 생성하는 다른 branch |
+| [MolmoAct2](../../molmo/molmoact2-real-world-deployment/) | adaptive depth reasoning으로 reasoning cost를 줄이는 deployment-oriented branch |

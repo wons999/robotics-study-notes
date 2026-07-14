@@ -1,0 +1,123 @@
+---
+title: MolmoAct
+description: 3D spatial reasoning trace를 action prediction 앞에 두는 open Action Reasoning Model survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# MolmoAct
+
+<SectionFeedback page="MolmoAct" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | MolmoAct: Action Reasoning Models that can Reason in Space |
+| 저자/그룹 | Jason Lee, Jiafei Duan, Haoquan Fang, Yuquan Deng, Shuo Liu, Boyang Li, Bohan Fang, Jieyu Zhang, Yi Ru Wang, Sangho Lee, Winson Han, Wilbert Pumacay, Angelica Wu, Rose Hendrix, Karen Farley, Eli VanderBilt, Ali Farhadi, Dieter Fox, Ranjay Krishna |
+| 공개 | arXiv:2508.07917, v1 2025-08-11, v4 2025-09-18 |
+| 링크 | [arXiv](https://arxiv.org/abs/2508.07917), [HTML](https://arxiv.org/html/2508.07917), [blog](https://allenai.org/blog/molmoact), [code](https://github.com/allenai/MolmoAct), [models/data](https://huggingface.co/allenai) |
+| 태그 | Action Reasoning Model, VLA, depth perception token, visual reasoning trace, open robotics |
+
+## 한 줄 요약
+
+MolmoAct는 RGB observation과 language instruction을 바로 action token으로 매핑하지 않고, depth perception token과 image-space visual reasoning trace를 먼저 생성한 뒤 action token을 예측하는 open Action Reasoning Model이다.
+
+![MolmoAct overview](/molmoact/molmoact-fig01-overview.png)
+
+## 문제의식
+
+기존 VLA는 language token으로 task를 분해하거나 바로 action을 내지만, 로봇 조작에서 필요한 3D 거리, end-effector path, contact 전 위치 관계를 언어만으로 표현하기 어렵다. MolmoAct의 핵심 주장은 robot reasoning이 text CoT에 머무르면 spatial/temporal detail이 손실되므로, reasoning 자체를 depth token과 trajectory trace처럼 공간적인 중간 표현으로 만들어야 한다는 것이다.
+
+| 기존 병목 | MolmoAct의 대응 |
+| --- | --- |
+| RGB-only VLA는 depth/3D 구조를 직접 다루기 어렵다 | Depth Anything V2 기반 specialist가 만든 depth code를 VQVAE-style depth perception token으로 distill |
+| text subtask reasoning은 end-effector motion을 정밀하게 담기 어렵다 | future horizon에서 subsample한 image-space waypoint polyline을 visual reasoning trace로 예측 |
+| action token은 불투명해서 steering이 어렵다 | trace를 시각화하고 사용자가 visual trace를 직접 제시해 action을 steer |
+| open-weight만 있고 data/code가 없는 VLA는 검증이 어렵다 | model weights, training code, MolmoAct Dataset, action reasoning dataset을 공개 |
+
+## Method
+
+MolmoAct는 세 개의 autoregressive reasoning chain을 사용한다.
+
+| Chain | 출력 | 역할 |
+| --- | --- | --- |
+| Depth Perception Tokens | dense depth를 quantized token sequence로 표현 | scene의 2.5D/3D 구조를 language model token space에 넣음 |
+| Visual Reasoning Trace Tokens | 0-4개 line segment의 image-space waypoint polyline | embodiment-agnostic mid-level spatial plan |
+| Action Tokens | discretized robot control tokens | 실제 end-effector/gripper command 생성 |
+
+Action tokenization은 각 action dimension을 dataset quantile 기준으로 normalize하고 1-99 percentile 범위에서 256 bins로 discretize한다. 논문은 Qwen2 tokenizer의 마지막 256개 token을 bin 순서에 맞게 monotonically 배정해, 인접 bin의 token embedding이 완전히 무작위인 기존 tail-token mapping보다 더 부드러운 초기화를 얻는다고 설명한다.
+
+## Dataset
+
+| 데이터 | 역할 |
+| --- | --- |
+| Open X-Embodiment subset | BC-Z, BridgeData V2, RT-1 중심 pre-training robot data |
+| Action reasoning data | depth perception, visual trace, action token을 포함한 structured reasoning target |
+| Auxiliary robot data | depth/trace auxiliary objective와 trajectory-conditioned action data |
+| MolmoAct Dataset | in-house 10K+ high-quality robot trajectories, home/tabletop manipulation |
+| Multimodal web data | image captioning, 2D pointing 등 VLM capability 보존 |
+
+논문 본문과 blog 기준 MolmoAct Dataset은 약 10K robot episodes, 평균 trajectory length 112 timesteps, home environments와 tabletop settings를 포함한다. Blog는 3개월 동안 수집한 22시간 curated in-house data, 10.6K trajectories로 설명한다.
+
+## Training Recipe
+
+| Stage | 내용 |
+| --- | --- |
+| Pre-training | Molmo backbone을 robot reasoning/objective와 multimodal web data에 맞춰 학습 |
+| Mid-training | MolmoAct Dataset을 action reasoning data와 trajectory-conditioned samples로 변환해 generalist skill 보강 |
+| Post-training | LIBERO, real-world single-arm/bimanual 등 downstream embodiment/task에 LoRA fine-tuning |
+
+Blog 기준 pre-training은 26.3M samples, 256 H100에서 약 하루, fine-tuning은 64 H100에서 약 2시간으로 보고된다. 논문 abstract 기준 MolmoAct Dataset mid-training은 base model 대비 평균 5.5% 성능 개선을 제공한다.
+
+## Experiments and Results
+
+| 평가 | 결과 |
+| --- | --- |
+| SimplerEnv Visual Matching | MolmoAct-7B-D-Pretrain 70.5% zero-shot accuracy |
+| SimplerEnv Variant Aggregation | blog 기준 OOD task success 72.1% |
+| LIBERO | 86.6% average success, ThinkAct 대비 long-horizon +6.3% |
+| Real-world fine-tuning | π0-FAST 대비 task progression +10.0% single-arm, +22.7% bimanual |
+| OOD generalization | baselines 대비 +23.3% |
+| Instruction following / steering | human-preference Elo에서 상위, visual trace steering 가능 |
+
+해석할 때 주의할 점은 MolmoAct의 성능 향상이 architecture만으로 설명되지 않는다는 것이다. Depth token/visual trace architecture, MolmoAct Dataset, action reasoning data formulation, mid-training recipe가 함께 작동한다.
+
+## Figure / Table Inventory
+
+| 항목 | 내용 | 노트 반영 |
+| --- | --- | --- |
+| Figure 1 | MolmoAct overview: data, input, depth/trace/action reasoning, deployment/steerability | overview 이미지 |
+| Figure 2 | pre-training, post/mid-training, inference training process | training recipe 요약 |
+| Figure 3 | pre-training mixture distribution | dataset/training mixture 설명 |
+| Figure 4 | MolmoAct Dataset examples and verb distribution | dataset 설명 |
+| Figure 5 | real-world OpenVLA/π0-FAST/MolmoAct comparison | result 요약 |
+| Figure 6 | OOD generalization and MolmoAct Dataset ablation | result 요약 |
+| Figure 7-9 | line steerability, language instruction, open steering | steerability 설명 |
+| Table 1-2 | SimplerEnv and LIBERO results | 핵심 수치 재작성 |
+| Table 3-7 | architecture/training/action vocabulary/LIBERO post-training hyperparameters | implementation notes |
+| Table 8-24+ | prompt/evaluation/task/data appendix | inventory로 확인, 세부 deep dive는 후속 |
+
+## Code-Level Check
+
+공식 GitHub `allenai/MolmoAct`는 2026-07-14 기준 public repo로 확인했다. README에는 `SteerSimplerEnv`, `experiments`, `launch_scripts`, `olmo`, `preprocess`, `scripts` 폴더가 있고, datasets와 models가 Hugging Face에 공개되어 있다. README release notes는 MolmoAct Dataset, Pre-training Mixture, Mid-training Mixture와 `MolmoAct-7B-D`, `MolmoAct-7B-O`, pretrain checkpoints를 연결한다.
+
+이 노트에서는 코드 경로별 class/function deep dive까지는 아직 하지 않았다. 공개 repo가 있으므로 다음 deep dive에서는 `preprocess`, training launch scripts, action tokenization, SimplerEnv/LIBERO evaluation wrapper를 실제 파일 기준으로 확인해야 한다.
+
+## 한계와 주의
+
+- Depth token과 visual trace는 해석 가능성을 주지만, trace가 항상 causal하게 action decision을 설명하는지는 별도 faithfulness 검증이 필요하다.
+- Visual reasoning trace는 image-plane plan이므로 3D/contact-rich dynamics 전체를 직접 보장하지 않는다.
+- MolmoAct1은 reasoning chain을 매번 autoregressive하게 생성하기 때문에 latency가 MolmoAct2의 주요 개선 대상이 된다.
+
+## 연결
+
+| 연결 | 이유 |
+| --- | --- |
+| [MolmoAct2](../molmoact2-real-world-deployment/) | depth/trace/action reasoning을 real-world deployment용 flow expert와 adaptive depth reasoning으로 재설계 |
+| [Molmo Family](../) | MolmoAct/MolmoAct2와 Molmo2-ER 흐름을 함께 보는 family overview |
+| [ECoT Family](../ecot/) | language/text CoT에서 spatial/action reasoning으로 넘어가는 큰 흐름 |
+| [ECoT-Lite](../ecot/ecot-lite-efficient-embodied-reasoning/) | test-time reasoning latency를 줄이는 대안 recipe |
+| [PI Model Family](../../pi/) | FAST/action tokenization과 flow/action expert 계열 비교 |

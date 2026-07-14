@@ -1,0 +1,50 @@
+---
+title: Fast ECoT
+description: Efficient Embodied Chain-of-Thought via Thoughts Reuse 논문 survey note.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# Fast ECoT
+
+<SectionFeedback page="Fast ECoT" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Fast ECoT: Efficient Embodied Chain-of-Thought via Thoughts Reuse |
+| 저자/그룹 | Zhekai Duan, Yuan Zhang, Shikai Geng, Gaowen Liu, Joschka Boedecker, Chris Xiaoxuan Lu |
+| 공개 | arXiv:2506.07639, 2025-06 |
+| 링크 | https://arxiv.org/abs/2506.07639 |
+| 태그 | ECoT acceleration, cache, parallel reasoning, async scheduler |
+
+## 한 줄 요약
+
+Fast ECoT는 ECoT reasoning 자체를 제거하지 않고, timestep 사이에서 반복되는 high-level thoughts를 cache/reuse하고 modular reasoning step을 parallelize하며 asynchronous scheduler로 action responsiveness를 높이는 inference-time acceleration 방법이다.
+
+## 문제의식
+
+ECoT는 intermediate reasoning 덕분에 성능과 해석 가능성을 얻지만, sequential autoregressive token generation 때문에 real-time robot control에는 느리다. ECoT-Lite가 reasoning을 training-only signal로 줄이는 방향이라면, Fast ECoT는 reasoning을 유지한 채 시스템적으로 빠르게 만드는 방향이다.
+
+## 방법
+
+| 구성 | 역할 |
+| --- | --- |
+| Thought reuse | 연속 timestep에서 크게 변하지 않는 high-level reasoning을 cache/reuse |
+| Modular reasoning parallelization | 독립적인 reasoning component 생성을 병렬화 |
+| Asynchronous scheduler | reasoning generation과 action decoding을 decouple해 responsiveness 개선 |
+
+논문 abstract 기준 이 방법은 model change나 additional training 없이 기존 VLA/ECoT pipeline에 붙일 수 있다.
+
+## 결과와 위치
+
+Fast ECoT는 LIBERO simulation과 real-world tasks에서 comparable/improved task success와 reasoning faithfulness를 유지하면서 latency를 최대 7.5% 줄인다고 보고한다. ECoT family 안에서는 “explicit reasoning을 보존하는 deployment optimization”에 해당한다.
+
+## 주의점
+
+- 7.5% latency reduction은 ECoT-Lite나 MolmoAct2처럼 architecture/training을 바꾸는 방법보다 보수적인 개선폭이다.
+- Scene이 빠르게 변하거나 high-level reasoning이 자주 바뀌는 task에서는 reuse 이득이 줄 수 있다.
+- Reasoning faithfulness를 유지한다고 해도, cached reasoning이 stale해지는 조건을 별도로 관리해야 한다.

@@ -1,0 +1,129 @@
+---
+title: MolmoAct2
+description: real-world deployment를 목표로 MolmoAct를 flow expert, OpenFAST, adaptive depth reasoning으로 확장한 survey.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# MolmoAct2
+
+<SectionFeedback page="MolmoAct2" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | MolmoAct2: Action Reasoning Models for Real-world Deployment |
+| 저자/그룹 | Haoquan Fang, Jiafei Duan, Donovan Clay, Sam Wang, Shuo Liu, Weikai Huang, Xiang Fan, Wei-Chuan Tsai, Shirui Chen, Yi Ru Wang, Shanli Xing, Jaemin Cho, Jae Sung Park, Ainaz Eftekhar, Peter Sushko, Karen Farley, Angad Wadhwa, Cole Harrison, Winson Han, Ying-Chun Lee, Eli VanderBilt, Rose Hendrix, Suveen Ellawela, Lucas Ngoo, Joyce Chai, Zhongzheng Ren, Ali Farhadi, Dieter Fox, Ranjay Krishna |
+| 공개 | arXiv:2605.02881, v1 2026-05-04, v2 2026-05-08 |
+| 링크 | [arXiv](https://arxiv.org/abs/2605.02881), [blog](https://allenai.org/blog/molmoact2), [code](https://github.com/allenai/molmoact2), [models/data](https://huggingface.co/allenai) |
+| 태그 | open VLA, flow matching, KV-cache conditioning, adaptive depth, bimanual dataset |
+
+## 한 줄 요약
+
+MolmoAct2는 MolmoAct의 spatial reasoning을 유지하되, Molmo2-ER backbone, open FAST tokenizer, flow-matching action expert, per-layer KV-cache conditioning, adaptive depth reasoning을 결합해 실제 로봇 배포 속도와 성능을 개선한 open VLA다.
+
+![MolmoAct2 overview](/molmoact/molmoact2-fig01-overview.png)
+
+## MolmoAct 대비 개선 축
+
+| 축 | MolmoAct | MolmoAct2 |
+| --- | --- | --- |
+| Reasoning backbone | Molmo 기반 ARM | Molmo2-ER: 3.3M embodied-reasoning corpus로 specialize-then-rehearse |
+| Data | 10K+ MolmoAct Dataset + OXE subset | BimanualYAM 720h, filtered DROID, SO100/101, BC-Z/Fractal/Bridge 등 |
+| Action interface | discrete action token 중심 | pretrain은 discrete OpenFAST token, post/fine-tune은 flow-matching continuous action expert |
+| Conditioning | autoregressive reasoning chain | per-layer KV conditioning bridge로 VLM context를 action expert에 전달 |
+| Depth reasoning | depth token을 매번 예측 | MolmoAct2-Think: scene change region만 adaptive depth token re-prediction |
+| Latency | blog 기준 6,700 ms/action call | base 180 ms, Think 790 ms/action call; predecessor 대비 최대 37x faster |
+
+## Dataset
+
+| 데이터 | 규모/역할 |
+| --- | --- |
+| MolmoAct2-BimanualYAM | 720 hours teleoperated bimanual YAM trajectories, open bimanual tabletop/household data |
+| MolmoAct2-DROID | quality-filtered Franka subset of DROID |
+| MolmoAct2-SO100/101 | low-cost SO-100/SO-101 community LeRobot subset |
+| Fractal / BC-Z / Bridge | tokenizer/control vocabulary coverage 확장 |
+| Molmo2-ER corpus | 3.3M embodied-reasoning samples, pointing/object detection/spatial/multi-image/video reasoning |
+
+Blog는 MolmoAct1이 22시간/10.6K trajectories였던 반면 MolmoAct2-BimanualYAM은 700시간 이상으로 30x 이상의 robot data를 제공한다고 설명한다. 또한 instruction labels를 open VLM으로 re-annotate해 unique labels를 약 71K에서 146K로 늘렸다고 보고한다.
+
+## Model Architecture
+
+MolmoAct2는 세 단계 training pipeline을 둔다.
+
+| Stage | 역할 |
+| --- | --- |
+| MolmoAct2-Pretrain | Molmo2-ER를 discrete autoregressive robot policy로 적응. state token + OpenFAST action token을 next-token prediction으로 학습 |
+| MolmoAct2-Post | continuous flow-matching action expert를 graft하고 VLM per-layer KV conditioning으로 연결 |
+| Embodiment fine-tuning | YAM, DROID, SO100/101, LIBERO 등 target embodiment/task에 post checkpoint를 빠르게 적응 |
+
+OpenFAST tokenizer는 one-second action trajectory를 frequency-domain transform, quantization, BPE로 2048-token action vocabulary에 매핑한다. Table 2 기준 tokenizer training mixture는 BimanualYAM 30%, SO100/101 30%, DROID 30%, Fractal 3.33%, BC-Z 3.33%, Bridge 3.33%다.
+
+Flow expert는 DiT-style transformer이며, flow matching objective로 continuous action chunk를 denoise한다. 논문은 final hidden state 하나로 VLM context를 압축하지 않고, per-layer KV conditioning을 사용해 action expert가 VLM의 층별 context를 더 풍부하게 쓰도록 한다.
+
+## MolmoAct2-Think
+
+MolmoAct2-Think는 depth token을 완전히 제거하지 않고 adaptive하게 쓴다. 매 timestep마다 전체 depth grid를 다시 예측하는 대신, scene change가 있는 cell만 새 depth token을 생성하고 static region은 cached code를 재사용한다. Blog 기준 full dense depth-token prediction 대비 17% speedup을 보고한다.
+
+이 설계는 ECoT-Lite/ERVLA와 같은 “test-time reasoning 제거”와는 다르다. MolmoAct2-Think는 reasoning을 유지하되, 필요한 region에만 depth reasoning을 써서 latency를 줄이는 hybrid route다.
+
+## Experiments and Results
+
+| 평가 | 주요 결과 |
+| --- | --- |
+| Molmo2-ER embodied reasoning | 13 benchmarks overall avg 63.8, Gemini-ER 1.5 Thinking 대비 +2.5, base Molmo2 대비 +17 |
+| MolmoSpace | MolmoAct2-DROID average 37.7 vs π0.5-DROID 34.5 |
+| MolmoBot simulation | MolmoAct2-DROID average 20.6 vs π0.5-DROID 10.0 |
+| Real-world DROID/Franka zero-shot | 5 tasks average 87.1 vs MolmoBot 48.4, π0.5-DROID 45.2 |
+| SO100/101 zero-shot | average 56.7 vs π0-SO100/101 45.3, SmolVLA 2.3 |
+| LIBERO post-training | blog 기준 MolmoAct2 97.2, MolmoAct2-Think 98.1 |
+| Third-party Cortex bimanual | average score 0.51 vs OpenVLA-OFT 0.36, π0.5 0.32, Cosmos Policy 0.16, X-VLA 0.05 |
+
+Real-world DROID/Franka per-task result는 다음과 같다.
+
+| Model | Apple on plate | Pipette in tray | Red cube in tape roll | Knife in box | Objects in bowl | Avg |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| π0.5-DROID | 66.7 | 33.3 | 53.3 | 26.7 | 46.2 | 45.2 |
+| MolmoBot | 86.7 | 53.3 | 33.3 | 40.0 | 28.6 | 48.4 |
+| MolmoAct2-DROID | 100.0 | 86.7 | 93.3 | 93.3 | 62.0 | 87.1 |
+
+## Figure / Table Inventory
+
+| 항목 | 내용 | 노트 반영 |
+| --- | --- | --- |
+| Figure 1 | MolmoAct2 data/model/deployment overview | overview 이미지 |
+| Figure 2 | training data mixture | dataset 섹션 |
+| Figure 3 | BimanualYAM collection setup | dataset 섹션 |
+| Figure 4 | MolmoAct2 architecture, state/action token, flow expert, KV conditioning | architecture 섹션 |
+| Figure 5 | MolmoAct2-Think adaptive depth reasoning | MolmoAct2-Think 섹션 |
+| Table 1 | Molmo2/Molmo2-ER/Tulu-3 multimodal web data corpus | dataset 섹션 |
+| Table 2 | OpenFAST tokenizer embodiment mixture | tokenizer 표로 반영 |
+| Table 3 | embodied reasoning benchmark results | result 섹션 |
+| Table 4-7 | MolmoSpace, simulation held-out, DROID real-world, SO100 results | result 섹션 |
+| Appendix tables | hyperparameters, ablations, latency, rollout quality | 확인했지만 세부 전사는 후속 deep dive |
+
+## Code-Level Check
+
+공식 GitHub `allenai/molmoact2`와 blog의 code/data/model 링크를 확인했다. Blog는 2026-05-28 update에서 full code, training data, fine-tuning scripts, evaluation rollouts, OpenFAST tokenizer training recipe, Hugging Face LeRobot integration이 공개되었다고 설명한다.
+
+이 노트에서는 repo 파일별 구현 확인은 아직 README/code surface 수준이다. 다음 단계에서는 flow expert, KV conditioning adapter, tokenizer training, LeRobot integration 경로를 실제 코드 기준으로 확인해야 한다.
+
+## 한계와 주의
+
+논문/blog가 직접 밝힌 약점은 두 가지다.
+
+- Continuous closed-loop reactive policy가 아니라 10-30 moves chunk를 계획하고 실행하므로, chunk 중간 unexpected obstacle에 즉시 재계획하지 못한다.
+- Out-of-the-box는 주로 SO-100, bimanual YAM, Franka처럼 많이 학습한 setup에 한정되며, humanoid나 dexterous hand에는 추가 training이 필요하다.
+
+## 연결
+
+| 연결 | 이유 |
+| --- | --- |
+| [MolmoAct](../molmoact-action-reasoning-models/) | predecessor: depth/trace/action reasoning의 원형 |
+| [Molmo Family](../) | MolmoAct/MolmoAct2와 Molmo2-ER 흐름을 함께 보는 family overview |
+| [ECoT-Lite](../ecot/ecot-lite-efficient-embodied-reasoning/) | reasoning latency를 줄이는 다른 route |
+| [ECoT Family](../ecot/) | explicit reasoning, training-only reasoning, adaptive reasoning의 위치 비교 |
+| [PI Model Family](../../pi/) | FAST/OpenFAST, flow matching action expert, continuous action interface 비교 |

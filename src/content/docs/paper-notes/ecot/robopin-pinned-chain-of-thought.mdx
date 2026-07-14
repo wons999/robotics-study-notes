@@ -1,0 +1,52 @@
+---
+title: RoboPIN
+description: Grounded Embodied Reasoning via Pinned Chain-of-Thought 논문 survey note.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# RoboPIN
+
+<SectionFeedback page="RoboPIN" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | RoboPIN: Grounded Embodied Reasoning via Pinned Chain-of-Thought |
+| 저자/그룹 | Yaoting Huang, Yifu Yuan, Linqi Han, Chengwen Li, Shuoheng Zhang, Xianze Yao, Hongyao Tang, Yan Zheng, Jianye Hao |
+| 공개 | arXiv:2606.15753, 2026-06 |
+| 링크 | https://arxiv.org/abs/2606.15753 |
+| 태그 | pinned chain-of-thought, visual grounding, multi-view reasoning, process supervision |
+
+## 한 줄 요약
+
+RoboPIN은 text-only 또는 coordinate-augmented CoT에서 entity reference가 drift하는 문제를 줄이기 위해, reasoning step마다 task-relevant entity를 visual anchor에 pinning하는 Pinned Chain-of-Thought를 제안한다.
+
+## 문제의식
+
+Embodied reasoning은 multi-step reasoning 동안 “그 물체”가 계속 같은 entity를 가리켜야 한다. 하지만 text-only CoT는 entity reference가 암묵적이고, multi-view 환경에서는 같은 object가 view마다 다르게 보이므로 grounding drift가 커진다.
+
+## Method
+
+| 구성 | 역할 |
+| --- | --- |
+| Reasoning anchor | entity name, unique identity, view index, spatial grounding을 묶어 reasoning step에 연결 |
+| Pinned CoT | 각 reasoning step이 visual evidence에 명시적으로 연결됨 |
+| Automated data generation | PinCoT 형식 reasoning dataset 구축 |
+| Three-stage post-training | embodied knowledge, structured reasoning, process-supervised alignment를 순차 주입 |
+
+## 결과와 위치
+
+arXiv abstract 기준 RoboPIN은 14개 embodied spatial reasoning, multi-view reasoning, pointing benchmarks에서 4B parameter 모델로 strongest 7B baseline Mimo-Embodied 대비 12% average improvement를 보고한다. ECoT family 안에서는 action policy보다 embodied VLM reasoning/grounding fidelity를 보강하는 branch에 가깝다.
+
+## Pinocchio와의 차이
+
+RoboPIN은 reasoning step이 visual evidence에 grounded되도록 구조를 바꾼다. Pinocchio는 reasoning이 실제 decision process와 faithful한지를 learned critic과 post-training으로 평가/개선한다. 둘 다 “reasoning이 그럴듯한 말인지, 실제로 근거와 연결되는지”를 묻지만, RoboPIN은 grounding structure, Pinocchio는 faithfulness evaluation/post-training에 초점이 있다.
+
+## 주의점
+
+- RoboPIN은 VLA action control 자체보다 embodied reasoning benchmark 중심이다.
+- Anchor annotation/generation pipeline이 복잡하며, robot policy action으로의 직접 연결은 별도 확인이 필요하다.

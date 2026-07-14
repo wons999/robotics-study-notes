@@ -1,0 +1,54 @@
+---
+title: Pinocchio
+description: Do Vision-Language-Action Models Mean What They Say? 논문 survey note.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# Pinocchio
+
+<SectionFeedback page="Pinocchio" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Do Vision-Language-Action Models Mean What They Say? On the Role of Faithfulness in Embodied Reasoning |
+| 저자/그룹 | Matthew Foutter, Matteo Cercola, Lena Wild, Yunshan Wang, Michelle Li, Daniele Gammelli, Marco Pavone |
+| 공개 | arXiv:2607.04681, 2026-07 |
+| 링크 | https://arxiv.org/abs/2607.04681, https://mjf-su.github.io/pinocchio/ |
+| 태그 | faithfulness, embodied reasoning, learned critic, RL post-training, autonomous driving |
+
+## 한 줄 요약
+
+Pinocchio는 embodied reasoning trace가 task performance를 돕는 functional reasoning인지, 실제 policy decision process를 반영하는 faithful reasoning인지 구분하고, learned critic을 dense reward로 사용해 faithfulness를 post-training하는 방법을 제안한다.
+
+## 문제의식
+
+ECoT 계열은 reasoning trace를 보여주기 때문에 interpretable해 보인다. 하지만 그 trace가 실제 action decision의 원인인지, 아니면 그럴듯한 사후 설명인지가 불명확하다. Pinocchio는 이 간극을 functional reasoning과 faithful reasoning으로 분리한다.
+
+| 개념 | 의미 |
+| --- | --- |
+| Functional reasoning | reasoning이 task performance를 높임 |
+| Faithful reasoning | reasoning이 policy 내부 decision process와 실제로 맞음 |
+| Confounded reasoning | 환경과 연결되지 않거나, step 간 coherence가 깨지거나, action과 causal link가 약한 reasoning |
+
+## Method
+
+Pinocchio는 observation grounding과 stepwise coherence를 평가하는 learned critic을 behavioral surrogate로 만들고, 이 critic score를 dense reward로 써서 embodied policy를 RL post-training한다. 평가 setting은 robot manipulation보다는 autonomous driving/planning 쪽에 가깝다.
+
+## 결과와 위치
+
+arXiv abstract 기준 Pinocchio post-training은 withheld driving benchmarks에서 faithfulness를 SOTA alignment baseline 대비 4%, trajectory-error post-training baseline 대비 18% 개선하고, synthetic OOD set에서 rare counterfactual scenario에 대한 policy responsiveness를 SOTA policy 대비 1.6x 높인다.
+
+## ECoT family에서의 의미
+
+Pinocchio는 “reasoning을 생성하는가”보다 “생성한 reasoning을 믿어도 되는가”를 묻는다. MolmoAct의 visual trace, ECoT의 text reasoning, RoboPIN의 pinned reasoning 모두 실제 deployment에서는 faithfulness 평가가 필요하다.
+
+## 주의점
+
+- 주 평가 도메인은 autonomous driving이므로 manipulation VLA에 그대로 적용하려면 task/action space 차이를 고려해야 한다.
+- Learned critic의 reward가 진짜 causal faithfulness를 완전히 보장하는 것은 아니다.
+- 그래도 ECoT 계열의 interpretability claim을 검증하는 기준점으로 중요하다.

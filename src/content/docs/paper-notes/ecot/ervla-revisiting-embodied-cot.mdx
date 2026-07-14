@@ -1,0 +1,53 @@
+---
+title: ERVLA
+description: Revisiting Embodied Chain-of-Thought for Generalizable Robot Manipulation 논문 survey note.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# ERVLA
+
+<SectionFeedback page="ERVLA" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Revisiting Embodied Chain-of-Thought for Generalizable Robot Manipulation |
+| 저자/그룹 | Nan Sun, Yuan Zhang, Yongkun Yang, Wentao Zhao, Peiyan Li, Jun Guo, Wenxuan Song, Pengxiang Ding, Runze Suo, Yifei Su, Xin Xiao, Xinghang Li, Huaping Liu |
+| 공개 | arXiv:2606.03784, 2026-06 |
+| 링크 | https://arxiv.org/abs/2606.03784 |
+| 태그 | ERVLA, large-scale embodied CoT, reasoning dropout, representation supervision |
+
+## 한 줄 요약
+
+ERVLA는 embodied CoT를 대규모로 재검토해, explicit CoT prefix를 test-time action 앞에 붙이는 방식은 scale에서 불안정할 수 있으며 CoT를 representation-shaping supervision으로 쓰고 inference에서는 direct action을 예측하는 편이 낫다고 주장한다.
+
+## 데이터 규모
+
+arXiv abstract 기준 이 논문은 embodied CoT corpus를 978,743 trajectories, 226.3M samples, 2592.5 hours 규모로 구성한다. 이는 ECoT 계열에서 “CoT가 scale될수록 계속 좋은가”를 묻는 중요한 지점이다.
+
+## 핵심 발견
+
+| 발견 | 의미 |
+| --- | --- |
+| high-level semantic CoT만으로는 marginal gain | “무엇을 해야 하는가”보다 “어떻게 움직일 것인가”가 중요 |
+| effective CoT는 action guidance에 가까워야 함 | end-effector movement description, image-space trajectory가 유효 |
+| explicit CoT prefix는 scale에서 불안정 | autoregressive reasoning error가 action prediction으로 전파 |
+| reasoning dropout이 유효 | training 때 rich reasoning trace를 흡수하고 inference 때 action을 직접 예측 |
+
+## 결과와 위치
+
+abstract 기준 ERVLA는 LIBERO-Plus 86.9% success rate, VLABench 53.2% success rate를 보고하며, real-robot experiments에서도 semantic disambiguation과 long-horizon execution이 필요한 task에서 경쟁 baseline을 앞선다고 주장한다.
+
+## ECoT-Lite와의 관계
+
+ECoT-Lite도 reasoning dropout이 강력하다는 결론을 낸다. ERVLA는 이 결론을 더 큰 데이터 규모와 CoT content analysis로 확장한다. 즉 ECoT-Lite가 “왜 ECoT가 도움이 되는가”를 분해했다면, ERVLA는 “어떤 CoT가 scale에서 유효한가”를 묻는다.
+
+## 주의점
+
+- Explicit reasoning을 줄이면 interpretability와 human correction affordance는 약해질 수 있다.
+- CoT를 representation supervision으로 쓰는 경우, policy가 실제로 어떤 reasoning을 내부화했는지 별도 faithfulness 평가가 필요하다.
+- Large-scale corpus의 annotation pipeline과 filtering 기준을 PDF/code에서 추가 확인해야 한다.

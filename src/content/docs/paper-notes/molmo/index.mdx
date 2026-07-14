@@ -1,0 +1,65 @@
+---
+title: Molmo Model Family
+description: MolmoB0T, MolmoAct, MolmoAct2, Molmo2-ER 계열을 robot policy 관점에서 연결하는 overview.
+sidebar:
+  hidden: true
+---
+
+import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+# Molmo Model Family
+
+<SectionFeedback page="Molmo Model Family" section="Overview" />
+
+## 역할
+
+이 문서는 AllenAI Molmo 계열 중 robot policy, simulation data scaling, action reasoning과 직접 연결되는 항목을 빠르게 잡기 위한 family overview다. 개별 논문이나 release의 기술 detail은 하위 상세 Survey 문서에서 다룬다.
+
+핵심 원칙은 다음과 같다.
+
+- family overview는 얕고 넓게 정리한다.
+- MolmoB0T, MolmoAct, MolmoAct2는 각각 별도 paper survey로 다룬다.
+- Molmo2-ER는 MolmoAct2의 backbone component이므로 MolmoAct2 survey에서 우선 다루되, 필요하면 별도 model note로 분리한다.
+- paper 수치, blog/release 수치, code 공개 범위를 섞지 않고 출처를 분리한다.
+
+## 계열 지도
+
+| 항목 | 성격 | 현재 Survey 상태 |
+| --- | --- | --- |
+| [MolmoB0T](./molmobot-large-scale-simulation/) | arXiv paper, 2026. MolmoSpaces procedural simulation으로 만든 1.7M expert trajectories를 이용해 zero-shot sim-to-real manipulation을 보인 policy suite | Survey 작성 |
+| MolmoBot-Data / MolmoSpaces | simulation-only data engine, 94.2k environments, 2 embodiments | MolmoB0T survey 안에서 정리 |
+| [MolmoAct](./molmoact-action-reasoning-models/) | arXiv paper, 2025. Depth perception token, visual reasoning trace, action token을 결합한 Action Reasoning Model | Survey 작성 |
+| MolmoAct Dataset | in-house 10K+ robot trajectories, action reasoning/mid-training data | MolmoAct survey 안에서 정리 |
+| Molmo2-ER | embodied reasoning에 특화된 Molmo2 backbone | MolmoAct2 survey 안에서 정리 |
+| [MolmoAct2](./molmoact2-real-world-deployment/) | arXiv paper, 2026. OpenFAST tokenizer, flow expert, KV conditioning, adaptive depth reasoning으로 real-world deployment를 목표로 함 | Survey 작성 |
+| MolmoAct2-BimanualYAM | 720h bimanual YAM teleoperation dataset | MolmoAct2 survey 안에서 정리 |
+| MolmoAct2-DROID / SO100/101 | filtered DROID/SO100 datasets and deployment checkpoints | MolmoAct2 survey 안에서 정리 |
+| MolmoAct2-Think | adaptive depth token reasoning variant | MolmoAct2 survey 안에서 정리 |
+
+## 큰 흐름
+
+Molmo family의 핵심 질문은 두 갈래다. 첫째, robot policy는 어떤 data scale과 simulation diversity로 real-world에 transfer되는가. 둘째, robot policy가 행동 전에 무엇을, 어떤 형식으로 생각해야 하는가. MolmoB0T는 simulation-only data scaling과 flow action expert로 첫 질문을 밀고, MolmoAct/MolmoAct2는 depth token, visual trace, adaptive reasoning, flow expert로 두 번째 질문을 확장한다.
+
+| 축 | MolmoB0T | MolmoAct | MolmoAct2 |
+| --- | --- | --- | --- |
+| 중심 질문 | simulation-only data scaling으로 sim-to-real이 가능한가 | action 전에 spatial reasoning trace를 생성하면 좋은가 | reasoning model을 실제 배포 가능하게 빠르고 open하게 만들 수 있는가 |
+| data | MolmoSpaces procedural simulation, 1.7M trajectories | MolmoAct Dataset 10K+ trajectories + action reasoning data | BimanualYAM 720h, filtered DROID, SO100/101, Molmo2-ER corpus |
+| reasoning representation | language + RGB/proprio/action, optional point conditioning | depth perception tokens, visual reasoning trace, action tokens | Molmo2-ER + adaptive depth tokens + flow action expert |
+| action interface | DiTX-style flow matching action head, π0/SPOC variants | discrete autoregressive action tokens | discrete OpenFAST pretrain + continuous flow-matching post/fine-tune |
+| deployment target | DROID/Franka, RB-Y1 zero-shot sim-to-real | LIBERO, SimplerEnv, real-world fine-tuning, steering | DROID/Franka, SO100/101, bimanual YAM, LIBERO, RoboEval |
+| bottleneck | simulation-to-real gap과 data diversity | reasoning chain latency | flow expert/KV conditioning/adaptive depth로 latency와 deployability 개선 |
+
+## 읽는 순서
+
+1. [ECoT Family](../ecot/)를 먼저 보고 embodied reasoning의 큰 흐름을 잡는다.
+2. [MolmoB0T](./molmobot-large-scale-simulation/)로 simulation-only data engine과 flow-action policy baseline을 본다.
+3. [MolmoAct](./molmoact-action-reasoning-models/)로 depth/visual trace/action token 구조를 본다.
+4. [MolmoAct2](./molmoact2-real-world-deployment/)로 OpenFAST, flow expert, adaptive depth, real-world deployment 결과를 본다.
+5. [PI Model Family](../pi/)와 비교해 FAST/action tokenization과 flow matching action expert의 공통점과 차이를 정리한다.
+
+## 작성 원칙
+
+- MolmoB0T/MolmoAct/MolmoAct2 하위 문서는 PDF figure/table inventory와 official code/data 공개 범위를 함께 확인한다.
+- Molmo2-ER, MolmoAct2-FAST Tokenizer처럼 component가 독립적으로 커지면 별도 note로 분리한다.
+- blog 수치와 paper 수치가 다를 수 있으므로, 수치 옆에 paper/blog 기준을 명시한다.
+- `public/molmobot/`와 `public/molmoact/`의 이미지는 paper PDF에서 직접 crop한 local asset으로 관리한다.
