@@ -1,0 +1,483 @@
+---
+title: ThinkProprio
+description: proprioception을 능동적인 visual-token query로 사용하는 VLA 정책 ThinkProprio의 방법, 학습, 실험, 부록을 정리한 상세 Survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+# ThinkProprio
+
+<SectionFeedback page="ThinkProprio" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Think Proprioceptively: State-Grounded Visual Token Selection for VLA Policies |
+| 저자 | Fangyuan Wang, Peng Zhou, Jiaming Qi, Shipeng Lyu, Chengyang He, David Navarro-Alarcon, Guodong Guo |
+| 소속 | The Hong Kong Polytechnic University, Eastern Institute of Technology, Great Bay University, Northeast Forestry University, National University of Singapore |
+| 공개 | arXiv:2602.06575v2, 2026-07-06 (v1: 2026-02-06) |
+| 링크 | [arXiv](https://arxiv.org/abs/2602.06575) · [PDF v2](https://arxiv.org/pdf/2602.06575) · [Project page](https://nicehiro.github.io/ThinkProprio/) |
+| 공식 코드/체크포인트 | Project page에 `Code`, `Checkpoints` 표시는 있지만 2026-07-14 확인 기준 활성 링크는 없음 |
+| 태그 | VLA, proprioception, visual-token selection, token pruning, flow matching, CALVIN, LIBERO |
+
+> **버전 기준.** 이 문서는 21쪽짜리 arXiv **v2 PDF**를 기준으로 한다. Project page는 아직 v1 제목·저자·수치(ABC→D Avg. Len. 4.55, LH-5 82.1%, 15 tokens)를 보여준다. v2 PDF의 대응 수치는 4.52, 79.1%, 12 tokens이므로 본문의 정량 주장은 모두 v2를 따른다.
+
+## 한 줄 요약
+
+ThinkProprio는 proprioception을 action head에 늦게 주입하는 대신 VLM vocabulary token으로 이산화하고, language와 함께 **VLM 이전의 visual patch 선택 query**로 사용해 CALVIN에서는 100개 중 평균 12개 token만 남기면서 FLOWER보다 긴 chain 성능과 latency를 함께 개선한다.
+
+## 문제의식
+
+대부분의 VLA는 현재 robot state를 다음 중 하나로 처리한다.
+
+- proprioception을 action expert에 late conditioning한다.
+- MLP로 projection해 VLM 또는 action expert에 넣는다.
+- state를 생략하고 vision-language representation만 action에 전달한다.
+
+이 설계에서는 proprioception이 “어떤 action을 낼지”에는 영향을 줄 수 있어도, **instruction을 현재 embodiment에 맞게 grounding하거나 어떤 visual evidence를 볼지**에는 관여하지 못한다. 논문의 질문은 단순하다.
+
+> Robot state는 action generation의 수동 조건이어야 하는가, 아니면 instruction grounding과 visual attention을 이끄는 능동 query여야 하는가?
+
+Table 7의 통제 실험이 이 framing의 핵심 근거다. 같은 backbone·action head·data·training budget에서 state가 없는 FLOWER는 Avg. Len. 4.44이고, action head에 MLP/AdaLN으로 늦게 넣어도 4.44다. 반면 VLM vocabulary token으로 만들어 VLM에 넣으면 4.48이 된다. 즉 논문이 보여주는 것은 “proprioception을 추가하면 좋아진다”가 아니라, **어떤 representation으로 어느 지점에 넣는지가 중요하다**는 것이다.
+
+![ThinkProprio가 비교하는 네 가지 VLA 설계와 성능·효율 개요](/thinkproprio/figure-1-overview.png)
+
+*Figure 1. 기존 late conditioning, VLM context, generic compression과 ThinkProprio의 pre-VLM selection을 한 화면에 비교한다. 오른쪽 성능 radar는 v2 수치다.*
+
+## 시스템 설정
+
+| 항목 | CALVIN | LIBERO | Real world |
+| --- | --- | --- | --- |
+| embodiment | CALVIN benchmark robot | LIBERO benchmark robot | UR3 + Robotiq parallel gripper |
+| RGB | static + gripper, 각각 224×224 | 2 views, 각각 112×112 | fixed third-person D455 + wrist-mounted D435, 각각 224×224 |
+| proprioception | 15D robot observation | 7 joint + 2D gripper = 9D | EE position 3 + quaternion 4 + gripper 1 + joints 6 + zero padding 2 = 16D |
+| action | 7D relative end-effector command, `[-1, 1]` | 같은 7D relative action | relative pose delta 6 + binary gripper command |
+| action horizon | 10-step chunk | 10-step chunk | 10-step chunk |
+| replanning | 10 environment steps마다 | 동일 | 동일한 two-stream policy interface |
+| control frequency | PDF에 실제 Hz 미보고 | 미보고 | 미보고 |
+| 평가 | 최대 5개 subtask chain | suite별 10 tasks, task당 50 trials, 최대 520 steps | 14 tasks × 20 trials = 280 trials |
+
+![UR3, two RGB cameras, parallel gripper로 구성한 real-world 평가 장치](/thinkproprio/figure-3-real-world-setup.png)
+
+*Figure 3. 고정형 D455와 wrist D435의 두 view를 사용하는 실제 로봇 설정. 논문은 camera/control timestamp 동기화 방식과 실제 control Hz는 보고하지 않는다.*
+
+## Dataset
+
+### Simulation data
+
+논문은 CALVIN과 LIBERO의 기존 demonstration data를 사용한다. 데이터 규모를 새로 세어 보고하지는 않으며, benchmark loader가 제공하는 transform과 normalization을 따른다.
+
+| stream | preprocessing |
+| --- | --- |
+| CALVIN static RGB | 224×224 resize, train 시 RandomShiftsAug padding 10, `[0,1]` scaling, CLIP normalization |
+| CALVIN gripper RGB | 224×224 resize, RandomShiftsAug padding 4, 나머지는 동일 |
+| LIBERO two-view RGB | 112×112 resize, 같은 augmentation/normalization 구조 |
+| proprioception | dataset statistics로 normalization, CALVIN orientation entry는 추가 normalization |
+| action | 7D relative action을 `[-1,1]`로 scaling |
+
+### Real-world demonstrations
+
+- customized GELLO-style leader interface로 약 **120분** 수집한다.
+- banana, corn, tape 각각에 대해 Basket→Plate, Basket→Table, Plate→Basket, Table→Basket의 12개 pick-place task가 있다.
+- drawer open/close 2개를 더해 총 14개 task다.
+- episode 수, task별 demonstration 분배, train/validation split, sampling frequency, 공개 license는 PDF에 보고되지 않는다.
+- real-world image에는 simulation augmentation에 더해 color jitter를 적용한다.
+
+![실제 demonstration 수집에 사용한 GELLO-style leader interface](/thinkproprio/figure-5-teleoperation.png)
+
+*Figure 5. 사용자가 lightweight linkage와 gripper handle을 움직이면 adapted software가 이를 UR3 command로 변환한다.*
+
+### Sample schema
+
+공개 PDF로 복원할 수 있는 sample-level schema는 다음과 같다. 공식 loader가 공개되지 않아 key name과 timestamp field는 확인할 수 없다.
+
+| field | shape/의미 | policy에서의 사용 |
+| --- | --- | --- |
+| `I_t^1 … I_t^n` | 두 RGB camera frame | vision encoder → `H_v` |
+| `l` | natural-language instruction | tokenizer → `H_l`, language selector branch |
+| `q_t` | 15D/9D/16D normalized state | discretization → `H_q`, proprioception selector branch |
+| `a_t:t+H` | 7D continuous action, horizon 10 | flow-matching target |
+
+## Method
+
+![ThinkProprio 전체 architecture와 language/proprioception selector branch](/thinkproprio/figure-2-architecture.png)
+
+*Figure 2. 두 branch가 visual token에 투표하고 hard union으로 선택한 뒤, global context token과 함께 VLM 및 flow action head에 전달한다.*
+
+### 1. Proprioception을 VLM vocabulary ID로 바꾸기
+
+각 scalar state `q_t,k`를 shared clipping range `[q_min, q_max]`로 자르고 `B`개 uniform bin으로 양자화한다. 기본값은 normalized state에 대해 `[-3,3]`, `B=256`이다.
+
+```text
+b_t,k = floor((clip(q_t,k, q_min, q_max) - q_min)
+              / (q_max - q_min) * (B - 1))
+tau_t,k = V - 1 - b_t,k
+H_q = Embed(tau_t)
+```
+
+여기서 `V`는 VLM vocabulary size다. 중요한 점은 `tau`가 language tokenizer가 출력한 text token이 아니라, vocabulary 뒤쪽 ID를 **discretized state value의 alias**로 재사용한 것이라는 점이다.
+
+- 새 embedding parameter가 필요 없다.
+- text와 같은 pretrained lookup pathway를 사용한다.
+- 논문에 사용한 prompt에서는 language token과 state token ID가 충돌하지 않도록 reverse indexing한다.
+- 그러나 이 “비충돌”은 해당 prompt 집합에 대한 확인이지 vocabulary 의미 보존에 대한 일반적인 보장은 아니다.
+
+### 2. Branch-specific vote matrix
+
+visual tokens `H_v`와 guidance tokens `G_lang=H_l`, `G_prop=H_q`를 RMSNorm한다. 각 visual token은 먼저 guidance token을 attend해 자신에게 관련된 guidance-conditioned query `Q_omega`를 만들고, 그 query로 모든 visual token 후보를 다시 score한다.
+
+```text
+Q_omega = softmax(H_v G_omega^T / sqrt(D)) G_omega
+S_omega = RMSNorm(Q_omega) H_v^T / sqrt(D)
+```
+
+`S_omega`는 `N_v × N_v` vote matrix다. 행 `i`는 투표하는 visual token, 열 `j`는 유지 후보 visual token이다. 단일 top-down saliency vector가 아니라, **visual context를 본 각 token이 후보에게 투표**하는 구조다.
+
+### 3. Hard selection과 noisy-OR straight-through gradient
+
+학습 시 score에 Gumbel noise를 더하며 scale `alpha`를 1.0에서 0.01까지 cosine annealing한다. 각 row는 argmax 하나에 투표하고, 한 표라도 받은 token을 branch mask에 남긴다. 두 branch의 최종 mask는 union이다.
+
+```text
+z_omega[i] = argmax_j S_omega[i,j]
+m_omega[j] = 1[어떤 i가 j에 투표]
+m[j] = m_lang[j] OR m_prop[j]
+```
+
+hard OR는 미분할 수 없으므로 backward에는 noisy-OR를 쓴다. row softmax probability가 `P_omega[i,j]`일 때 token `j`가 적어도 한 표를 받을 확률은 다음과 같다.
+
+```text
+rho_omega[j] = 1 - product_i(1 - P_omega[i,j])
+rho[j] = 1 - (1-rho_lang[j])(1-rho_prop[j])
+w[j] = m[j] + rho[j] - stop_gradient(rho[j])
+```
+
+forward 값은 정확히 hard mask `m`, gradient만 `rho`를 따른다. 부록 A는 noisy-OR가 boundary agreement, monotonic gradient, `[0,1]` boundedness, 복수 vote의 누적을 동시에 만족한다고 설명한다. 다만 row와 branch의 조건부 독립은 정확하지 않으므로 확률적 해석은 approximation이다.
+
+### 4. Complementarity와 global context
+
+두 branch가 같은 patch만 고르는 collapse를 막기 위해 row-aggregated selection distribution 사이 cosine similarity에 margin `gamma=0.75`를 둔 diversity loss를 사용한다.
+
+한편 aggressive pruning은 local vote를 못 받은 scene-level 정보를 지울 수 있다. 이를 보완하려고 selection 전 visual token 전체의 mean을 linear projection한 global context token `H_ctx` 하나를 항상 붙인다.
+
+### 5. VLM과 action flow
+
+선택된 token과 global/state/language token을 다음 순서로 VLM에 전달한다.
+
+```text
+C = f_VLM([H_v_selected; H_ctx; H_q; H_l])
+```
+
+action head는 noisy action chunk와 flow time `T`, conditioning `C`를 받아 velocity를 예측한다. 선형 interpolation `a^T=(1-T)a+T epsilon`에서 target velocity는 `epsilon-a`이고, 최종 loss는 다음 두 항이다.
+
+```text
+L = L_flow_matching + lambda_div * L_div
+```
+
+## Model Architecture
+
+| 구성 | v2 PDF 설정 | 역할 |
+| --- | --- | --- |
+| VLM | Florence-2-Large, fine-tuned | visual/language/state token context encoder |
+| selector | language/prop vote matrices + hard union | VLM 이전에 action-relevant patch 선택 |
+| context token | full visual-token mean + learned linear projection | pruning으로 잃는 coarse scene context 보존 |
+| action generator | rectified-flow Diffusion Transformer | continuous action chunk 생성 |
+| DiT hidden/layers/heads | 1024 / 18 / 16 | action sequence processing |
+| conditioning | action token이 `C`에 cross-attention, flow time은 global AdaLN | token-level context와 diffusion time 결합 |
+| dropout | attention/residual/MLP 0.1, VLM output token dropout 0.1 | regularization |
+| action chunk | 10 actions, 4 flow sampling steps | 10 environment steps마다 replanning |
+| scale | Table 10 기준 약 0.95B | FLOWER와 같은 Florence-2-Large 계열 비교 |
+
+FLOWER가 100개 visual token을 dense cross-attention context로 넘기는 데 비해, ThinkProprio는 CALVIN에서 평균 12개만 넘긴다. selector 자체는 `O(N_v²D)`지만 현재 `N_v=100` 또는 34라서 0.1 ms에 그친다. sequence가 짧아져 VLM뿐 아니라 cross-attention action head도 싸지는 것이 latency 감소의 주된 원인이다.
+
+## Training Recipe
+
+| 항목 | 값 |
+| --- | --- |
+| training | selector, Florence backbone, action head end-to-end |
+| optimizer | AdamW |
+| learning rate | `2e-5` |
+| betas | `(0.9, 0.95)` |
+| weight decay | 0.05, norm/bias에는 0 |
+| batch / hardware | per-GPU 8, GPU 1개 |
+| total steps | 50,000 (`max_epochs=50`, `limit_train_batches=1000`) |
+| LR schedule | tri-stage: warmup 5% → hold 10% → cosine decay 85% |
+| warmup/final LR | `0.1×lr`에서 시작, `0.5×lr`로 종료 |
+| precision | bf16-mixed |
+| EMA | decay 0.999, 평가에 EMA weight 사용 |
+| Gumbel scale | 1.0 → 0.01 |
+| diversity | `lambda_div=5e-4`, margin `gamma=0.75` |
+| proprio tokenization | 256 bins, clipped normalized range `[-3,3]` |
+
+GPU 모델과 training time은 학습 표에 보고되지 않는다. latency/VRAM profiling은 별도로 단일 RTX 4090, bf16, two-view, CUDA synchronization, 1,000 inference steps 조건이다.
+
+## Experiments and Results
+
+### Main simulation 및 real-world 결과
+
+![CALVIN, LIBERO, 14개 real-world task의 v2 주요 결과](/thinkproprio/tables-2-3-results.png)
+
+*Tables 2–3. Simulation 결과는 특별한 표시가 없으면 5 seeds 평균이다. Real-world 결과는 task당 20 trials의 성공 횟수다.*
+
+#### CALVIN ABC→D
+
+| Method | LH-1 | LH-2 | LH-3 | LH-4 | LH-5 | Avg. Len. |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| FLOWER | **99.3** | **96.0** | 90.3 | 82.3 | 75.5 | 4.44 |
+| ThinkProprio | 98.9 | 95.4 | **91.6** | **86.4** | **79.1** | **4.52** |
+
+ThinkProprio는 처음 두 단계에서는 FLOWER보다 각각 0.4, 0.6 point 낮고, LH-3 이후 앞선다. LH-5 failure는 24.5%에서 20.9%로 줄어 상대 failure reduction이 약 14.7%다. 이것은 state-conditioned selection이 configuration drift가 누적되는 긴 chain에 더 유리하다는 저자의 해석과 맞지만, mechanism을 직접 causal하게 증명하는 실험은 아니다.
+
+#### LIBERO
+
+| Method | Spatial | Object | Goal | Long | Avg. |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| FLOWER | 97.5 | 99.1 | 96.1 | 94.9 | 96.9 |
+| LightVLA | **98.4** | 98.4 | **98.2** | 94.6 | 97.4 |
+| ThinkProprio | **98.4** | **99.2** | 98.0 | **95.2** | **97.7** |
+
+ThinkProprio의 평균은 가장 높지만 LightVLA와의 차이는 0.3 point다. Spatial은 공동 최고, Goal은 LightVLA보다 0.2 point 낮다. “전 suite에서 압도적”이 아니라 Object/Long과 평균에서 소폭 우세하다고 읽어야 한다.
+
+#### Real world
+
+ThinkProprio는 **249/280 = 88.9%**, FLOWER는 **226/280 = 80.7%**다. 14 tasks 중 13개에서 같거나 높고, 예외는 Banana Plate→Basket의 17/20 대 19/20이다. Drawer open/close는 각각 18/20 대 16/20이다. 다만 동일한 120분 data에서 비교했는지 외에 trial randomization과 confidence interval은 제공되지 않는다.
+
+### Token selection behavior
+
+![LIBERO, CALVIN, real-world rollout에서의 instruction 및 proprioception token selection](/thinkproprio/figure-4-token-selection.png)
+
+*Figure 4. language branch는 object/goal을, proprioception branch는 gripper/contact 주변을 주로 고르며 interaction 순간에 일부 겹친다.*
+
+| Benchmark | language tokens | proprio tokens | overlap |
+| --- | ---: | ---: | ---: |
+| CALVIN | 8.60±0.36 | 3.52±0.39 | 0.25±0.10 |
+| LIBERO-Spatial | 4.78±0.83 | 3.37±0.57 | 0.35±0.08 |
+| LIBERO-Object | 4.48±0.44 | 2.58±0.27 | 0.18±0.14 |
+| LIBERO-Goal | 3.43±0.48 | 2.60±0.50 | 0.10±0.08 |
+| LIBERO-Long | 4.17±0.49 | 3.47±0.17 | 0.17±0.08 |
+| Real world | 9.36±0.42 | 5.87±0.28 | 0.61±0.13 |
+
+overlap이 1 token 미만인 것은 두 branch가 실제로 다른 patch를 내놓는다는 증거다. 그러나 “선택된 patch가 필요한 causal evidence다”까지 증명하지는 않는다. mask는 relevance label이 아니라 action loss로만 학습된다.
+
+### Efficiency
+
+| Method | visual tokens | latency / env step | peak VRAM | CALVIN Avg. Len. |
+| --- | ---: | ---: | ---: | ---: |
+| OpenVLA | 256 | 164 ms | 14,574 MB | 3.27 |
+| π0 | 256 | 104 ms | 6,692 MB | 2.01 |
+| π0.5 | 256 | 138 ms | 7,038 MB | 2.38 |
+| FLOWER | 100 | 52 ms | 1,848 MB | 4.44 |
+| ThinkProprio | **12** | **22 ms** | 1,899 MB | **4.52** |
+
+FLOWER 대비 latency는 52→22 ms로 **57.7% 감소**한다. VRAM은 selector parameter 때문에 51 MB, 약 2.8% 증가한다. Table 13의 breakdown은 다음과 같다.
+
+| Benchmark | tokens | vision | selector | VLM | action | total |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| CALVIN ABC→D | 12/100 | 5.8 | 0.1 | 0.9 | 15.4 | 22.2 ms |
+| LIBERO | 7.8/34 | 6.5 | 0.1 | 1.1 | 16.1 | 23.8 ms |
+
+selector overhead가 매우 작은 반면 action head가 여전히 지배적이다. 따라서 22 ms를 곧바로 45 Hz closed-loop control이라고 해석하면 안 된다. 논문은 10-step chunk를 10 environment steps마다 갱신하며 실제 environment/control Hz를 보고하지 않는다.
+
+### Component 및 integration ablation
+
+| Variant | CALVIN tokens | Avg. Len. | LIBERO-Spatial tokens | SR |
+| --- | ---: | ---: | ---: | ---: |
+| FLOWER | all | 4.44±0.03 | all | 97.5±0.08 |
+| + proprio tokens | all | 4.45±0.02 | all | 97.8±0.05 |
+| + token selection | ~12% | 4.35±0.04 | ~23% | 97.2±0.06 |
+| + global context | ~12% | 4.48±0.03 | ~23% | 98.2±0.04 |
+| + diversity loss | ~12% | **4.52±0.02** | ~23% | **98.4±0.03** |
+| language only | ~8% | 3.40±0.06 | ~14% | 96.6±0.05 |
+| proprio only | ~3% | 3.12±0.10 | ~10% | 96.0±0.04 |
+| mean pooling | 1% | 4.20±0.02 | 1% | 90.3±0.04 |
+| max pooling | 25% | 4.33±0.03 | 25% | 92.8±0.02 |
+| random | 50% | 4.24±0.02 | 50% | 87.4±0.08 |
+
+가장 중요한 반례는 “selection만” 붙이면 4.44→4.35로 나빠진다는 것이다. global context가 local pruning의 정보 손실을 회복하고 diversity가 두 branch의 역할 분화를 추가한다. language-only와 proprio-only가 둘 다 크게 낮아 dual-query 결론을 지지하지만, token budget이 서로 다르므로 동일 budget에서 query source만 바꾼 완전한 통제는 아니다.
+
+| state encoding | entry | action conditioning | Avg. Len. |
+| --- | --- | --- | ---: |
+| none | – | – | 4.44 |
+| MLP | action head | AdaLN | 4.44 |
+| MLP | VLM | cross-attention | 4.15 |
+| VLM vocabulary | VLM | cross-attention | **4.48** |
+
+Table 7은 token encoding이 이 architecture에서 유리함을 보이지만, learned projector 전반이 열등하다는 보편 결론은 아니다. projector capacity·initialization·normalization ablation이 없고 Florence-2-Large 한 backbone에서만 검증했다.
+
+### 추가 CALVIN split
+
+| Split | retained tokens / 100 | ThinkProprio LH-5 | Avg. Len. | 주요 비교 |
+| --- | ---: | ---: | ---: | --- |
+| ABC→D | 12 | 79.1 | 4.52 | FLOWER 75.5 / 4.44 |
+| ABCD→D | 15 | 88.5 | 4.74 | FLOWER 85.5 / 4.62 |
+| D→D | 14 | 72.7 | 4.23 | Table 12에는 MDT 3.72, RoboUniView 3.85만 수록 |
+
+Project page v1에는 D→D FLOWER† 4.35가 있어 ThinkProprio 4.23보다 높지만, v2 Table 12에서는 이 row가 빠졌다. 따라서 v2만 보면 “수록 baseline 중 최고”이지만 project page까지 보면 D→D에서 항상 최고라는 표현은 피해야 한다.
+
+![CALVIN ABC→D에서 성공률이 가장 낮은 12개 subtask](/thinkproprio/figure-6-subtask-breakdown.png)
+
+*Figure 6. 남은 실패는 Lift Pink Block Drawer 78.6%, Push Pink Block Right 78.8%, Push Into Drawer 79.4%처럼 contact/placement-sensitive task에 집중된다.*
+
+![ThinkProprio의 CALVIN LH-5 연속 다섯 subtask rollout](/thinkproprio/figure-7-calvin-rollout.png)
+
+*Figure 7. 다섯 subtask 동안 selection mask가 초기 object에 고정되지 않고 task phase와 robot configuration을 따라 이동한다.*
+
+![ThinkProprio의 LIBERO-Long bowl-to-drawer rollout](/thinkproprio/figure-8-libero-rollout.png)
+
+*Figure 8. reaching/grasping에서 drawer interaction과 closing으로 넘어갈 때 retained patch도 함께 이동한다.*
+
+### Quantization과 selection consistency
+
+| bins | clip range | LIBERO-Spatial SR |
+| ---: | --- | ---: |
+| 32 | `[-3,3]` | 94.5±0.1 |
+| 256 | `[-3,3]` | **98.4±0.2** |
+| 512 | `[-3,3]` | 98.4±0.3 |
+| 256 | `[-1,1]` | 96.1±0.9 |
+| 256 | `[-5,5]` | 96.2±0.6 |
+
+256→512 bins는 이득이 없고, 너무 좁거나 넓은 clip range도 약 2.2 point 손해다. vocabulary alias가 “공짜 state representation”은 아니며 normalization과 quantization을 task에 맞춰야 한다.
+
+![selection mask IoU와 LIBERO-Spatial phase별 token 수](/thinkproprio/figure-9-phase-selection.png)
+
+*Table 15와 Figure 9. CALVIN의 cross-scene/temporal IoU는 0.170/0.196으로 matched random 0.064보다 높고, LIBERO는 0.644/0.418 대 random 0.130이다. middle grasp/lift에서 token 수가 6.2로 늘고 within-phase IoU는 0.290으로 가장 낮다.*
+
+## Appendix Notes
+
+### Appendix A — Noisy-OR
+
+- hard Boolean union의 expected mask라는 확률적 유도를 제공한다.
+- max, sum, mean surrogate와 비교해 noisy-OR만 네 property를 모두 만족한다고 정리한다(Table 8).
+- noisy-OR는 deployed forward path에 들어가지 않고 straight-through backward signal에만 쓰인다.
+- 현재 step에서 drop된 token은 VLM/action loss의 직접 gradient를 받지 않는다. 초기 Gumbel exploration과 score/diversity 경로가 coverage를 제공한다.
+- voting row와 branch가 실제로 독립은 아니며 저자도 이를 approximation으로 제한한다.
+
+### Appendix B — 재현 설정
+
+- observation/state/action schema, augmentation, GELLO 수집 장치가 상세화된다.
+- Table 9는 optimizer, schedule, EMA, selector hyperparameter를 제공한다.
+- 4-step rectified-flow sampling, 10-action chunk, 10-step replanning을 사용한다.
+- latency는 1,000 steps 평균이며 vision encode, selector, Florence forward, 모든 flow step을 포함한다.
+- LightVLA와의 차이를 guidance source, hard-union/noisy-OR, diversity, global context 네 축으로 명시한다.
+
+### Appendix C — 추가 결과
+
+- Tables 10–12가 CALVIN ABC→D, ABCD→D, D→D의 architecture scale/backbone/token count를 보강한다.
+- Figure 6은 34개 subtask 중 최저 12개를 실제 성공/시도 횟수와 함께 보여준다.
+- Figures 7–8은 long-horizon 동안 mask가 task phase에 적응하는 qualitative evidence다.
+
+### Appendix D — 분석과 실패
+
+- Table 13: latency component breakdown.
+- Table 14: bin 수와 clipping range sensitivity.
+- Table 15: cross-scene/temporal mask IoU와 random baseline.
+- Figure 9: approach, grasp/lift, place phase에 따른 mask variability와 token budget 변화.
+- Figure 10: target은 찾았지만 approach/contact control이 실패하는 사례.
+
+![tape에 비스듬히 접촉하거나 corn에 접근하며 banana와 충돌한 실제 실패 사례](/thinkproprio/figure-10-failures.png)
+
+*Figure 10. perception이 target을 식별해도 precise contact와 collision-free approach가 보장되지는 않는다.*
+
+## Figure / Table Inventory
+
+### Figures
+
+| ID | 내용 | Survey 반영 위치 | 읽을 점 |
+| --- | --- | --- | --- |
+| Fig. 1 | design taxonomy, performance, latency/VRAM | 문제의식 | state가 “late condition”에서 “pre-VLM query”로 이동 |
+| Fig. 2 | full architecture | Method | dual vote branch, hard/soft paths, context token, flow head |
+| Fig. 3 | real setup | 시스템 설정 | UR3, Robotiq, D455/D435 two-view |
+| Fig. 4 | token-selection examples | Token selection behavior | language/object와 state/contact의 상보성 |
+| Fig. 5 | GELLO-style leader | Dataset | real demonstration 수집 방식 |
+| Fig. 6 | CALVIN weakest subtasks | 추가 CALVIN split | residual failure가 contact/placement에 집중 |
+| Fig. 7 | CALVIN LH-5 rollout | 추가 CALVIN split | 5-stage 동안 state-conditioned mask 이동 |
+| Fig. 8 | LIBERO-Long rollout | 추가 CALVIN split | grasp→drawer→close phase 전환 |
+| Fig. 9 | phase-wise mask IoU/token count | Quantization/consistency | grasp/lift가 가장 동적 |
+| Fig. 10 | real failures | Appendix D, 한계 | visual selection보다 downstream control이 실패 |
+
+### Tables
+
+| ID | 내용 | Survey 반영 위치 |
+| --- | --- | --- |
+| Tab. 1 | VLA vision/proprio/action-conditioning taxonomy | 문제의식, Citation Trail |
+| Tab. 2 | CALVIN ABC→D와 LIBERO main results | Main simulation 결과 |
+| Tab. 3 | 14-task real-world successes | Real world |
+| Tab. 4 | token/latency/VRAM/Avg. Len. | Efficiency |
+| Tab. 5 | branch별 retained token과 overlap | Token selection behavior |
+| Tab. 6 | component/query/pooling ablation | Component ablation |
+| Tab. 7 | proprio encoding/entry ablation | Integration ablation |
+| Tab. 8 | differentiable OR surrogate 비교 | Appendix A |
+| Tab. 9 | training hyperparameters | Training Recipe |
+| Tab. 10 | CALVIN ABC→D architecture detail | 추가 CALVIN split |
+| Tab. 11 | CALVIN ABCD→D | 추가 CALVIN split |
+| Tab. 12 | CALVIN D→D | 추가 CALVIN split과 버전 주의 |
+| Tab. 13 | inference component latency | Efficiency |
+| Tab. 14 | discretization sensitivity | Quantization |
+| Tab. 15 | mask IoU consistency | Selection consistency |
+
+## Code-Level Check
+
+2026-07-14 확인 기준 project page의 `Code`와 `Checkpoints`에는 실제 URL이 연결되어 있지 않다. 따라서 다음은 PDF에서 확인한 **논문 명세**이며 repository 구현을 읽어 검증한 내용이 아니다.
+
+| 확인 대상 | PDF에서 확인 | 코드에서 미확인 |
+| --- | --- | --- |
+| model | Florence-2-Large fine-tuning, 18-layer flow DiT | module/class 이름, parameter freezing granularity |
+| selector | RMSNorm, `N_v×N_v` score, Gumbel, noisy-OR ST | padding/mask implementation, batch별 variable token gather |
+| loss | flow matching + `5e-4 × diversity` | exact reduction, numerical stabilization |
+| dataset | view별 resize/augmentation, state/action shape | loader key, timestamp/synchronization, split manifest |
+| inference | 4 flow steps, chunk 10/replan 10 | environment wrapper, action clipping, real control loop |
+
+공식 코드가 공개되면 우선 확인할 경로는 selector의 hard gather와 attention mask, vocabulary ID collision check, Gumbel schedule, `H_ctx` projection, EMA evaluation, real-world normalization statistics다.
+
+## 한계와 주의
+
+1. **주요 capability gain은 작고 efficiency gain이 크다.** CALVIN Avg. Len.은 4.44→4.52, LIBERO Avg.는 96.9→97.7인 반면 latency는 52→22 ms다.
+2. **MLP projector 결론의 범위가 좁다.** Florence-2-Large와 특정 projector 설정 하나에서의 결과다.
+3. **selector complexity가 quadratic이다.** `O(N_v²D)`라 지금의 100/34 tokens에서는 싸지만 high-resolution/multi-camera scale에서 병목이 될 수 있다.
+4. **실제 실험 범위가 작다.** 한 UR3 setup, rigid objects 세 종류, drawer, 약 120분 data뿐이다.
+5. **control frequency와 synchronization이 없다.** latency를 deployment loop frequency로 바로 바꿀 수 없다.
+6. **mask interpretability가 supervision되지 않는다.** action objective만으로 학습되어 background patch도 남긴다.
+7. **실패는 contact/control 쪽에 남는다.** Fig. 10처럼 target을 봐도 misalignment와 obstacle collision이 발생한다.
+8. **version drift가 있다.** project page v1과 PDF v2의 title, author list, CALVIN/LIBERO 수치, retained-token count가 다르다.
+9. **공개 재현물이 없다.** code/checkpoint/data split이 활성 링크로 제공되지 않아 구현 주장을 독립 검증할 수 없다.
+
+## Citation Trail
+
+### 직접 비교·설계 비교
+
+| 연구 | ThinkProprio와의 연결 |
+| --- | --- |
+| FLOWER | 동일 Florence-2-Large + flow action head 기반의 matched full-token baseline |
+| LightVLA | instruction-guided differentiable visual-token pruning; proprio branch와 context/diversity가 핵심 차이 |
+| π0 | continuous proprioception을 action expert에 late conditioning하는 대표 설계 |
+| π0.5 | proprioception을 token-form으로 VLM에 넣는 선행 사례; ThinkProprio는 이를 visual selection query까지 확장 |
+| OpenVLA / OpenVLA-OFT | single-system discrete action VLA 및 action-expert fine-tuning 계열 비교 |
+| GR00T N1 / SmolVLA | MLP-projected proprioception을 VLM feature space에 넣는 비교 축 |
+
+### 기반 방법론
+
+| 연구 | 사용 위치 |
+| --- | --- |
+| DynamicViT / TokenLearner | dynamic token sparsification의 broader context |
+| Flow Matching | continuous action velocity regression objective |
+| MDT / DiT-Blocks | diffusion/flow Transformer action conditioning 설계 |
+| GELLO | real-world teleoperation interface |
+| CALVIN / LIBERO | long-horizon 및 knowledge-transfer evaluation benchmark |
+
+## 이 논문을 읽을 때 기억할 것
+
+- contribution은 “state token을 하나 더 넣었다”가 아니라 **state가 perception compute allocation을 결정하게 했다**는 것이다.
+- proprioception token 단독 이득은 4.44→4.45로 작다. 큰 이야기는 dual-query selection + global context + diversity의 조합이다.
+- 12% token으로 full-token baseline보다 좋아진 것은 redundancy 제거가 regularization처럼 작동할 수 있음을 시사한다.
+- “Think”라는 이름보다 실제 mechanism은 **proprioception-conditioned visual-token gating**으로 이해하는 편이 정확하다.
+- 효율 평가의 핵심은 selector가 싸다는 것뿐 아니라, 뒤의 VLM과 cross-attention action head가 함께 짧아진다는 점이다.
+
+## 검증 메모
+
+| Pass | 확인 내용 | 결과 |
+| --- | --- | --- |
+| 1. 구조/coverage | 문제, system, dataset, method, architecture, training, results, appendix, limits, citations | 전 항목 반영 |
+| 2. 사실/수치 | 21쪽 v2 PDF의 Fig. 1–10, Tab. 1–15와 본문 수치 재대조 | v2 기준 통일, project v1 drift 분리 |
+| 3. 코드 구현 | project `Code`/`Checkpoints` 및 공식 repository 여부 확인 | 활성 공식 링크 없음; PDF 명세와 미확인 구현 분리 |
+| 4. 해석/연결 | FLOWER, LightVLA, π0/π0.5, token pruning, flow matching 연결 | 직접 비교와 기반 방법 분리 |
+| 5. 문서 품질/빌드 | local asset 전수 확인, MDX 링크·Astro build | 11개 asset 전수 확인, Docker Node 24 `npm run build` 0 errors/warnings |
