@@ -25,12 +25,14 @@ description: 로보틱스와 VLA 논문을 문제 설정, 데이터셋, 방법�
 | Reasoning VLA | action 전에 language, visual, depth, trajectory reasoning을 두는 VLA/ARM 흐름 | [ECoT Family](./ecot/), [ECoT-Lite](./ecot/ecot-lite-efficient-embodied-reasoning/), [Molmo Family](./molmo/), [MolmoAct](./molmo/molmoact-action-reasoning-models/), [MolmoAct2](./molmo/molmoact2-real-world-deployment/) |
 | Flow / Diffusion Action | continuous action을 flow matching이나 diffusion policy로 생성하고 RL fine-tuning으로 확장하는 흐름 | [PI Model Family](./pi/), [Flow Matching](./flow-matching-generative-modeling/), [3D Diffusion Policy](./3d-diffusion-policy-dp3/), [DPPO](./dppo-diffusion-policy-policy-optimization/), [Reactive Diffusion Policy](./reactive-diffusion-policy/) |
 | Robot Data Scaling | large-scale robot/human/video/simulation dataset과 cross-embodiment learning 흐름 | [MolmoB0T](./molmo/molmobot-large-scale-simulation/), [Open X-Embodiment / RT-X](./open-x-embodiment-rt-x/), [EgoScale](./egoscale-scaling-dexterous-manipulation/), [Ego4D](./ego4d-egocentric-video/) |
+| Synthetic Data / Augmentation | 소수 demonstration에서 simulation trajectory, 3D scene, 2D background를 합성해 robot-learning data를 확장하는 흐름 | [DexMimicGen](./dexmimicgen-bimanual-data-generation/) |
 | Model Family | 여러 version/checkpoint가 있는 연구 흐름을 family 단위로 정리 | [GR00T Model Family](./groot/), [PI Model Family](./pi/), [Molmo Model Family](./molmo/), [ECoT Reasoning Family](./ecot/) |
 
 ## 최근 집중 Survey
 
 | Survey | 핵심 질문 |
 | --- | --- |
+| [DexMimicGen](./dexmimicgen-bimanual-data-generation/) | 소수의 양팔·다지손 demonstrations를 팔별 subtask로 나누고 coordination/order를 보존하면서 simulation data로 scale할 수 있는가 |
 | [ThinkProprio](./thinkproprio-state-grounded-token-selection/) | proprioception을 action head의 late condition이 아니라 pre-VLM visual-token query로 쓰면 성능과 latency를 함께 개선할 수 있는가 |
 | [ECoT Reasoning Family](./ecot/) | embodied chain-of-thought가 explicit reasoning, training-only supervision, spatial trace, adaptive depth reasoning으로 어떻게 발전했는가 |
 | [Molmo Model Family](./molmo/) | MolmoAct/MolmoAct2가 spatial action reasoning과 real-world deployment를 어떻게 연결하는가 |

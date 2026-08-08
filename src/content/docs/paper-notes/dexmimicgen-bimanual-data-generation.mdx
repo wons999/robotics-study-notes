@@ -1,0 +1,450 @@
+---
+title: DexMimicGen
+description: 소수의 양팔·다지손 human demonstrations를 object-centric subtask로 분해하고 simulation에서 변환·재실행해 대규모 imitation-learning data를 만드는 ICRA 2025 논문.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+# DexMimicGen
+
+<SectionFeedback page="DexMimicGen" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | DexMimicGen: Automated Data Generation for Bimanual Dexterous Manipulation via Imitation Learning |
+| 저자 | Zhenyu Jiang, Yuqi Xie, Kevin Lin, Zhenjia Xu, Weikang Wan, Ajay Mandlekar, Linxi “Jim” Fan, Yuke Zhu |
+| 그룹 | NVIDIA Research, UT Austin, UC San Diego |
+| 공개 | arXiv:2410.24185v2, 2024-10-31 최초 공개, 2025-03-06 개정, ICRA 2025 |
+| 링크 | [arXiv](https://arxiv.org/abs/2410.24185) · [PDF](https://arxiv.org/pdf/2410.24185) · [Project](https://dexmimicgen.github.io/) · [Code](https://github.com/NVlabs/dexmimicgen) · [Dataset](https://huggingface.co/datasets/MimicGen/dexmimicgen_datasets/tree/main) |
+| 기준 | 10쪽 arXiv v2 PDF 전체와 공식 repository commit `940e8a1`, 공식 dataset repository |
+| 태그 | bimanual manipulation, dexterous hand, synthetic demonstration, imitation learning, simulation, real2sim2real |
+
+## 한 줄 요약
+
+DexMimicGen은 소수의 human demonstration을 팔별 object-centric subtask로 나누고, 새 object pose에 맞춰 end-effector trajectory를 SE(3) 변환한 뒤 physics simulation에서 실행·성공한 rollout만 보존한다. MimicGen의 single-arm 순차 pipeline을 **팔별 비동기 실행, 양팔 동기화, subtask 순서 제약**으로 확장한 것이 핵심이다.
+
+![DexMimicGen real-to-sim-to-real overview](/dexmimicgen/figure-1-overview.jpg)
+
+*Figure 1. 소수의 실제 teleoperation을 digital twin에서 재현하고 DexMimicGen으로 demonstration을 확장한 뒤, imitation policy를 실제 robot에 배포하는 전체 구상이다.*
+
+## 먼저 구분할 것: VLA나 image augmentation인가?
+
+둘 다 아니다.
+
+- language instruction이나 pretrained vision-language backbone을 사용하지 않는다. 실험의 downstream model은 task-specific **image-based BC-RNN, BC-RNN-GMM, Diffusion Policy**다.
+- 배경·조명·camera image를 합성하는 visual augmentation이 아니다. object pose에 대해 **action trajectory를 변환하고 physics simulation에서 실제로 rollout**한다.
+- 21K demonstrations는 model pretraining corpus가 아니라, 60개의 human source demonstrations에서 만들어진 task-specific synthetic robot trajectories다.
+- “automated”는 source demo 수집, segmentation 방식, coordination/sequential 관계를 먼저 정의한 이후의 generation loop를 뜻한다. task setup 전체가 annotation-free라는 뜻은 아니다.
+
+따라서 이 논문은 VLA architecture보다 **양팔·다지손용 simulation data engine**을 연구할 때 읽어야 한다.
+
+## 문제의식
+
+양팔 dexterous manipulation의 demonstration 수집은 single-arm보다 어렵다.
+
+1. 두 arm과 multi-finger hand를 동시에 teleoperate해야 한다.
+2. 각 arm이 독립적으로 움직이는 구간과 정확히 맞춰 움직여야 하는 구간이 섞인다.
+3. 한 arm의 동작이 끝나야 다른 arm이 시작할 수 있는 long-horizon ordering이 존재한다.
+4. 높은 action dimension과 task complexity 때문에 policy 학습에 더 많은 data가 필요하다.
+
+기존 MimicGen은 task를 하나의 고정된 object-centric subtask sequence로 나눈다. 이 표현은 single arm에는 적합하지만, 두 arm의 subtask가 서로 다른 시점에 끝나거나 중간에 동기화되어야 하는 bimanual task를 직접 표현하기 어렵다. DexMimicGen은 이 병목을 **팔별 subtask sequence와 arm 간 관계**로 다시 정의한다.
+
+## 문제 설정과 가정
+
+논문은 demonstration dataset을 state, observation, action sequence로 둔다.
+
+```text
+D = {(s_0, o_0, a_0, ..., s_H)}
+policy: π(o) -> distribution over a
+training: behavioral cloning, maximize log π(a | o)
+```
+
+DexMimicGen이 성립하려면 MimicGen과 같은 세 가지 가정이 필요하다.
+
+| 가정 | 의미 | 실제 제약 |
+| --- | --- | --- |
+| A1 | 각 arm action을 end-effector pose command와 hand command로 나눌 수 있다. | parallel gripper는 1D open/close, dexterous hand는 6D finger-joint command다. |
+| A2 | task를 object-centric subtasks로 분해할 수 있다. | 접촉과 reference object가 명확하지 않은 skill에는 적용하기 어렵다. |
+| A3 | arm이 object와 접촉하기 전에 해당 object pose를 관측하거나 추정할 수 있다. | real deployment에서도 rollout 시작 시 object pose estimation이 필요하다. |
+
+핵심 equivariance는 source object pose와 새 object pose 사이의 변환을 end-effector trajectory에 동일하게 적용하는 것이다.
+
+```text
+source segment: τ_i = (T_W^C0, T_W^C1, ..., T_W^CK)
+object transform: ΔT_i = T_W^O,new · inverse(T_W^O,source)
+retargeted EEF pose: T_W^Ck,new = ΔT_i · T_W^Ck,source
+```
+
+이 변환은 object frame에 대한 end-effector의 상대 pose를 보존한다. 새 segment의 시작 pose와 현재 robot pose 사이에는 interpolation pose를 추가하고, 이후 segment는 end-effector controller로 open-loop 실행한다.
+
+## 세 종류의 bimanual subtask
+
+![parallel, coordination, sequential subtask examples](/dexmimicgen/figure-2-subtask-types.jpg)
+
+*Figure 2. Piece Assembly는 양팔이 독립적으로 물체를 집고, Box Cleanup은 lid를 함께 놓으며, Pouring은 한 arm의 pouring 이후 다른 arm이 bowl을 옮긴다.*
+
+| 종류 | arm 관계 | 구현 | 대표 task |
+| --- | --- | --- | --- |
+| Parallel | 두 arm이 독립적인 sub-goal을 수행한다. | arm마다 action queue를 두고 한 queue가 비면 해당 arm의 다음 transformed segment를 채운다. | Piece Assembly의 두 부품 grasp |
+| Coordination | 두 EEF의 상대 pose와 timing이 함께 맞아야 한다. | source segmentation에서 양쪽 segment 종료 시점을 맞추고, 실행 중 remaining steps가 같아질 때까지 빠른 arm을 기다리게 한다. 양쪽에 같은 spatial transform을 쓴다. | lid placement, tray lift, handover |
+| Sequential | 한 arm의 pre-subtask가 끝난 뒤 다른 arm의 post-subtask가 시작돼야 한다. | pre/post subtask pair를 지정하고 post arm의 queue 실행을 block한다. | Pouring 후 bowl 이동 |
+
+### Parallel: 팔별 비동기 queue
+
+각 arm `n`은 독립적인 subtask sequence와 segment 집합을 가진다.
+
+```text
+arm 1: S_1^a1(o_1), ..., S_M1^a1(o_M1)
+arm 2: S_1^a2(o_1), ..., S_M2^a2(o_M2)
+```
+
+두 queue에서 매 timestep action을 하나씩 꺼낸다. 한 arm이 grasp를 먼저 끝내더라도 다른 arm의 segment boundary를 기다릴 필요가 없다. 이것이 single fixed sequence인 MimicGen과 가장 기본적인 차이다.
+
+### Coordination: synchronization과 공통 transform
+
+coordination subtask는 temporal alignment와 spatial alignment를 동시에 요구한다.
+
+- source demo를 나눌 때 두 arm의 coordination segment가 같은 timestep에 끝나도록 한다.
+- 실행할 때 한 arm의 remaining steps가 더 적으면 다른 arm과 같아질 때까지 기다린다.
+- `Transform`은 coordination이 시작되는 순간 reference object pose로 계산한 하나의 transform을 두 arm에 함께 적용한다.
+- `Replay`는 source trajectory를 변환하지 않고 그대로 쓴다. handover처럼 transformed path가 kinematic limit를 넘기기 쉬운 구간에 유리하다.
+
+### Sequential: diversity와 ordering의 trade-off
+
+두 arm이 같은 source demo를 사용하면 원래 시간 순서가 자연스럽게 유지된다. 그러나 arm별로 서로 다른 source demo segment를 조합하면 data diversity가 증가하는 대신 잘못된 순서가 생길 수 있다. DexMimicGen은 pre/post constraint를 명시해 이 조합 가능성과 올바른 task order를 함께 유지한다.
+
+## 전체 data generation workflow
+
+![DexMimicGen source segmentation and generation workflow](/dexmimicgen/figure-3-workflow.jpg)
+
+*Figure 3. source full demonstration을 팔별 object-centric segments로 나누고, randomized scene의 reference object pose에 맞춰 segment를 변환·실행한다.*
+
+generation loop는 다음 순서다.
+
+1. human teleoperation으로 source demonstrations를 수집한다.
+2. 각 source demo를 arm별 object-centric segments로 나누고 reference object pose를 기록한다.
+3. coordination 또는 sequential 관계가 필요한 segment pair를 지정한다. 지정하지 않으면 기본값은 parallel이다.
+4. simulation scene과 initial object poses를 randomize한다.
+5. 각 arm/subtask에 사용할 source segment를 선택한다.
+6. 현재 object pose와 source object pose의 차이로 EEF trajectory를 transform한다.
+7. parallel queue, coordination synchronization, sequential constraint에 따라 두 arm action을 실행한다.
+8. finger motion은 EEF motion에 상대적이라는 가정 아래 source finger joint actions를 그대로 replay한다.
+9. task별 success checker가 성공한 rollout만 dataset에 보존한다.
+10. 목표 demonstration 수가 모일 때까지 반복한다.
+
+simulation을 online으로 통과시키므로 offline image/action perturbation보다 실행 가능성을 더 잘 검사한다. 다만 generator가 collision을 사전에 회피하는 것은 아니며, 충돌하거나 실패한 trajectory를 사후 filtering하는 구조다.
+
+## 시스템 설정
+
+![nine simulation tasks across three embodiments](/dexmimicgen/figure-4-simulation-tasks.jpg)
+
+*Figure 4. 위에서부터 dual Panda parallel gripper, dual Panda dexterous hand, GR-1 humanoid의 세 task씩이다.*
+
+| embodiment | tasks | controller | source teleoperation |
+| --- | --- | --- | --- |
+| 2×Panda + parallel-jaw gripper | Threading, Piece Assembly, Transport | Operational Space Control, delta EEF pose를 joint torque로 변환 | iPhone 기반 RoboTurk interface |
+| 2×Panda + dexterous hands | Box Cleanup, Drawer Cleanup, Tray Lift | arm OSC + finger joint-position control | Apple Vision Pro wrist/finger tracking |
+| GR-1 humanoid + dexterous hands | Pouring, Coffee, Can Sorting | mink 기반 whole-body IK, global EEF target을 joint position으로 변환 + finger joint-position control | Apple Vision Pro + OmniH2O finger retargeting |
+
+공식 environment code의 기본 control frequency는 `20 Hz`다. 논문은 Figure 4의 coordination task를 Threading, Transport, Box Packing, Tray Lift, Can Sorting으로 적는데, 공개 task 이름과 Figure에는 `Box Cleanup`만 있어 `Box Packing`은 본문 명칭 불일치로 보인다.
+
+### source demonstration 수
+
+- parallel-jaw task는 task당 10개씩, 총 30개를 수집한다.
+- dexterous-hand task는 operator 부담 때문에 task당 5개씩, 총 30개를 수집한다.
+- 합계 60개 source demonstrations에서 전체 연구용 21K demonstrations를 생성한다.
+- main nine-task comparison은 task마다 DexMimicGen 1,000 trajectories를 사용한다.
+
+## Dataset
+
+### 논문에서 생성한 data
+
+논문 headline은 9개 task와 여러 reset distribution, scaling/ablation dataset을 포함한 **21K generated demonstrations**다. project page는 이를 “over 20,000”으로 표현한다. main result용 9개 dataset만 합치면 9K이므로, 21K에는 D1/D2, 100–5,000 scaling, strategy ablation 등에 사용한 추가 generation이 포함된 것으로 읽어야 한다.
+
+BiGym에도 별도로 task당 1,000 demonstrations를 생성했다.
+
+| BiGym task | generation success rate |
+| --- | ---: |
+| FlipCup | 29.1% |
+| DishwasherLoadPlates | 43.6% |
+| CupBoardsCloseAll | 76.4% |
+
+이 수치는 학습 policy success가 아니라 **generator가 시도한 rollout 중 dataset에 보존할 수 있었던 비율**이다.
+
+### 공개 dataset과 schema
+
+공식 Hugging Face repository는 `generated/` 아래 9개 primary task HDF5를 제공하며 웹 페이지 기준 총 크기는 `59.9 GB`다. 전체 파일을 내려받지 않고 repository metadata와 공식 loader/playback code로 공개 범위를 확인했다.
+
+| HDF5 위치 | 의미 |
+| --- | --- |
+| `data.attrs["env_args"]` | environment name과 `env_kwargs` JSON |
+| `data/demo_*` | episode group |
+| `data/demo_*/states` | flattened MuJoCo simulator states |
+| `data/demo_*/actions` | open-loop replay 가능한 action sequence |
+| `data/demo_*/obs/<key>` | image와 low-dimensional observations가 존재할 수 있는 observation group |
+| `data/demo_*.attrs["model_file"]` | episode의 MuJoCo XML |
+| `data/demo_*.attrs["ep_meta"]` | language 등 optional episode metadata |
+| `mask/<filter_key>` | 특정 trajectory subset을 가리키는 optional demo-name list |
+
+playback script는 state를 timestep별로 직접 load하거나, 초기 state와 저장된 actions를 사용해 open-loop로 재실행할 수 있다. action replay 중 recorded next state와 현재 simulator state가 달라지면 divergence warning을 낸다.
+
+라이선스 표기는 일치하지 않는다. GitHub README는 code를 NVIDIA Source Code License, dataset을 `CC-BY 4.0`으로 적지만, Hugging Face dataset page metadata는 `cc-by-nc-sa-4.0`으로 표시한다. 실제 사용 전에는 저자에게 적용 license를 확인해야 한다.
+
+## Policy architecture와 observation/action interface
+
+DexMimicGen 자체는 policy architecture가 아니다. 생성 data의 효용을 세 가지 image-based behavior-cloning policy로 평가한다.
+
+| policy | 역할 |
+| --- | --- |
+| BC-RNN-GMM | recurrent visual policy + Gaussian Mixture action head |
+| BC-RNN | GMM이 없는 recurrent visual policy |
+| Diffusion Policy | action sequence distribution을 denoising하는 policy |
+
+공식 release가 재현 설정까지 제공하는 것은 BC-RNN뿐이다. release config에서 확인한 interface는 다음과 같다.
+
+- visual observation은 보통 `agentview`와 양쪽 eye-in-hand camera의 3개 RGB stream이다. Transport는 shoulder cameras까지 포함해 5개다.
+- low-dimensional input은 양 arm의 EEF position, quaternion, gripper joint position이다.
+- Panda action은 arm별 relative position, relative axis-angle rotation, gripper command다.
+- humanoid action은 arm별 absolute position, 6D rotation representation, 양쪽 finger/gripper command다.
+- Panda relative pose는 normalization하지 않고 gripper만 min-max normalize한다.
+- humanoid absolute position과 finger/gripper는 min-max normalize하고 6D rotation은 별도 normalization을 하지 않는다.
+
+이는 현재 public BC-RNN reproduction branch의 설정이다. 논문의 Diffusion Policy와 BC-RNN-GMM 구현 detail까지 공개됐다는 뜻은 아니다.
+
+## 공개 BC-RNN training recipe
+
+| 항목 | 공식 config |
+| --- | --- |
+| sequence length / RNN horizon | 10 / 10 |
+| frame stack | 1 |
+| vision backbone | non-pretrained ResNet-18 |
+| visual pooling | Spatial Softmax, 32 keypoints, feature dimension 64 |
+| augmentation | `76×76` random crop, one crop |
+| RNN hidden size | 1,000 |
+| GMM head | disabled |
+| batch size | 16 |
+| learning rate | `1e-4` |
+| epochs | 600 |
+| seeds | 201, 202, 203 |
+| rollout | 25 batched environments, task별 horizon 300–1,200 |
+| HDF5 cache | low-dimensional observations only |
+
+paper의 evaluation은 세 seed 각각에서 여러 checkpoint 중 maximum policy success rate를 취한 뒤 요약한다. 따라서 마지막 checkpoint나 사전에 고정한 checkpoint 하나의 평균보다 다소 유리할 수 있다.
+
+## Experiments and Results
+
+### Main result: 소수 source demo와 1,000 generated demos
+
+![Table I main policy results](/dexmimicgen/table-1-main-results.jpg)
+
+*Table I. Source Demo 열은 소수 source data로 학습한 Diffusion Policy이고, 나머지 세 열은 task당 1,000 DexMimicGen trajectories로 학습한다.*
+
+| task | source demo DP | DexMG BC-RNN-GMM | DexMG BC-RNN | DexMG DP |
+| --- | ---: | ---: | ---: | ---: |
+| Piece Assembly | 3.3 ± 0.9 | 74.0 ± 2.8 | 66.0 ± 2.0 | **80.7 ± 0.9** |
+| Threading | 1.3 ± 0.9 | 54.0 ± 4.3 | 68.0 ± 1.6 | **69.3 ± 1.9** |
+| Transport | 52.7 ± 7.7 | 64.0 ± 3.3 | 57.3 ± 4.1 | **83.3 ± 0.9** |
+| Box Cleanup | 62.0 ± 1.6 | 64.0 ± 10.0 | **94.7 ± 0.9** | 92.0 ± 4.3 |
+| Drawer Cleanup | 0.7 ± 0.9 | 30.7 ± 5.0 | **80.0 ± 0.0** | 76.0 ± 0.0 |
+| Tray Lift | 3.3 ± 0.9 | 66.0 ± 8.2 | 78.0 ± 2.0 | **88.7 ± 0.9** |
+| Pouring | 0.7 ± 0.9 | 74.0 ± 8.6 | 62.0 ± 7.5 | **79.3 ± 0.9** |
+| Coffee | 14.7 ± 0.9 | 12.0 ± 1.6 | **84.7 ± 4.9** | 77.3 ± 0.9 |
+| Can Sorting | 0.7 ± 0.9 | 75.3 ± 1.9 | 96.0 ± 4.3 | **97.3 ± 0.9** |
+
+generated data의 이득은 Drawer Cleanup `0.7→76.0`, Threading `1.3→69.3`, Piece Assembly `3.3→80.7`처럼 source-only policy가 거의 학습되지 않은 task에서 특히 크다. Transport와 Box Cleanup은 source-only도 각각 `52.7`, `62.0`이므로 improvement의 크기가 task마다 다르다.
+
+Diffusion Policy가 9개 중 6개 task에서 가장 높지만, Box Cleanup, Drawer Cleanup, Coffee는 BC-RNN이 더 높다. BC-RNN-GMM은 dexterous-hand task에서 BC-RNN보다 자주 낮아, single-arm robomimic에서의 GMM 장점이 이 setting에 그대로 이어지지 않는다.
+
+### broader initial distribution과 data scaling
+
+![Figure 5 scaling and Table II broader reset distributions](/dexmimicgen/figure-5-table-2-scaling-distribution.jpg)
+
+*Figure 5와 Table II. 100→500→1,000 demonstrations에서는 대체로 개선되지만 5,000까지 늘렸을 때 Coffee D1은 오히려 하락한다. D1/D2 data는 같은 broader distribution에서 평가한다.*
+
+| task / policy | D0 | D1 | D2 |
+| --- | ---: | ---: | ---: |
+| Piece Assembly / BC-RNN-GMM | 74.0 ± 2.8 | 67.3 ± 0.9 | 44.0 ± 3.3 |
+| Box Cleanup / BC-RNN | 96.7 ± 2.5 | 88.0 ± 5.9 | 78.7 ± 2.5 |
+| Pouring / DP | 79.3 ± 0.9 | 82.0 ± 2.0 | 71.3 ± 2.5 |
+
+`D1`은 더 넓은 initial reset distribution이고, Pouring의 `D2`는 bowl과 green pad 위치까지 서로 바꾼다. D0 source demo만으로 새 distribution의 dataset을 만들 수 있다는 점은 보이지만, training과 evaluation을 모두 같은 D1/D2에 맞추므로 **D0-trained policy의 zero-shot OOD generalization** 실험은 아니다.
+
+Figure 5에서는 100, 500, 1,000 samples까지 Transport, Drawer Cleanup, Coffee D1이 모두 개선된다. 5,000 samples에서는 Transport가 더 개선되고 Drawer는 소폭 개선되지만 Coffee는 하락한다. 저자 해석처럼 이 범위에서는 data scaling의 diminishing return과 policy/data-quality bottleneck이 함께 나타난다.
+
+### DemoNoise baseline
+
+![Table III DemoNoise comparison](/dexmimicgen/table-3-demo-noise.jpg)
+
+*Table III. source action에 noise만 넣어 replay한 1,000-demo baseline보다 object-centric retargeting을 거친 data가 크게 높다.*
+
+| task / policy | DemoNoise | DexMimicGen |
+| --- | ---: | ---: |
+| Piece Assembly / BC-RNN-GMM | 12.7 ± 3.4 | **74.0 ± 2.8** |
+| Tray Lift / BC-RNN | 16.7 ± 2.5 | **75.3 ± 7.5** |
+| Pouring / DP | 26.7 ± 2.5 | **79.3 ± 0.9** |
+
+세 task 모두 absolute-point improvement가 50%p를 넘는다. DemoNoise는 source initial configuration을 크게 벗어날 수 없어 D1/D2 dataset을 만들지 못한다. 비교 범위가 세 task뿐이라는 점은 남는다.
+
+Tray Lift의 DexMimicGen 수치 `75.3 ± 7.5`는 Table I의 BC-RNN 수치 `78.0 ± 2.0`과 다르다. 논문은 두 표의 dataset/run 차이를 추가로 설명하지 않으므로, 하나의 동일 run 결과로 합쳐 쓰지 않았다.
+
+### generation strategy ablations
+
+| 질문 | setting | success rate | 해석 |
+| --- | --- | ---: | --- |
+| Replay vs Transform | Transport, BC-RNN-GMM | `63.3 vs 46.0` | handover에서는 source path replay가 kinematic feasibility에 유리하다. |
+| Replay vs Transform | Can Sorting, DP | `97.3 vs 98.6` | 둘이 거의 비슷해 Replay를 안전한 default로 선택한다. |
+| constraint / no constraint / same source | Drawer Cleanup, BC-RNN | `50.7 / 48.0 / 56.7` | ordering constraint는 no-constraint보다 낫지만 same-source가 더 높다. |
+| constraint / no constraint / same source | Pouring, DP | `88.7 / 76.7 / 79.3` | 서로 다른 source의 diversity와 올바른 order를 같이 쓴 constraint가 가장 높다. |
+
+ordering constraint의 이득은 두 task 모두 no-constraint보다 일관되지만, different-source mixing 자체가 항상 same-source보다 좋은 것은 아니다.
+
+### Real2Sim2Real can sorting
+
+![real-world GR-1 can sorting rollouts](/dexmimicgen/figure-6-real-world.jpg)
+
+*Figure 6. GR-1에서 can을 한 손으로 집어 handover한 뒤 색에 맞는 bin에 넣는 real-world rollout이다.*
+
+| 항목 | 설정 |
+| --- | --- |
+| robot | Fourier GR-1 + 2×6-DoF Inspire dexterous hands |
+| vision | head-mounted RealSense D435i first-person + 전면 D435i third-person |
+| source data | real human demonstrations 4개 |
+| object synchronization | 초기 RGB-D에서 GroundingDINO mask를 얻고 mask depth 평균으로 object center의 x/y를 simulation에 반영 |
+| generation | sim에서 DexMimicGen rollout이 성공하면 control action sequence를 real robot에서 실행 |
+| collected data | 40 successful real demonstrations; environment reset 외에는 자동 |
+| policy/evaluation | Diffusion Policy, red 10회 + blue 10회 |
+| result | 40 DexMG demos: **90%**, 4 source demos: **0%** |
+
+digital twin은 sim failure를 먼저 거르는 gate 역할을 한다. 그러나 sim에서 성공한 open-loop action을 real robot에 보내는 구조이므로 이를 일반적인 safety guarantee로 확대하면 안 된다. real evidence도 한 task, 두 색, 총 20 trials다.
+
+## Appendix Notes
+
+### human input과 automation의 경계
+
+source demo segmentation에는 두 방식이 있다.
+
+1. contact나 placement를 감지하는 task-specific terminal heuristic을 작성하고 simulation state로 자동 분할한다.
+2. terminal signal 작성이 어려우면 사람이 demonstration을 직접 분할한다.
+
+모든 subtask의 default는 parallel이다. coordination/sequential pair는 사람이 지정해야 한다. source collection, segmentation, subtask structure specification이 끝난 뒤의 generation만 fully automated다.
+
+### task success와 collision
+
+task마다 final simulation state를 보는 success function을 구현한다. 공개 code에서도 예를 들어 Threading은 needle과 ring center 거리, Can Sorting은 can이 색에 맞는 bin bounds 안인지, Drawer Cleanup은 object-bottom contact와 drawer joint closure를 함께 검사한다.
+
+DexMimicGen은 robot-object collision을 명시적으로 해결하지 않는다. collision으로 generated trajectory가 실패할 수 있으며, 저자들은 향후 SkillMimicGen의 motion-planning module을 결합할 계획이라고 적는다.
+
+### action distribution 분석
+
+![PCA of source and generated action distributions](/dexmimicgen/figure-7-action-distribution.jpg)
+
+*Figure 7. TwoArmCoffee에서 generated EEF position은 source보다 훨씬 넓은 영역을 덮지만, finger joint action은 source 주변의 local interpolation에 가깝다.*
+
+이 결과는 method의 구조와 일치한다. EEF pose는 새 object pose로 크게 변환하지만 finger command는 source에서 그대로 replay하기 때문이다. 따라서 DexMimicGen이 hand articulation diversity까지 같은 폭으로 확장한다고 해석하면 안 된다.
+
+### 실패 원인
+
+Threading policy는 70% 미만이다. 저자들은 threading object와 hole이 third-person camera에서 크게 가려지는 occlusion을 원인으로 추정한다. active perception이나 visual RL이 후속 방향이지만, 논문 안에서 이를 실험하지는 않는다.
+
+## Code-Level Check
+
+공식 repository `940e8a1b3ad70eb1925ada6b364b197de6bb2af9`를 README 밖의 실제 파일까지 확인했다.
+
+| 경로 | 확인 내용 |
+| --- | --- |
+| `dexmimicgen/environments/two_arm_*.py` | 9개 robosuite task, reset distribution, task별 `_check_success()` |
+| `scripts/demo_random_action.py` | environment/robot mapping, 20 Hz 기본 setting |
+| `scripts/download_hf_dataset.py` | 공식 HF repository에서 task 이름과 맞는 HDF5를 받는 downloader |
+| `scripts/playback_datasets.py` | `states`, `actions`, images, XML, `ep_meta`, filter mask를 읽는 state/action playback |
+| `scripts/generate_training_config.py` | task별 camera/low-dim keys, Panda/humanoid action dictionary와 normalization |
+| `dexmimicgen/utils/config_utils.py` | BC-RNN encoder, crop, hidden size, batch, LR, seed, rollout 설정 |
+
+### 공개된 것
+
+- nine primary robosuite environments와 object assets
+- nine generated HDF5 datasets
+- HDF5 download와 state/action/image playback
+- `robomimic`의 별도 `dexmimicgen` branch를 사용하는 BC-RNN config/training 경로
+- task별 success checker와 reset logic
+
+### 공개되지 않은 것
+
+- source demonstration segmentation tool
+- parallel action queues, coordination synchronization, Transform/Replay, sequential constraints를 구현한 **DexMimicGen generation engine**
+- 21K 전체를 재생성하는 generation config와 source demonstrations
+- Diffusion Policy와 BC-RNN-GMM의 paper reproduction config
+- real2sim2real pose synchronization, GR-1 teleoperation/deployment code
+- BiGym generation code
+
+repository 설명도 “simulation environments and datasets release”라고 범위를 한정한다. 따라서 논문의 핵심 algorithm을 새 task에 적용하는 end-to-end reproduction은 현재 공개 코드만으로 불가능하다.
+
+## 한계와 주의
+
+- object-centric subtask decomposition과 contact 전 object pose 관측이라는 강한 가정이 있다.
+- source demo 수집, segmentation heuristic 또는 annotation, coordination/sequential 관계 지정은 사람에게 남는다.
+- transformed segment는 open-loop로 실행되며 collision avoidance나 online recovery를 하지 않는다.
+- failed generation을 filtering하므로 “physics-valid data”는 성공 checker와 simulator fidelity에 의존한다.
+- finger command는 replay되어 EEF보다 distribution expansion이 제한적이다.
+- 9개 task와 세 embodiment는 넓어 보이지만 deformable object, force-sensitive assembly, tactile feedback은 다루지 않는다.
+- real-world evidence는 Can Sorting 한 task와 20 rollouts뿐이다.
+- seed별 maximum checkpoint를 보고하는 evaluation protocol은 결과를 다소 낙관적으로 만들 수 있다.
+- public release에는 핵심 generator가 없어 새 task reproduction과 algorithm audit가 제한된다.
+- GitHub와 Hugging Face의 dataset license 표기가 서로 다르다.
+
+## Citation Trail
+
+- **MimicGen**: single-arm object-centric trajectory transformation과 successful rollout filtering의 직접 기반이다. DexMimicGen은 이를 팔별 queue와 arm 간 관계로 확장한다.
+- **robomimic**: BC-RNN과 BC-RNN-GMM baseline, evaluation workflow의 기반이다.
+- **Diffusion Policy**: 가장 강한 downstream policy 중 하나지만 DexMimicGen 자체 구성요소는 아니다.
+- **BiGym**: robosuite 밖의 mobile bimanual simulator에서도 generator를 시험한 benchmark다.
+- **Ditto / GroundingDINO**: real2sim2real의 digital twin과 초기 object pose synchronization에 쓰인다.
+- **SkillMimicGen**: collision failure를 줄이기 위한 향후 motion-planning 확장으로 언급된다.
+- **[Dexora](./dexora-bimanual-dexterous-manipulation/)**: 후속 high-DoF VLA가 embodiment-matched simulation corpus를 만들 때 DexMimicGen 계열의 retargeting을 활용하는 연결점이다.
+- **[RoboSplat](./robosplat-gaussian-splatting-demonstration-generation/)**과 **[RoboEngine](./roboengine-semantic-background-augmentation/)**: 둘은 graphics/image augmentation이고, DexMimicGen은 physics simulator 안에서 action trajectory를 변환·검증한다는 점이 다르다.
+
+## Figure/Table Inventory
+
+| 항목 | 원문 내용 | Survey 반영 |
+| --- | --- | --- |
+| Figure 1 | real teleoperation → digital twin → generation → real deployment | overview image, Real2Sim2Real section |
+| Figure 2 | parallel, coordination, sequential subtask examples | subtask taxonomy image와 구현 표 |
+| Figure 3 | per-arm source segmentation과 object-centric trajectory transformation | 전체 workflow image와 generation loop |
+| Figure 4 | 3 embodiments × 3 simulation tasks | system setting image와 task mapping |
+| Figure 5 | 100/500/1,000/5,000 dataset scaling | scaling image와 diminishing-return 해석 |
+| Figure 6 | real GR-1 can-sorting sequence | real-world image와 4→40 demo 결과 |
+| Figure 7 | EEF/finger action PCA | appendix image와 distribution limitation |
+| Table I | source-only와 세 generated-data policy의 9-task success | 원문 crop과 전체 수치 표 |
+| Table II | D0/D1/D2 broader reset distribution | Figure 5와 함께 crop, 전체 수치 표 |
+| Table III | DemoNoise 대 DexMimicGen | 원문 crop과 전체 수치 표 |
+
+PDF의 Figure 1–7과 Table I–III을 전부 inventory에 넣었고, 모든 result figure/table을 local asset 또는 수치 표로 본문에 반영했다.
+
+## 기억할 점
+
+DexMimicGen의 contribution은 “60 demos를 21K로 늘렸다”는 숫자 하나보다 **bimanual demonstration을 어떤 실행 관계로 표현했는가**에 있다.
+
+```text
+single-arm MimicGen
+    object-centric segment sequence
+
+DexMimicGen
+    per-arm segment sequences
+    + asynchronous queues
+    + synchronized coordination
+    + cross-arm ordering constraints
+    + simulation success filtering
+```
+
+재사용할 때 가장 먼저 확인할 질문은 model이 아니라 다음 세 가지다.
+
+1. task를 contact 전 pose가 알려진 object-centric subtasks로 나눌 수 있는가?
+2. 두 arm 관계를 parallel, coordination, sequential로 충분히 표현할 수 있는가?
+3. simulator success checker와 real dynamics mismatch가 보존 data의 품질을 얼마나 제한하는가?
+
+## 검증 메모
+
+arXiv v2 PDF `2410.24185v2`, 10쪽, SHA-256 `96349aac2708b5637bbbefa9964067b5ed7eac0fb51ba0248b8d8dcbe49352a2`를 직접 확보해 main text와 appendix를 읽었다. Figure 1–7과 Table I–III을 전수 대조하고 9개 local crop을 두 차례 이상 열어 figure body, axis, legend와 caption 범위를 검수했다. 공식 project page, code repository, Hugging Face dataset page를 교차 확인했으며, code check는 environment, success checker, playback, HDF5 schema, BC-RNN config까지 진행했다.
+
+5-pass 기준으로 구조/coverage, 원문 수치, code 공개 범위, 관련 연구 연결, MDX/build를 순서대로 확인했다. 미확인 구현은 논문 설명과 섞지 않고 public release의 한계로 분리했다.
