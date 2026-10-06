@@ -1,9 +1,14 @@
 ---
+research: {"kind": "paper", "topics": ["vla", "sensing"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2505.09577"}
 title: VTLA
 description: insertion manipulation을 위한 vision-tactile-language-action 모델과 preference learning survey.
 ---
 
 import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/vtla-preference-learning-insertion" />
 
 # VTLA
 
@@ -258,7 +263,7 @@ VTLA는 “VLA에 tactile을 붙이면 된다”보다 구체적인 질문을 �
 
 | 연결 | 이유 |
 | --- | --- |
-| [Tactile-VLA](./tactile-vla-physical-knowledge/) | tactile을 VLA의 physical knowledge와 연결한다는 관점 비교 |
-| [Reactive Diffusion Policy](./reactive-diffusion-policy/) | tactile feedback을 빠른 action refinement로 쓰는 diffusion 계열 비교 |
-| [DP3](./3d-diffusion-policy-dp3/) | 3D representation 기반 diffusion policy와 insertion/contact-rich task baseline 비교 |
-| [DPPO](./dppo-diffusion-policy-policy-optimization/) | behavior cloning 이후 preference/RL-style objective로 policy를 개선하는 관점 비교 |
+| [Tactile-VLA](../tactile-vla-physical-knowledge/) | tactile을 VLA의 physical knowledge와 연결한다는 관점 비교 |
+| [Reactive Diffusion Policy](../reactive-diffusion-policy/) | tactile feedback을 빠른 action refinement로 쓰는 diffusion 계열 비교 |
+| [DP3](../3d-diffusion-policy-dp3/) | 3D representation 기반 diffusion policy와 insertion/contact-rich task baseline 비교 |
+| [DPPO](../dppo-diffusion-policy-policy-optimization/) | behavior cloning 이후 preference/RL-style objective로 policy를 개선하는 관점 비교 |

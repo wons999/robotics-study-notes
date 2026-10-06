@@ -1,4 +1,5 @@
 ---
+research: {"kind": "overview", "topics": ["vla", "action"], "status": "reviewing", "reviewedAt": null, "family": "pi"}
 title: PI Model Family
 description: pi.website의 research paper와 article 전체를 PI 모델/방법론 흐름으로 연결하는 overview.
 sidebar:
@@ -6,6 +7,10 @@ sidebar:
 ---
 
 import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/pi/index" />
 
 # PI Model Family
 
@@ -93,3 +98,10 @@ Fine-tuned checkpoint는 DROID, ALOHA, LIBERO 등으로 나뉜다. README는 bas
 - article은 논문처럼 수식/appendix가 없을 수 있으므로 “Article note”로 분리하되, 모델 이름, 공개 근거, 연결되는 paper, 구현 공개 여부를 반드시 적는다.
 - 논문 결과와 openpi README/config 값을 섞지 않는다. 예를 들어 paper의 action chunk/hardware task와 openpi fine-tuning config의 horizon은 별도 출처로 표기한다.
 - 공식 visual asset은 `/public/pi`에 저장하고, 각 개별 Survey의 `Official Visual Evidence` 섹션에서 model/method/result/qualitative evidence로 첨부한다.
+
+
+import ResearchCatalog from "../../../../components/ResearchCatalog.astro";
+
+## 계열 문서와 검토 상태
+
+<ResearchCatalog family="pi" />

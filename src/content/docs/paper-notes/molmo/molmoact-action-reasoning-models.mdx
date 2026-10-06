@@ -1,4 +1,5 @@
 ---
+research: {"kind": "paper", "topics": ["vla", "action"], "status": "reviewing", "reviewedAt": null, "family": "molmo", "source": "https://arxiv.org/abs/2508.07917"}
 title: MolmoAct
 description: 3D spatial reasoning trace를 action prediction 앞에 두는 open Action Reasoning Model survey.
 sidebar:
@@ -6,6 +7,10 @@ sidebar:
 ---
 
 import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/molmo/molmoact-action-reasoning-models" />
 
 # MolmoAct
 
@@ -118,6 +123,6 @@ Blog 기준 pre-training은 26.3M samples, 256 H100에서 약 하루, fine-tunin
 | --- | --- |
 | [MolmoAct2](../molmoact2-real-world-deployment/) | depth/trace/action reasoning을 real-world deployment용 flow expert와 adaptive depth reasoning으로 재설계 |
 | [Molmo Family](../) | MolmoAct/MolmoAct2와 Molmo2-ER 흐름을 함께 보는 family overview |
-| [ECoT Family](../ecot/) | language/text CoT에서 spatial/action reasoning으로 넘어가는 큰 흐름 |
-| [ECoT-Lite](../ecot/ecot-lite-efficient-embodied-reasoning/) | test-time reasoning latency를 줄이는 대안 recipe |
+| [ECoT Family](../../ecot/) | language/text CoT에서 spatial/action reasoning으로 넘어가는 큰 흐름 |
+| [ECoT-Lite](../../ecot/ecot-lite-efficient-embodied-reasoning/) | test-time reasoning latency를 줄이는 대안 recipe |
 | [PI Model Family](../../pi/) | FAST/action tokenization과 flow/action expert 계열 비교 |

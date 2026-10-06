@@ -1,0 +1,224 @@
+---
+research: {"kind": "paper", "topics": ["vla", "sensing"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2408.06316"}
+title: Body Transformer
+description: Robot body를 sensor·actuator graph로 보고 per-node token과 kinematic hard mask로 정책을 구성하는 Body Transformer를 분석한다.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/body-transformer-robot-embodiment" />
+
+# Body Transformer: Leveraging Robot Embodiment for Policy Learning
+
+<SectionFeedback page="Body Transformer" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Body Transformer: Leveraging Robot Embodiment for Policy Learning |
+| 저자/그룹 | Carmelo Sferrazza, Dun-Ming Huang, Fangchen Liu, Jongmin Lee, Pieter Abbeel · UC Berkeley |
+| 공개 | arXiv:2408.06316 v1, 2024-08-12 |
+| 링크 | [arXiv](https://arxiv.org/abs/2408.06316) · [project](https://sferrazza.cc/bot_site/) · [official code](https://github.com/carlosferrazza/BodyTransformer) |
+| 태그 | embodiment graph, masked attention, imitation learning, reinforcement learning, proprioception |
+
+## 한 줄 요약
+
+한 시점의 proprioception을 body node별 token으로 나누고 `M=I+A`로 self-attention을 제한해, 정보가 robot의 물리 연결을 따라 전파되도록 만든 정책 backbone이다.
+
+## 문제의식
+
+Vanilla Transformer는 모든 body part를 fully connected graph처럼 처리한다. 그러나 물리 agent의 빠른 안정화 반응은 대개 자극과 가까운 sensor–actuator loop에서 시작한다. BoT는 이를 architecture prior로 제공한다.
+
+- upstream layer는 local neighbor 정보를 처리한다.
+- layer가 깊어질수록 graph를 따라 receptive field가 넓어진다.
+- 필요하면 global layer를 섞어 장거리 협조 병목을 완화한다.
+
+이 연구는 VLA가 아니다. image·language 없이 proprioceptive state에서 joint command를 내는 BC/RL policy architecture다.
+
+## Model Architecture
+
+![Figure 1: node tokenizer, Body Transformer, node detokenizer](/body-transformer/figure-1-architecture.png)
+
+### Embodiment graph
+
+node는 sensor와 actuator가 배정된 limb/body part이고 edge는 물리적 연결이다. root에는 base pose/orientation 같은 global observation과 environment state를 둔다. non-root에는 해당 joint angle, velocity, previous command 같은 local observation과 해당 joint action을 둔다.
+
+### Per-node tokenizer
+
+node `i`의 local vector `o_i`는 node별로 서로 다른 linear projection을 거쳐 token `x_i∈R^d`가 된다. weight-sharing이 아니므로 node identity가 projection 자체에 들어간다. IL에서는 이 특성 때문에 positional encoding의 추가 이득이 작았고, RL에서는 learned positional embedding이 유효했다.
+
+### Embodiment mask
+
+![Figure 2: adjacency에서 self-loop mask를 만드는 과정](/body-transformer/figure-2-mask.png)
+
+`A`를 body graph adjacency라 하면 `M=I_n+A`다. attention logit에서 `M_ij=0`인 위치를 `−∞`로 바꾼다.
+
+| variant | layer schedule | 의미 |
+| --- | --- | --- |
+| BoT-Hard | 모든 layer masked | 한 layer당 최대 1-hop 전파 |
+| BoT-Mix | 첫 layer masked, 이후 masked/global 교대 | local prior와 즉시 global communication의 절충 |
+| BoT-Soft | graph shortest-path로 learned bias | 경로를 차단하지 않는 비교군 |
+
+### Per-node detokenizer
+
+각 output token은 해당 node용 별도 linear head를 거쳐 local action으로 돌아간다. actor는 local action을 원래 action vector 위치에 scatter한다. critic에서는 node별 scalar value를 평균한다.
+
+## 시스템·Dataset
+
+| 학습 | benchmark | 입력/출력 | 평가 |
+| --- | --- | --- | --- |
+| BC | MoCapAct humanoid tracking | 한 시점 distributed state → joint action | 835 clips, 5M+ transitions, train/unseen validation clip |
+| BC | Adroit Door/Hammer/Relocate | hand/environment state → hand action | 1, 3, 5, 10, 50 demonstrations |
+| PPO | Humanoid-Mod/Hill/Board | torso/root/joint/contact state → action | Isaac Gym episode return |
+| PPO | A1-Walk | actor는 proprioception only | fixed 0.5 m/s irregular-terrain command |
+| sim-to-real | Unitree A1 | simulation-trained BoT policy | flat-ground 10 s walking, 5 rollouts |
+
+MoCapAct 평가는 normalized episode return과 normalized episode length를 사용한다. tracking error가 threshold를 넘으면 episode가 종료된다. 표의 각 cell은 `학습 중 maximum / evaluation mean ± standard deviation`이며 5 seeds 평균이다.
+
+## Training Recipe
+
+![Figure 12: IL/RL model·training hyperparameters](/body-transformer/figure-12-training-config.png)
+
+| 설정 | MoCapAct | Adroit | humanoid RL |
+| --- | ---: | ---: | ---: |
+| batch | 256 | 256 | 8192 |
+| epochs/envs | 100 epochs | 200 epochs | 2048 envs |
+| transformer layers | 16 | 16 | 10 |
+| embedding | 320 | 320 | 64 |
+| heads | 5 | 5 | 2 |
+| FFN | 1024 | 1024 | 128 |
+| LR | 1e-4 | 1e-4 | appendix 표 미기재 |
+| eval rollouts | 100 | 20 | curve, 5 seeds |
+
+MoCapAct의 MLP는 약 16.70M, Transformer 계열은 약 17.54M이고 RL은 약 0.69M으로 맞춰 architecture effect를 비교한다. BC는 deterministic policy가 기본이며 Appendix에서 fixed variance `0.01` Gaussian도 시험한다.
+
+optimizer 종류, LR schedule, observation normalization은 paper training table만으로 완전히 재현되지 않는다. 공식 code의 run script/config가 추가 근거다.
+
+## Experiments and Results
+
+### MoCapAct imitation learning
+
+![Figures 3–4: MoCapAct performance/scaling과 Adroit tasks](/body-transformer/figures-3-4-imitation.png)
+
+validation normalized return의 evaluation mean은 MLP `0.534±0.025`, Transformer `0.576±0.038`, BoT-Hard `0.650±0.035`다. validation normalized length는 각각 `0.741`, `0.779`, `0.835`다. 3.9M→9M→17.5M scaling에서 vanilla Transformer validation return은 내려가지만 BoT-Hard는 상승한다.
+
+이는 body prior가 unseen motion clip에서 regularizer처럼 작동한 증거다. 다만 imitation task는 manipulation이 아니라 humanoid motion tracking이다.
+
+### Additional imitation ablations
+
+![Figure 9: Hard/Mix/Soft/random, depth, Adroit low-data](/body-transformer/figure-9-imitation-ablation.png)
+
+- MoCapAct validation mean return: Hard `0.65`, Mix `0.63`, Soft `0.58`, Hard/Random `0.60`.
+- 같은 sparsity의 random mask가 낮으므로 단순 sparse regularization만으로 설명되지 않는다.
+- graph diameter가 14여도 8 layer에서 이미 상당한 성능을 얻고 16 layer까지 개선된다.
+- Adroit low-data에서 BoT-Hard는 vanilla Transformer를 일관되게 앞서고 MLP와 경쟁한다.
+
+Adroit graph의 정확한 observation/action allocation과 curve의 수치표는 제공되지 않아 plot 수준으로만 해석해야 한다.
+
+### Reinforcement learning
+
+![Figure 5: 네 RL task의 learning curves](/body-transformer/figure-5-rl-results.png)
+
+BoT-Mix는 네 task에서 sample efficiency와 asymptotic return이 가장 안정적이다. BoT-Hard는 규칙적인 A1-Walk/Humanoid-Mod에서는 강하지만 Humanoid-Board/Hill 같은 exploration-heavy task에서는 global communication 병목으로 약해진다.
+
+![Figures 10–11: body mask와 per-node projection ablation](/body-transformer/figures-10-11-rl-ablation.png)
+
+random mask는 Hard/Mix 모두 body-induced mask보다 낮다. shared tokenizer/detokenizer도 per-node projection보다 크게 낮다. 따라서 RL improvement는 mask 하나가 아니라 **구조적 mask + node-specific interface**의 결합 결과다.
+
+### Real-world A1
+
+simulation-trained A1 policy에 terrain randomization, 높은 joint-controller stiffness, low-pass action filter를 적용했다. offboard CPU에서 Wi-Fi/Ethernet으로 command를 보냈고, flat ground에서 10초간 넘어지지 않으면 성공으로 판정했다. 5/5 rollout이 성공했다.
+
+이는 real-time feasibility의 작은 demonstration이지 대규모 sim-to-real robustness 평가가 아니다. teacher–student나 memory는 쓰지 않았다.
+
+### Computational analysis
+
+![Figure 6: custom NumPy masked attention의 runtime/FLOP 비교](/body-transformer/figure-6-compute.png)
+
+MoCapAct mask sparsity `0.908`, single sample/head, CPU NumPy, 10,000 random Q/K/V/mask에서 sequence length 128까지 최대 `206%` speed-up을 보고한다. 그러나 이 custom routine은 optimized GPU kernel·FlashAttention 비교가 아니다. 논문도 modern framework가 sparsity를 자동 활용하지 못한다고 인정한다.
+
+## Appendix Notes
+
+### Node allocation 예시
+
+A1 root에는 orientation/angular velocity를, 각 hip/thigh/calf node에는 해당 joint angle·velocity·previous command를 넣고 해당 joint command를 출력한다. 여러 node에 걸친 값은 graph상 가장 가까운 node 또는 관련 node 하나에 배정한다. 이 규칙은 명료하지만 임의성이 있고, multi-contact/environment object가 어느 node에 귀속되는지에 따라 inductive bias가 달라진다.
+
+### RL observation
+
+humanoid tasks는 torso vertical position, root coordinate/angular velocity, joint position/velocity, limb별 contact force를 포함한다. A1 actor는 proprioception만 보지만 critic은 추가 simulation parameter를 받는다. actor–critic observation 비대칭을 policy input 설명과 혼동하면 안 된다.
+
+### Positional encoding
+
+RL에는 learned node-index embedding을 더한다. IL에는 보고할 만한 개선이 없어 사용하지 않았다. 공식 RL code의 Transformer/BoT class는 positional embedding을 명시적으로 더한다.
+
+## Code-Level Check
+
+공식 저장소의 실제 경로를 확인했다.
+
+| 역할 | 코드 경로/구현 |
+| --- | --- |
+| IL tokenizer/head | `imitation_learning/models/networks.py`: node별 `ModuleDict[Linear]`, action index scatter |
+| IL hard/mix | 같은 파일의 `BodyTransformer`, `MaskedTransformerEncoder` |
+| graph construction | `imitation_learning/models/mappings.py`, `utils/adjacency_matrix_cmu_humanoid.py` |
+| RL tokenizer/head | `reinforcement_learning/.../structure_transformers.py` |
+| RL layer schedule | `transformer_utils.py`: `mixed`는 even layer mask, odd layer global |
+| actor/critic assembly | `transformer_builder.py` |
+| A1 deployment | `a1_walk/onboard_codes`, action filter와 robot interface |
+
+코드에서 observation은 mapping의 index list로 node별 slice되고 `(B,n_nodes,d)`로 concatenate된다. shared-tokenizer ablation은 node vector를 최대 local dimension까지 zero-pad한 뒤 하나의 Linear를 공유한다.
+
+코드와 논문 사이 주의점도 있다.
+
+- 저장소는 IL, IsaacGym RL, A1 deployment가 서로 다른 dependency tree와 Transformer wrapper를 쓴다.
+- 일반 RL `BodyTransformer`는 learned positional embedding을 항상 더하지만 IL은 flag로 선택한다.
+- 공개 implementation은 dense PyTorch attention mask를 사용한다. 논문의 custom NumPy sparsity benchmark가 training kernel로 연결된 것은 아니다.
+- 일부 파일은 PyTorch 내부 `TransformerEncoder` 구현을 복사·변형하므로 PyTorch version 의존성이 있다.
+
+## 한계와 주의
+
+1. 한 morphology 안에서 node별 projection을 따로 쓰므로 unseen morphology에 바로 적용되는 cross-embodiment model이 아니다.
+2. body graph와 node allocation을 사람이 정의해야 한다.
+3. single timestep architecture다. temporal Transformer 확장은 future work다.
+4. 강한 Hard mask는 exploration과 장거리 협조를 방해할 수 있다.
+5. real-world evidence는 A1 flat-ground 5회로 작다.
+6. computation claim은 CPU NumPy microbenchmark이며 end-to-end GPU speed-up이 아니다.
+7. Adroit는 low-data state-based manipulation이고 vision-language manipulation의 근거가 아니다.
+
+## Figure/Table Inventory
+
+논문은 전통적 Table 번호 대신 여러 표를 Figure 안에 포함한다.
+
+| 원문 | 내용 | 반영 |
+| --- | --- | --- |
+| Figure 1 | 전체 architecture | Model 이미지 |
+| Figure 2 | `I+A` mask construction | mask 이미지 |
+| Figures 3–4 | MoCapAct table/scaling, Adroit tasks | IL 결과 |
+| Figure 5 | RL curves/qualitative | RL 결과 |
+| Figure 6 | compute microbenchmark | compute section |
+| Figure 7 | real A1 frame overlay | real-world text |
+| Figure 8 | root/non-root allocation rule | Appendix Notes |
+| Figure 9 | IL ablations/Adroit curves | ablation 이미지 |
+| Figures 10–11 | random mask, shared projection | RL ablation 이미지 |
+| Figure 12 | training hyperparameters | Training 이미지 |
+| Figure 13 | runtime vs sparsity | compute caveat |
+
+## Citation Trail
+
+- **Graphormer**: graph-aware soft attention 비교군.
+- **NerveNet / SMP / morphology Transformer 계열**: body graph로 sensor/action을 나누는 선행 연구.
+- **MoCapAct**: humanoid tracking BC dataset와 tailored multi-clip baseline.
+- **PPO / Isaac Gym / Legged Gym**: RL 학습과 A1 sim-to-real 기반.
+- **Embedding Morphology into Transformers**: 이후 π0.5 action expert에 BoT의 Hard/Mix taxonomy를 이식한 연구.
+
+## 검증 메모
+
+- 18쪽 PDF 본문과 Appendix A–I를 직접 확인했다.
+- Figure 1–13 전체를 inventory하고 main/appendix 결과를 대조했다.
+- 공식 repository의 model, mapping, actor/critic builder, mask scheduler, A1 deployment 경로를 확인했다.
+- 수치표와 figure caption의 mean/max/std 정의를 구분했다.
+- 비공개 시스템 정보는 포함하지 않았다.
+
+<SectionFeedback page="Body Transformer" section="문서 전체" />

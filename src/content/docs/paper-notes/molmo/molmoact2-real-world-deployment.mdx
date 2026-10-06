@@ -1,4 +1,5 @@
 ---
+research: {"kind": "paper", "topics": ["vla"], "status": "reviewing", "reviewedAt": null, "family": "molmo", "source": "https://arxiv.org/abs/2605.02881"}
 title: MolmoAct2
 description: real-world deployment를 목표로 MolmoAct를 flow expert, OpenFAST, adaptive depth reasoning으로 확장한 survey.
 sidebar:
@@ -6,6 +7,10 @@ sidebar:
 ---
 
 import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/molmo/molmoact2-real-world-deployment" />
 
 # MolmoAct2
 
@@ -124,6 +129,6 @@ Real-world DROID/Franka per-task result는 다음과 같다.
 | --- | --- |
 | [MolmoAct](../molmoact-action-reasoning-models/) | predecessor: depth/trace/action reasoning의 원형 |
 | [Molmo Family](../) | MolmoAct/MolmoAct2와 Molmo2-ER 흐름을 함께 보는 family overview |
-| [ECoT-Lite](../ecot/ecot-lite-efficient-embodied-reasoning/) | reasoning latency를 줄이는 다른 route |
-| [ECoT Family](../ecot/) | explicit reasoning, training-only reasoning, adaptive reasoning의 위치 비교 |
+| [ECoT-Lite](../../ecot/ecot-lite-efficient-embodied-reasoning/) | reasoning latency를 줄이는 다른 route |
+| [ECoT Family](../../ecot/) | explicit reasoning, training-only reasoning, adaptive reasoning의 위치 비교 |
 | [PI Model Family](../../pi/) | FAST/OpenFAST, flow matching action expert, continuous action interface 비교 |

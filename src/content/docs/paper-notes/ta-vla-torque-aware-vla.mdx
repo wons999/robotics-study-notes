@@ -1,0 +1,462 @@
+---
+research: {"kind": "paper", "topics": ["vla", "sensing"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2509.07962"}
+title: TA-VLA
+description: joint torque를 observation과 auxiliary prediction target으로 통합하는 Torque-aware VLA의 설계 공간, 실험, 공개 코드를 정리한 상세 Survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/ta-vla-torque-aware-vla" />
+
+# TA-VLA
+
+<SectionFeedback page="TA-VLA" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | TA-VLA: Elucidating the Design Space of Torque-aware Vision-Language-Action Models |
+| 저자 | Zongzheng Zhang, Haobo Xu, Zhuo Yang, Chenghao Yue, Zehao Lin, Huan-ang Gao, Ziwei Wang, Hao Zhao |
+| 소속 | Beijing Academy of Artificial Intelligence, Institute for AI Industry Research at Tsinghua University, Nanyang Technological University |
+| 공개 | arXiv:2509.07962v1, 2025-09-09; CoRL 2025 |
+| 링크 | [arXiv](https://arxiv.org/abs/2509.07962) · [PDF](https://arxiv.org/pdf/2509.07962) · [Project page](https://zzongzheng0918.github.io/Torque-Aware-VLA.github.io/) · [Official code](https://github.com/ZZongzheng0918/TA-VLA) |
+| 기준 버전 | 19쪽 arXiv v1 PDF와 2026-07-15 기준 공식 GitHub `main` |
+| 태그 | VLA, joint torque, motor effort, contact-rich manipulation, π0, RDT, flow matching |
+
+> **용어 주의.** 논문은 입력을 일관되게 `torque`라고 부르지만, Cobot Magic 실험에서는 모터 전류 `i`에 motor constant `k_t`를 곱한 `τ = k_t i`를 사용하고 공개 데이터 schema와 코드 변수명은 `observation.effort`다. 별도 wrist F/T sensor가 측정한 external wrench도, 동역학 모델을 빼서 얻은 순수 external joint torque도 아니다.
+
+## 한 줄 요약
+
+TA-VLA는 joint effort를 **action expert 쪽의 1개 history token**으로 넣고, 미래 action과 미래 effort를 같은 flow-matching output에서 공동 예측하면 RGB만으로 구분하기 어려운 접촉 실패를 감지하고 재시도하는 능력이 크게 좋아진다고 보고한다.
+
+![charger insertion의 effort profile, 7-DoF joint mapping, 논문이 탐색한 설계 공간](/ta-vla/torque-design-space.png)
+
+*Figure 1. TA-VLA가 탐색한 세 축은 언제(current/history/future), 어디에(encoder/decoder), 어떤 token 수로 넣을지다.*
+
+## 문제의식
+
+삽입이나 버튼 누르기에서는 RGB가 거의 같아도 물리 상태는 다를 수 있다.
+
+- end effector가 아직 닿지 않았다.
+- 닿았지만 socket edge에 걸렸다.
+- 올바르게 삽입되어 큰 접촉 반응이 발생했다.
+
+관절에서 측정한 effort는 이 차이를 kinematic chain 전체에 걸친 변화로 보여준다. 논문의 핵심 질문은 “torque가 유용한가?”보다 구체적이다.
+
+1. vision-language conditioning encoder와 action denoising decoder 중 어디에 넣어야 하는가?
+2. 현재 한 frame과 시간 history 중 무엇이 필요한가?
+3. history를 여러 token으로 보존할지, 한 token으로 압축할지?
+4. 과거 effort를 보기만 할지, 미래 effort까지 예측하게 할지?
+
+TA-VLA는 이 네 질문을 단계적으로 ablation하고, 최종적으로 **decoder-side aggregate history observation + joint action–effort objective**를 선택한다.
+
+## 물리적 근거와 그 한계
+
+논문은 manipulator dynamics를 다음처럼 쓴다.
+
+```text
+M(q) q_ddot + C(q, q_dot) q_dot + G(q) = tau_cmd + tau_ext
+tau_ext = J(q)^T F_ext
+tau_measured = tau_model + J(q)^T F_ext
+```
+
+end-effector wrench `F_ext`가 Jacobian transpose를 통해 joint-space torque로 투영되므로 contact event가 여러 관절의 effort profile에 남는다는 설명이다. 저속 quasi-static 조건에서는 gravity term을 빼고 external component를 근사할 수도 있다.
+
+다만 실제 policy 입력은 논문 식의 `τ_ext`가 아니라 **모터 전류 기반 `τ_measured`**다. 따라서 입력에는 contact뿐 아니라 다음 신호도 섞인다.
+
+- 중력과 payload
+- 가속·감속에 따른 관성
+- friction과 actuator dynamics
+- current-to-torque calibration error와 thermal drift
+- robot pose 및 수행 중인 motion 자체
+
+이것이 반드시 단점은 아니다. policy는 task에 유용한 total effort pattern을 학습할 수 있다. 그러나 “external force를 직접 감지한다”거나 “torque 변화가 contact만 나타낸다”고 해석하면 과도하다. Appendix Figure 13에서도 Joint 2의 non-contact mean effort range가 `0.836`, contact가 `1.188`로 이미 큰 baseline variation을 가진다.
+
+![contact와 non-contact 구간의 joint별 mean effort range](/ta-vla/contact-effort-range.png)
+
+*Figure 13. contact가 모든 관절에서 더 큰 range를 보이지만, shoulder joint는 non-contact motion에서도 상당히 변한다.*
+
+## 시스템과 데이터
+
+### Main embodiment
+
+| 항목 | 설정 |
+| --- | --- |
+| robot | Cobot Magic ALOHA, dual arm, arm당 7 DoF |
+| cameras | Intel RealSense D435 3대: top 1, left wrist 1, right wrist 1 |
+| joint state | 양팔 14D joint position |
+| effort | 양팔 14D motor-current-derived effort; joint별 training statistics로 normalize |
+| action horizon | π0 50, RDT 64; ACT training chunk 32, evaluation execution horizon 8 |
+| demonstrations | “all tasks에 400 demonstrations”라고 보고하나 task당 400인지 전체 400인지 문장이 모호함 |
+| deployment GPU | onboard RTX 4090 |
+
+논문은 10개 real-world task를 사용한다.
+
+| contact-rich | regular |
+| --- | --- |
+| Button Pushing | Bottle Pick and Place |
+| Charger Plugging | Liquid Pouring |
+| USB Plugging | Stacking Cubes |
+| Socket Unplugging | Push-to-Position |
+| Door Handle Turning | Opening a Drawer |
+
+모든 task는 20회씩 평가한다. 공개 저장소는 standard LeRobot format에 `observation.effort` field를 추가하도록 요구하지만, 논문에 사용한 dataset 자체와 checkpoint는 공개 저장소에서 제공하지 않는다.
+
+### Sample schema
+
+| field | shape/시간 범위 | 쓰임 |
+| --- | --- | --- |
+| three RGB views | 현재 frame | PaliGemma/SigLIP visual conditioning |
+| language instruction | task별 text | VLM conditioning |
+| `observation.state` | 현재 14D joint position, π0에서는 32D까지 zero pad | action expert state token |
+| `observation.effort` | 현재 또는 history `N×14` | effort adapter 입력 |
+| `action` | `H×d_a` | flow/diffusion target |
+| future effort | `H×14` | `+obj`의 auxiliary target |
+
+PDF의 history 실험은 **과거 2초에서 현재를 포함해 10 frame**을 uniform sampling한다. 공개 config는 frame offset `(-36, -32, ..., 0)`을 사용한다. 즉 dataset fps가 약 20 Hz인 설정을 전제로 한 1.8초 간격 표기이며, 논문은 이를 반올림해 2초라고 설명한다.
+
+## Method 1 — effort를 어디에 넣을 것인가
+
+![encoder, decoder pre-concatenation, decoder post-concatenation 비교](/ta-vla/integration-architectures.png)
+
+*Figure 2. DePost는 effort를 독립 token으로 projection하여 state token 앞의 action-expert suffix에 둔다.*
+
+### 세 후보
+
+| 방법 | 실제 입력 위치 | projection | 특징 |
+| --- | --- | --- | --- |
+| Enc | image/language와 같은 conditioning prefix | `14 → 4096 → 2048`, Swish | VLM의 multimodal fusion 이용 |
+| DePre | 기존 32D state의 zero-padding 영역 마지막 14칸 | 별도 adapter 없음 | `[q_t; τ_t]`를 state 1 token으로 혼합 |
+| DePost | action expert suffix에서 state token 앞 | `14 → 2048 → 1024`, Swish | effort를 독립 decoder token으로 유지 |
+
+π0의 conditioning encoder width는 2048, action expert width는 1024다. `DePost`라는 이름은 tensor feature를 state와 concatenate한다는 뜻이 아니라, **별도 token을 suffix token sequence에 붙인다**는 뜻에 가깝다.
+
+### 결과
+
+| Task | π0 | Enc | DePre | DePost |
+| --- | ---: | ---: | ---: | ---: |
+| Button Pushing | 5/20 | 7/20 | 8/20 | **10/20** |
+| Charger Plugging | 0/20 | 8/20 | 11/20 | **12/20** |
+
+논문은 decoder가 더 나은 이유를 두 가지로 설명한다.
+
+1. **modality alignment:** 12번째 transformer layer hidden state의 normalized HSIC에서 angle–torque가 `0.957`로 가장 높다. torque는 image/language보다 joint state와 함께 처리하는 편이 맞다는 주장이다.
+2. **decoder sensitivity:** input에 Gaussian noise `σ=0.1`을 넣으면 encoder-noised보다 decoder-noised 성능이 더 크게 떨어진다. decoder가 작은 변화에 민감하므로 subtle effort도 더 잘 활용할 것이라는 해석이다.
+
+두 번째 논리는 조심해서 읽어야 한다. noise에 취약하다는 사실과 informative signal에 민감하다는 사실은 동일하지 않다. 실험 결과는 DePost 선택을 지지하지만, noise ablation만으로 decoder가 물리 신호를 더 정교하게 이해한다고 증명되지는 않는다.
+
+## Method 2 — history를 왜 한 token으로 압축하는가
+
+![encoder와 decoder에서 one-token/multi-token effort history를 비교하는 네 구조](/ta-vla/history-architectures.png)
+
+*Figure 4. 최종 선택은 (c): 10×14 history 전체를 flatten한 뒤 decoder-side 1 token으로 projection하는 방식이다.*
+
+두 tokenization 후보는 다음과 같다.
+
+```text
+Multi-token:
+  tau[t-9], ..., tau[t]                 # 각 14D
+  -> 같은 MLP를 frame마다 적용
+  -> 10 effort tokens
+
+One-token:
+  concat(tau[t-9], ..., tau[t])         # 140D
+  -> MLP(140, 2*width) -> Swish -> MLP(2*width, width)
+  -> 1 effort token
+```
+
+| Task | π0 | Enc-1 | Enc-H | Dec-1 | Dec-H |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Button Pushing | 5/20 | 1/20 | 4/20 | **15/20** | 9/20 |
+| Charger Plugging | 0/20 | 3/20 | 6/20 | **16/20** | 7/20 |
+
+흥미로운 점은 위치와 token 수의 상호작용이다.
+
+- encoder에서는 multi-token이 one-token보다 낫다. `4>1`, `6>3`으로 정보 보존의 이득이 보인다.
+- decoder에서는 one-token이 multi-token보다 훨씬 낫다. `15>9`, `16>7`이다.
+- 별도 random token 하나만 추가해도 decoder가 더 크게 무너지는 disruption test가 이 현상을 보조한다.
+
+저자들은 action expert가 pretraining에서 익힌 `state token → action tokens` 패턴에 여러 history token을 끼우면 input pattern이 깨진다고 해석한다. 한 token은 시간 정보를 손실할 수 있지만, **고정된 suffix 구조를 보존하는 이득**이 더 크다는 것이다.
+
+Appendix의 aggregation ablation에서도 140D flatten + MLP가 RNN과 attention보다 낫다.
+
+| variant | MLP | RNN | Attention |
+| --- | ---: | ---: | ---: |
+| π0 + obs | **15/20** | 7/20 | 13/20 |
+| π0 + obs + obj | **18/20** | 10/20 | 17/20 |
+
+저자들은 400 demonstrations라는 작은 fine-tuning regime에서 복잡한 temporal module이 underfit했다고 추정한다. 즉 “MLP가 본질적으로 시계열에 더 적합하다”는 결론은 아니다.
+
+## Method 3 — action과 미래 effort의 공동 flow matching
+
+TA-VLA는 history를 observation으로 넣는 것과 별개로 미래 effort를 auxiliary output으로 예측한다.
+
+```text
+A_t = [a_t, ..., a_(t+H-1)]             # action chunk
+T_t = [tau_t, ..., tau_(t+H-1)]         # effort chunk
+Z_t = concat(A_t, T_t)                  # per-step feature concat
+
+Z_alpha = alpha * Z_t + (1-alpha) * epsilon
+target  = epsilon - Z_t
+
+L_joint = L_action + beta * L_effort
+```
+
+별도 torque head를 만들지 않는다. 기존 action input/output projection의 차원을 `d_a`에서 `d_a+14`로 넓히고, 하나의 action expert가 joint vector field를 출력한다. pretrained action dimension에 해당하는 weight는 보존하고 새 effort dimension만 작은 값으로 초기화한다.
+
+![validation sequence에서 예측한 세 관절의 future effort와 ground truth](/ta-vla/future-torque-prediction.png)
+
+*Figure 6. 50-step future effort curve가 ground truth의 큰 변화를 따라간다. 논문은 정량 prediction metric은 보고하지 않는다.*
+
+### 이 auxiliary objective가 하는 일
+
+학습 시 action만 맞히는 모델은 같은 action demonstration을 내는 데 필요한 최소 표현만 만들 수 있다. effort까지 맞히려면 “이 motion이 다음 순간 어떤 물리 반응을 만들지”를 shared action expert 안에 표현해야 한다. 저자들은 이것을 physically grounded latent space라고 부른다.
+
+중요한 구분은 다음과 같다.
+
+- 이것은 model-based control에서 명시적인 torque dynamics model을 rollout하는 구조가 아니다.
+- predicted effort로 action을 다시 최적화하는 별도 planner나 guidance loop도 없다.
+- inference에서는 action+effort를 함께 denoise하지만 마지막에 **action slice만 반환**하고 predicted effort는 버린다.
+- 따라서 효과는 auxiliary supervision과 joint vector field coupling에서 온다.
+
+### β 선택
+
+| β | 0.01 | 0.1 | 0.2 | 0.5 | 1.0 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| π0 + obj | 6/20 | 8/20 | 10/20 | 9/20 | **11/20** |
+| π0 + obs + obj | 14/20 | **18/20** | **18/20** | 15/20 | 12/20 |
+
+observation이 없을 때는 effort prediction을 강하게 주는 `β=1`, observation과 함께 쓸 때는 두 신규 component의 균형을 위해 `β=0.1`을 선택한다.
+
+![future-effort loss weight와 history aggregation ablation](/ta-vla/beta-and-aggregation-ablation.png)
+
+## 전체 architecture 흐름
+
+```text
+3 RGB views + instruction
+        │
+        ▼
+PaliGemma vision-language prefix (2048D)
+        │
+        ├────────────── conditioning KV ──────────────┐
+        │                                             │
+10×14 normalized effort history                       │
+        │ flatten                                     │
+        ▼                                             │
+MLP -> one 1024D effort token                         │
+        │                                             │
+        ├── current 32D padded state -> state token   │
+        │                                             │
+        └── noisy [action; future effort] 50 tokens   │
+                          │                           │
+                          ▼                           │
+                300M action expert ◄─────────────────┘
+                          │
+                          ▼
+              joint action-effort vector field
+                          │ 10 integration steps
+                          ▼
+                  execute action slice only
+```
+
+π0의 VLM과 action expert는 서로 다른 width와 weight를 쓰지만 self-attention 안에서 함께 동작한다. TA-VLA의 최종 observation token은 language/image prefix가 아니라 action-expert suffix에 들어간다.
+
+## 학습 recipe
+
+| model | initialization | tuning | schedule |
+| --- | --- | --- | --- |
+| π0 variants | public `pi0_base` checkpoint | encoder와 decoder 모두 LoRA | 4×NVIDIA L20, 30k gradient steps, AdamW |
+| RDT | public pretrained checkpoint | full-parameter training | 4×NVIDIA L20, 40k steps, AdamW |
+| ACT | task data | paper에 freeze 정보 없음 | 600 epochs, chunk 32, AdamW |
+
+π0는 50-step chunk를 10번의 flow integration으로 생성한다. RDT는 64-step chunk와 5 denoising steps를 사용한다. 논문은 batch size, learning rate, LoRA rank, weight decay, augmentation, random seed와 validation-based checkpoint selection을 보고하지 않는다.
+
+## 정량 결과
+
+![10개 task의 성공률과 failure 뒤 재시도 qualitative sequence](/ta-vla/results-and-retries.png)
+
+*Table 5 & Figure 7. torque-aware variant는 contact-rich task에서 큰 차이를 만들고, qualitative sequence는 실패 후 retreat/retry를 보여준다.*
+
+### Contact-rich task 합산
+
+| Method | 합산 성공 | 성공률 | π0 대비 |
+| --- | ---: | ---: | ---: |
+| ACT | 14/100 | 14% | -9%p |
+| RDT | 15/100 | 15% | -8%p |
+| π0 | 23/100 | 23% | baseline |
+| π0 + obs | 78/100 | 78% | +55%p |
+| π0 + obj | 64/100 | 64% | +41%p |
+| π0 + obs + obj | **86/100** | **86%** | **+63%p** |
+
+observation alone이 objective alone보다 강하고, 둘을 합치면 다시 8%p 오른다. 특히 π0가 0/20이던 Charger/USB Plugging이 각각 17/20이 된다. 반면 Socket Unplugging은 π0가 이미 16/20이고 최종 모델은 19/20이라 ceiling effect가 크다.
+
+### Regular task 합산
+
+| Method | 합산 성공 | 성공률 |
+| --- | ---: | ---: |
+| ACT | 69/100 | 69% |
+| RDT | 77/100 | 77% |
+| π0 | 85/100 | 85% |
+| π0 + obs | 87/100 | 87% |
+| π0 + obj | 84/100 | 84% |
+| π0 + obs + obj | **89/100** | **89%** |
+
+regular task 개선은 `+4%p`로 작고, `+obj`만 쓰면 오히려 π0보다 1회 낮다. 따라서 “torque가 모든 manipulation에 일반적으로 큰 이득”이라기보다 **contact ambiguity가 큰 task에서 효과가 집중된다**고 읽는 편이 정확하다.
+
+### Cross-model
+
+RDT에 observation과 objective를 모두 이식하면 Button Pushing `4/20→16/20`, Charger Plugging `1/20→15/20`, Bottle Pick and Place `17/20→19/20`이다. RDT effort projector는 2-layer MLP+GELU로 2048D token을 만들고 state token 뒤에 붙인다. 하나의 backbone에만 국한되지 않는다는 근거지만 평가 task는 3개뿐이다.
+
+### Cross-embodiment
+
+ROKAE SR arm에서 fast-charging connector insertion 200 demonstrations로 50k steps 학습한 뒤 fast/slow charging port의 성공 sequence를 보여준다. 그러나 success rate, trial 수, baseline, slow-port fine-tuning 여부가 명확히 보고되지 않아 **정량적 cross-embodiment generalization 증거로 보기는 어렵다**.
+
+## 실패 감지와 재시도는 어떻게 생기는가
+
+논문 qualitative sequence에서 robot은 misalignment 뒤 retreat하고 다시 누르거나 삽입한다. 여기에는 별도 “failure classifier”나 hand-coded retry state machine이 없다. imitation data 안의 다음 패턴을 policy가 effort history와 연결해 학습한 결과로 해석해야 한다.
+
+```text
+unexpected effort pattern
+  -> one-token history changes action-expert hidden state
+  -> next 50-step action distribution shifts toward retreat/re-alignment
+  -> new observation and effort history arrives
+  -> replanning produces second attempt
+```
+
+즉 torque threshold가 retry를 trigger하는 고전 controller가 아니라, demonstration distribution에 포함된 recovery behavior를 조건부 생성하는 policy다. 논문은 demonstration 중 실패/recovery 비율과 data collection protocol을 보고하지 않으므로 recovery가 얼마나 data-dependent한지는 알 수 없다.
+
+## 효율
+
+Button Pushing에서 보고한 값은 다음과 같다.
+
+| variant | training s/iter | inference ms |
+| --- | ---: | ---: |
+| π0 | 1.703 | 90.70 |
+| π0 + obs | 1.628 | 90.81 |
+| π0 + obj | 1.648 | 90.61 |
+| π0 + obs + obj | 1.640 | 93.96 |
+
+최종 모델의 inference overhead는 `3.26 ms`, 약 `3.6%`다. training time이 baseline보다 오히려 조금 짧은 값은 measurement noise 범위로 보는 것이 타당하다. parameter count 증가량, memory, policy control frequency와 end-to-end sensor latency는 보고하지 않는다.
+
+## 공개 코드에서 확인한 구현
+
+공식 저장소는 OpenPI commit `cd82848`에서 분기했다. 핵심 파일은 다음과 같다.
+
+| 파일 | 확인 내용 |
+| --- | --- |
+| `src/openpi/shared/effort_type.py` | `STATE`, `LLM`, `LLM_HIS_C/T`, `EXPERT`, `EXPERT_HIS_C/T`, future-output 조합 enum |
+| `src/openpi/models/pi0.py` | effort MLP, prefix/suffix token 위치, joint action-effort projection, loss와 inference slicing |
+| `src/openpi/training/data_loader.py` | history timestamp와 future effort horizon을 LeRobot loader에 요청 |
+| `src/openpi/training/config.py` | `(-36,-32,...,0)` history, LoRA model config, 30k steps |
+| `src/openpi/policies/tavla_policy.py` | deployment input의 effort shape을 `[history, 14]`로 전달 |
+
+### 논문과 코드가 일치하는 부분
+
+- `LLM_*`은 effort token을 2048D prefix에, `EXPERT_*`는 1024D suffix에 둔다.
+- `_HIS_C`는 `[B,N,14]`를 `[B,N×14]`로 flatten해 정확히 1 token을 만든다.
+- `_HIS_T`는 history frame마다 MLP를 적용해 여러 token을 만든다.
+- future mode는 action input/output projection을 `action_dim + effort_dim`으로 확장한다.
+- inference가 끝나면 `x_0[..., :action_dim]`만 반환한다.
+- standard normalization transform에 `effort` field도 포함된다.
+
+### 재현 시 반드시 고쳐야 할 차이
+
+1. **β가 hard-coded다.** 공개 `pi0.py`는 모든 future mode에서 `action_loss + 0.1 * effort_loss`를 반환한다. 논문은 `π0+obj`에 `β=1`, `π0+obs+obj`에 `β=0.1`을 사용했다. 현재 코드 그대로는 Table 5의 `π0+obj` 설정을 재현할 수 없다.
+2. **future timestamp 표기가 한 step 다르다.** PDF 수식은 `T_t=[τ_t,...,τ_(t+H-1)]`로 쓰지만 loader는 `(t+1)...(t+H)` offset을 추가한다. 구현 기준 auxiliary target은 next-step부터다.
+3. **dataset/checkpoint가 없다.** README는 field 규약만 제공하며 논문 데이터, normalization statistics, trained weights는 포함하지 않는다.
+4. **main config가 모든 variant를 완성형으로 제공하지 않는다.** 즉 enum과 model branch는 넓게 구현되어 있지만 논문의 전체 ablation을 command 하나로 재현할 config matrix는 없다.
+
+공개 코드는 논문 아이디어를 이해하는 데 충분하지만, Table 1–10을 정확히 재생하는 turnkey release는 아니다.
+
+## Figure / Table inventory 검증
+
+PDF의 모든 figure와 table을 아래처럼 본문에 반영했다.
+
+| PDF 항목 | 내용 | 이 노트에서 반영한 위치 |
+| --- | --- | --- |
+| Fig. 1 | insertion effort, joint map, design space | 한 줄 요약/문제의식 이미지 |
+| Fig. 2 | Enc/DePre/DePost | Method 1 이미지와 구조표 |
+| Fig. 3 | normalized HSIC | Method 1의 alignment 수치 |
+| Tables 1–4 | 위치/history/noise ablation | Method 1–2 표와 해석 |
+| Fig. 4 | history tokenization 4종 | Method 2 이미지 |
+| Fig. 5 | joint action–torque diffusion | Method 3 수식과 전체 architecture |
+| Fig. 6 | future effort prediction | Method 3 이미지와 metric 부재 지적 |
+| Tables 5–6 | 10-task main result, RDT transfer | 정량 결과 합산과 cross-model |
+| Figs. 7–8 | retry와 ROKAE qualitative | 정량 이미지, 실패 감지, cross-embodiment |
+| Figs. 9–10 | contact-rich/regular 추가 sequence | task inventory와 qualitative 해석 |
+| Figs. 11–12 | RDT 구조, cross-embodiment sequence | Cross-model/embodiment 설명 |
+| Tables 7–8 | training/inference efficiency | 효율 표 |
+| Tables 9–10 | β와 aggregation ablation | Method 2–3 표와 이미지 |
+| Fig. 13 | contact/non-contact effort range | 물리적 근거의 한계 이미지 |
+
+## 강점
+
+- torque-aware VLA를 단일 architecture 제안이 아니라 위치·시간·token 수·objective의 설계 공간으로 정리한다.
+- current effort보다 history가 중요하고, history 정보량과 pretrained token pattern 보존 사이의 trade-off를 실험으로 분리한다.
+- 별도 F/T sensor 없이 commodity actuator current를 사용한다.
+- π0뿐 아니라 RDT에서도 큰 개선을 보여 architecture transfer 가능성을 제시한다.
+- 10개 task, task당 20 trials의 실제 로봇 평가와 appendix ablation을 제공한다.
+- 최종 inference overhead가 작다.
+
+## 한계와 열린 질문
+
+### 측정과 물리 해석
+
+- current-derived effort의 calibration, thermal compensation, payload 변화에 민감하다.
+- dynamics compensation을 하지 않으므로 contact와 motion-induced effort가 섞인다.
+- 논문 이론은 gripper column의 external torque가 0이라고 유도하지만 실제 입력에는 all 7 joints를 쓴다. gripper effort가 contact가 아니라 grasp command/state shortcut이 될 가능성은 분리하지 않았다.
+- external 6-axis F/T sensor나 tactile sensor와의 동등 조건 비교가 없다.
+
+### 실험 설계
+
+- 20 trials의 confidence interval과 여러 seed/여러 training run 분산이 없다.
+- task마다 같은 hardware layout과 language를 사용했는지, object/pose perturbation 범위가 구체적이지 않다.
+- recovery demonstration의 양과 실패 유형 분포가 없다.
+- cross-embodiment는 qualitative result뿐이다.
+- future effort prediction은 curve 예시만 있고 MSE/correlation/calibration metric이 없다.
+
+### architecture 해석
+
+- decoder noise sensitivity는 fine-grained physical sensitivity의 간접 근거일 뿐 인과적 증명은 아니다.
+- multi-token history 실패가 positional distribution shift인지, attention mask인지, data scarcity인지 완전히 분리하지 않았다.
+- MLP/RNN/attention의 parameter count와 optimization budget을 맞췄는지 보고하지 않는다.
+- 더 긴 history, 다른 sampling rate, asynchronous effort/RGB, online sensor delay를 다루지 않는다.
+
+### 공개 재현성
+
+- dataset, checkpoint, exact normalization statistics가 없다.
+- 공개 코드의 hard-coded `β=0.1`은 논문의 `+obj` 설정과 다르다.
+- paper의 400 demonstrations 문구가 task당인지 전체인지 모호하다.
+
+## 다른 force/tactile VLA와의 위치
+
+| 방법 계열 | 물리 입력 | 핵심 결합 방식 | TA-VLA와 차이 |
+| --- | --- | --- | --- |
+| TA-VLA | actuator joint effort history | action expert 1 token + future effort auxiliary target | cheap global signal, local contact geometry 없음 |
+| ForceVLA | 6-axis force-torque | force-aware MoE | explicit wrench와 expert routing에 초점 |
+| tactile VLA | fingertip visuotactile image/feature | visual/tactile encoder fusion | local contact patch가 풍부하지만 sensor와 data 비용 증가 |
+| T-Rex류 reactive policy | tactile feedback | slow semantic stream + fast reactive stream | 고주파 correction을 명시적으로 분리 |
+
+TA-VLA의 가장 큰 장점은 existing π0/RDT에 작은 adapter와 output dimension 확장만으로 붙일 수 있다는 점이다. 반대로 fine contact geometry나 slip direction처럼 joint effort만으로 식별하기 어려운 정보는 tactile sensor가 더 직접적이다.
+
+## 최종 판단
+
+TA-VLA가 가장 설득력 있게 보여주는 것은 다음 세 문장이다.
+
+1. contact-rich task에서는 current joint effort 한 frame보다 **시간 history**가 훨씬 유용하다.
+2. pretrained action expert에 새 modality를 넣을 때는 정보량뿐 아니라 **기존 token layout을 얼마나 덜 깨는지**가 중요하다.
+3. 물리 signal은 observation으로만 주는 것보다 미래 결과를 auxiliary prediction하게 할 때 추가 이득이 있다.
+
+다만 `86% vs 23%`라는 큰 contact-rich 개선을 일반적인 force-aware foundation policy의 증거로 확대하려면 공개 dataset/checkpoint, multi-seed 평가, dynamics-compensated torque 및 tactile/F/T 비교, 정량 cross-embodiment 검증이 더 필요하다. 현재 단계에서 TA-VLA는 **torque integration의 좋은 design-study이자 구현 출발점**으로 보는 것이 가장 정확하다.
+
+## 인용 흐름
+
+- backbone 이해: [π0](../pi/pi0-vla-flow-model/), [RDT-1B](https://arxiv.org/abs/2410.07864), [ACT](https://arxiv.org/abs/2304.13705)
+- force-aware VLA 비교: [ForceVLA](../forcevla-force-aware-moe/)
+- sensorless joint torque/contact estimation의 물리적 배경: 논문 Sec. 3과 Appendix A.2
+- joint prediction/planning motivation: Motion Transformer의 joint future prediction 관점에서 auxiliary physical prediction으로 확장
+
+<SectionFeedback page="TA-VLA" section="전체 Survey" />

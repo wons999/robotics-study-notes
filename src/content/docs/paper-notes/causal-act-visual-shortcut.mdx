@@ -1,0 +1,108 @@
+---
+research: {"kind": "paper", "topics": ["vla", "sensing"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2507.22380"}
+title: Causal-ACT
+description: ACT의 ResNet visual feature에 binary causal graph mask를 학습하고 policy-execution intervention으로 OOD distractor shortcut을 줄이는 논문 survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/causal-act-visual-shortcut" />
+
+# Causal-ACT
+
+<SectionFeedback page="Causal-ACT" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Improving Generalization Ability of Robotic Imitation Learning by Resolving Causal Confusion in Observations |
+| 저자 | Yifei Chen, Yuzhe Zhang, Giovanni Durso, Nicholas Lawrance, Brendan Tidd |
+| 공개 | arXiv:2507.22380v1, 2025-07-30, preprint under review |
+| 링크 | [arXiv](https://arxiv.org/abs/2507.22380) · [PDF](https://arxiv.org/pdf/2507.22380) · [anonymous code snapshot](https://anonymous.4open.science/r/Causal_ACT_code-E7BA/README.md) |
+| 기준 | 13쪽 PDF와 Appendix A–C |
+
+## 한 줄 요약
+
+Causal-ACT는 ResNet image feature와 같은 크기의 binary graph mask를 무작위로 넣어 ACT를 학습한 뒤, episodic reward를 intervention signal로 삼아 좋은 mask를 탐색한다. training에만 있던 여섯 distractor cube를 test에서 제거하면 ACT transfer success가 0.23으로 무너지지만 Causal-ACT는 0.82를 기록한다.
+
+## 먼저 구분할 것: proprioception 논문인가?
+
+아니다. ACT observation에는 robot joint position `j_t`가 들어가며 Algorithm 1은 이를 “robot proprioception”이라고 명시한다. 그러나 Causal-ACT가 선택하거나 masking하는 것은 **ResNet image feature `x_t`뿐**이다. joint position은 style encoder와 action Transformer에 원래 ACT처럼 그대로 들어간다. proprioception 제거, noise, tokenization, state shortcut ablation은 없다.
+
+따라서 이 논문은 proprioception 사용 사례로는 “visual shortcut을 억제하면서 joint state path는 보존한 ACT”이고, proprioception 표현이 generalization을 개선했다는 evidence는 아니다.
+
+## 문제 설정과 이론
+
+저자들은 observation component에서 action으로 향하는 edge를 causal graph로 보고, action의 parent만으로 structural function을 학습하려 한다. 이전 causal-confusion 연구는 latent component가 disentangled되어야 한다고 가정했지만, Proposition 1은 imitation-policy graph에서 action에 self-cycle이 없으므로 observation끼리 entangled되거나 cycle이 있어도 SCM이 action에 관해 uniquely solvable하다고 주장한다. Appendix A의 proof는 single-variable unique solvability lemma에 이 graph property를 적용하는 짧은 증명이다.
+
+이 결과는 “학습 알고리즘이 true visual causes를 식별한다”는 보장은 아니다. representation disentanglement가 structural function learnability의 필요조건이 아님을 보인 것이다.
+
+## Method
+
+![Causal-ACT architecture](/causal-act/figure-3-architecture.png)
+
+*Figure 3. binary graph는 image features를 element-wise modulate하고 graph 자체도 Transformer 입력이 된다. joints는 별도 입력이다.*
+
+1. RGB `o_t`를 ResNet `h`로 encoding하여 `x_t`를 만든다.
+2. `dim(x)`개의 Bernoulli binary variables로 graph `g_t`를 uniform i.i.d. sampling한다.
+3. policy는 `(x_t ⊙ g_t, g_t, j_t, z)`로 100-step action chunk를 예측한다.
+4. ACT의 conditional VAE style encoder는 demonstration action chunk와 joint position으로 `z`를 만들고, `MSE + β KL`을 최적화한다.
+5. 학습 후 `p(g) ∝ exp⟨ω,g⟩`에서 graph를 sampling하여 실제 policy episode reward를 얻고, 누적 `(g,R_g)`에 linear regression으로 `ω`를 fitting한다. 50 intervention iterations 뒤 가장 높은 확률의 `g*`를 inference에서 고정하고 `z=0`으로 둔다.
+
+graph의 크기는 ResNet output `512×15×20 = 153,600` bits다. 모든 `2^n` graph를 탐색할 수 없어 linear energy model로 근사한다. mask와 mask identity를 함께 주므로 policy는 어떤 feature가 제거됐는지 조건부로 적응할 수 있다.
+
+## 실험 protocol
+
+- MuJoCo 2.3.7, ALOHA의 두 6-DoF arms, top-view `480×640` RGB, 50 Hz.
+- Cube Transfer: right arm이 red cube를 집어 left arm에 전달한다. touch/lift/transfer 단계 reward를 평가한다.
+- scripted state-aware expert trajectory는 400 steps, 8초이며 joint와 image를 HDF5로 저장한다. trajectory 개수는 명시하지 않고 파일당 약 370 MB라고만 적는다.
+- training에는 고정 위치·색의 distractor cube 6개, OOD test에는 distractor가 없다.
+- 84M parameters, 2,000 epochs, 3 seeds, seed별 50 episodes. ACT 55분/4GB, Causal-ACT 65분/5GB.
+- learning rate `1e-5`, batch 8, heads 8, encoder/decoder 4/7 layers, hidden 512, FFN 3200, `β=10`.
+
+## 결과
+
+![ID와 OOD 결과](/causal-act/table-1-id-ood.png)
+
+*Table 1. Causal-ACT는 ID transfer도 0.96으로 유지하면서 OOD transfer를 0.23→0.82로 높인다.*
+
+| method | OOD touched | OOD lifted | OOD transfer | ID transfer |
+| --- | ---: | ---: | ---: | ---: |
+| ACT | 0.87 | 0.54 | 0.23 | 0.89 |
+| Causal-ACT | 0.88 | 0.84 | **0.82** | **0.96** |
+
+논문 본문 한 곳은 OOD Causal-ACT를 0.88이라고 서술하지만 Table 1과 Table 2의 completed transfer 값은 모두 **0.82**다. 0.88은 touched 값으로 보이는 textual error다.
+
+![domain randomization과 graph ablation](/causal-act/table-2-dr-ablation.png)
+
+*Table 2. test와 가까운 적은 distractor 사례를 많이 포함하는 DR만 0.91로 Causal-ACT보다 높다.*
+
+- DR `k=∞/6/3/0`의 transfer는 `0.34/0.48/0.61/0.91`이다. `k=0`은 1–6 distractor를 uniform sampling하므로 zero-distractor test에 상대적으로 가깝다.
+- random graph는 0.48, full-connected graph는 0.02다. learned graph search가 필요하다는 ablation이다.
+- 그러나 baseline ACT는 fixed six-cube demonstrations, DR은 varying distractor demonstrations를 사용한다. “추가 expert data 없이”라는 장점은 Causal-ACT와 fixed ACT 비교에 해당한다.
+
+## 한계와 해석
+
+- 하나의 simulation task와 “distractor 제거” shift만 검증했다. new color/background/camera, real robot evidence는 없다.
+- graph selection에는 simulator episodic reward가 필요하다. reward 없는 pure behavior cloning deployment에 바로 적용되는 구조는 아니다.
+- high-dimensional graph search는 intractable하며 learned mask가 semantic cause와 일치하는 visualization/quantitative recovery가 없다.
+- full-connection 0.02는 standard ACT 0.23과 직접 같은 architecture가 아니다. graph-conditioned policy가 training 중 거의 보지 못한 all-one mask에 놓이는 effect도 섞인다.
+- official link는 anonymous snapshot이고 영속적 release/commit provenance가 약하다.
+
+## Figure/Table Inventory
+
+| 항목 | 내용 | 반영 |
+| --- | --- | --- |
+| Fig. 1 | six-distractor train, no-distractor test | protocol |
+| Fig. 2 | temporal imitation causal graph | 이론 |
+| Fig. 3 | Causal-ACT architecture | method 이미지 |
+| Table 1 | ID/OOD ACT 비교 | 정확한 수치 |
+| Table 2 | DR와 graph ablation | 정확한 수치 |
+| Table 3 | train hyperparameters | recipe |
+| Fig. 4 | DR cube-count sampling distributions | DR 해석 |
+
+Appendix A는 Proposition 1 proof, B는 hyperparameters, C는 domain-randomization distribution을 담는다.
+

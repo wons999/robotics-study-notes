@@ -1,9 +1,14 @@
 ---
+research: {"kind": "paper", "topics": ["vla", "data"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2410.24185"}
 title: DexMimicGen
 description: 소수의 양팔·다지손 human demonstrations를 object-centric subtask로 분해하고 simulation에서 변환·재실행해 대규모 imitation-learning data를 만드는 ICRA 2025 논문.
 ---
 
 import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/dexmimicgen-bimanual-data-generation" />
 
 # DexMimicGen
 
@@ -401,8 +406,8 @@ repository 설명도 “simulation environments and datasets release”라고 �
 - **BiGym**: robosuite 밖의 mobile bimanual simulator에서도 generator를 시험한 benchmark다.
 - **Ditto / GroundingDINO**: real2sim2real의 digital twin과 초기 object pose synchronization에 쓰인다.
 - **SkillMimicGen**: collision failure를 줄이기 위한 향후 motion-planning 확장으로 언급된다.
-- **[Dexora](./dexora-bimanual-dexterous-manipulation/)**: 후속 high-DoF VLA가 embodiment-matched simulation corpus를 만들 때 DexMimicGen 계열의 retargeting을 활용하는 연결점이다.
-- **[RoboSplat](./robosplat-gaussian-splatting-demonstration-generation/)**과 **[RoboEngine](./roboengine-semantic-background-augmentation/)**: 둘은 graphics/image augmentation이고, DexMimicGen은 physics simulator 안에서 action trajectory를 변환·검증한다는 점이 다르다.
+- **[Dexora](../dexora-bimanual-dexterous-manipulation/)**: 후속 high-DoF VLA가 embodiment-matched simulation corpus를 만들 때 DexMimicGen 계열의 retargeting을 활용하는 연결점이다.
+- **[RoboSplat](../robosplat-gaussian-splatting-demonstration-generation/)**과 **[RoboEngine](../roboengine-semantic-background-augmentation/)**: 둘은 graphics/image augmentation이고, DexMimicGen은 physics simulator 안에서 action trajectory를 변환·검증한다는 점이 다르다.
 
 ## Figure/Table Inventory
 

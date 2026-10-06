@@ -1,0 +1,221 @@
+---
+research: {"kind": "paper", "topics": ["vla", "data"], "status": "reviewing", "reviewedAt": null, "source": "https://www.roboticsproceedings.org/rss21/p146.pdf"}
+title: RoboSplat
+description: 한 번의 실제 demonstration과 multi-view 장면 촬영으로 3D Gaussian scene을 만들고 pose·view·appearance·object·embodiment를 편집해 real-world 강건성을 높이는 RSS 2025 논문.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/robosplat-gaussian-splatting-demonstration-generation" />
+
+# RoboSplat
+
+<SectionFeedback page="RoboSplat" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Novel Demonstration Generation with Gaussian Splatting Enables Robust One-Shot Manipulation |
+| 저자 | Sizhe Yang, Wenye Yu, Jia Zeng, Jun Lv, Kerui Ren, Cewu Lu, Dahua Lin, Jiangmiao Pang |
+| 공개 | Robotics: Science and Systems (RSS) 2025, arXiv:2504.13175v1 |
+| DOI | [10.15607/RSS.2025.XXI.146](https://doi.org/10.15607/RSS.2025.XXI.146) |
+| 링크 | [RSS proceedings](https://www.roboticsproceedings.org/rss21/p146.html) · [PDF](https://www.roboticsproceedings.org/rss21/p146.pdf) · [Project](https://yangsizhe.github.io/robosplat/) · [Code](https://github.com/InternRobotics/RoboSplat) |
+| 기준 | 17쪽 arXiv PDF, 본문과 Appendix A–E 전체 |
+
+## 한 줄 요약
+
+RoboSplat은 한 번의 실제 teleoperation과 정지 장면의 multi-view images를 3D Gaussian Splatting으로 재구성한 뒤, 장면과 궤적을 함께 편집해 수천 개의 synthetic demonstrations를 만든다. 특히 novel/moving camera 평가에서 VISTA의 평균 성공률 `40.6%`를 `80.6%`로 높인 것이 사용자가 기억한 “실제 배포 중 카메라를 계속 움직이는” 결과다.
+
+## 먼저 구분할 것: simulation과 VLA인가?
+
+엄밀히는 둘 다 아니다.
+
+- 일반적인 rigid-body simulator에서 contact dynamics를 rollout하는 Real-to-Sim 방식이 아니다. 실제 장면을 3DGS로 재구성하고 **graphics representation을 편집**하며, 행동은 keyframe 변환과 motion planning으로 만든다.
+- 평가 policy는 language-conditioned VLA가 아니다. 두 RGB image와 robot joint state를 입력받아 relative end-effector action chunk를 예측하는 task-specific visuomotor BC Transformer다.
+- “one-shot”은 policy가 test-time demonstration 한 장을 conditioning한다는 뜻이 아니라, **data engine의 seed가 실제 expert demonstration 한 개**라는 뜻이다. 별도로 정지 장면의 multi-view 촬영, COLMAP/3DGS reconstruction, URDF, camera alignment가 필요하다.
+
+따라서 이 논문은 “synthetic data로 VLA를 학습했다”기보다, 향후 VLA에도 붙일 수 있는 **3D synthetic demonstration generator를 task-specific policy로 검증한 연구**로 분류하는 편이 정확하다.
+
+## 문제 설정
+
+2D augmentation은 image-space에서 배경이나 robot appearance를 바꾸기 쉽지만, camera viewpoint와 object pose를 바꾸면 spatial consistency가 깨질 수 있다. 반대로 physics simulator는 3D 일관성이 있지만 실제 장면의 geometry와 appearance를 정확히 재현하기 어렵다.
+
+RoboSplat의 절충안은 3DGS를 실제 장면에 맞춘 “편집 가능한 graphics engine”으로 쓰는 것이다. 입력과 출력은 다음과 같다.
+
+| 구분 | 내용 |
+| --- | --- |
+| 실제 입력 | expert trajectory 1개, robot이 default pose로 고정된 정지 장면의 multi-view RGB images |
+| 구조 정보 | robot URDF, camera parameters, COLMAP pose, Depth Anything depth prior |
+| 생성 supervision | expert trajectory의 keyframes, equivariant end-effector pose, motion-planned intermediate trajectory |
+| 출력 | 두 camera RGB, qpos, end-effector pose, action이 함께 든 synthetic trajectories |
+
+![RoboSplat의 여섯 generalization 축](/robosplat/figure-1-six-generalization.jpg)
+
+*Figure 1. 한 demonstration과 multi-view reconstruction에서 object pose, lighting, appearance, camera view, object type, embodiment의 여섯 축을 만든다. 오른쪽 막대는 축별로 별도 학습·평가한 대표 결과다.*
+
+## 전체 파이프라인
+
+![RoboSplat method overview](/robosplat/figure-2-method-overview.jpg)
+
+*Figure 2. reconstruction과 frame alignment 뒤 scene component를 분리하고, keyframe/3D Gaussian을 함께 변환하여 observation과 action label이 일치하는 demonstration을 생성한다.*
+
+### 1. Reconstruction과 frame alignment
+
+1. 다양한 시점의 정지 장면 RGB를 COLMAP으로 sparse reconstruction하고 camera pose를 추정한다.
+2. Depth Anything depth prior와 RGB/camera pose로 scene 3D Gaussians를 학습한다.
+3. reconstructed robot Gaussian과 URDF point cloud를 ICP로 대략 맞춘다.
+4. canonical views에서 URDF robot mask와 Gaussian-rendered mask의 pixel MSE를 최소화해 translation, rotation, scale을 미세 조정한다.
+5. deployment camera extrinsic도 expert image와 Gaussian rendering의 SSIM objective로 최적화한다.
+
+ICP만으로 끝내지 않는 이유는 Gaussian의 scale과 rendered appearance가 point-coordinate alignment와 정확히 일치하지 않기 때문이다. 이 differentiable-rendering alignment가 이후 FK와 object transform을 실제 robot frame에서 적용할 수 있게 한다.
+
+### 2. Scene decomposition과 kinematics
+
+- Grounded-SAM으로 task object를 분할하고 masked views에서 object Gaussian을 별도 재구성한다.
+- robot은 URDF의 link point cloud와 가까운 Gaussian을 link별로 할당한다.
+- object와 robot link 어디에도 속하지 않는 Gaussian은 background가 된다.
+- 임의 joint configuration `q`에서 각 link Gaussian은 forward kinematics의 `T_fk(q) T_fk(q_default)^{-1}`로 이동한다.
+
+즉 robot의 시간 변화는 새로 생성하는 것이 아니라, default-pose Gaussian을 link-wise rigid transform하여 렌더링한다.
+
+## 여섯 augmentation
+
+| generalization | 3D 편집 | action/trajectory 처리 |
+| --- | --- | --- |
+| Object pose | target object Gaussian에 rigid transform | gripper toggle 또는 낮은 joint velocity에서 keyframe을 잡고 EEF pose를 equivariant transform한 뒤 구간 사이를 motion planning |
+| Object type | GPT-4가 약 50개 graspable object name을 만들고 3D content model이 Gaussian object 생성 | AnyGrasp로 object-frame grasp pose를 얻어 keyframe 구성 |
+| Camera view | target point와 spherical camera coordinate를 randomize해 novel view rendering | action은 그대로 두고 두 camera observation을 새 시점에서 렌더링 |
+| Embodiment | Franka Gaussian을 UR5e Gaussian으로 교체 | embodiment-independent EEF keyframes를 재사용하고 새 robot에서 motion planning |
+| Scene appearance | COCO image를 tabletop/background Gaussian plane에 texture로 붙이거나 다른 reconstructed 3D scene으로 background 교체 | trajectory는 유지 |
+| Lighting | 각 Gaussian diffuse RGB에 channel-wise scale, offset, Gaussian noise 적용 | trajectory는 유지 |
+
+Camera randomization 범위는 target point 각 축 `±0.1 m`, camera radius `±0.2 m`, polar/azimuth angle 각각 `±π/6`이다. lighting은 channel scale `Uniform(0.3, 1.8)`, offset `Uniform(-0.3, 0.3)`, per-Gaussian noise `N(0, 0.1²)`를 쓴다.
+
+## Policy와 학습 recipe
+
+| 항목 | 설정 |
+| --- | --- |
+| visual input | eye-on-base라고 부르는 고정된 외부 camera 2대의 RGB, `128×128` |
+| state | Franka arm 7D 또는 UR5e arm 6D + binary gripper state |
+| vision encoder | ResNet-18 뒤 linear projection |
+| state encoder | MLP |
+| fusion | GPT-2-style Transformer encoder와 readout action tokens |
+| action | relative end-effector pose + gripper, future chunk 10 |
+| loss | behavior cloning MSE |
+| history | 1 |
+| inference | overlapping chunks의 temporal ensemble |
+| optimization | AdamW, batch 256, learning rate `1e-4`, RTX 4090 1장 |
+| epochs | demos 100/200/400/800/1800/3200/6400에 각각 1400/1000/800/700/500/300/200 |
+
+논문 본문은 카메라를 “eye-on-base”라고 표현하지만 Figure 5와 프로젝트 영상상 tabletop에 설치된 외부 시점이다. wrist camera가 robot link와 함께 움직이는 설정으로 읽으면 안 된다.
+
+## 실험 설계
+
+- Robot: Franka Research 3, cross-embodiment는 UR5e + Robotiq 2F-85.
+- Cameras: Intel RealSense D435i 2대.
+- Teleoperation: 3D SpaceMouse, 10 Hz.
+- Tasks: Pick Object, Close Drawer, Pick-Place-Close, Dual Pick-Place, Sweep.
+- Metric: task success rate.
+- 기본 object-pose/scaling 실험은 policy당 30 trials.
+- 다른 visual generalization 실험도 object pose variation을 포함한다.
+
+다섯 task는 pick-and-place, articulated object, long horizon, tool use, functional motion을 포함하지만 deformable manipulation이나 접촉이 지배적인 조립 task는 포함하지 않는다.
+
+## 결과 1: synthetic trajectory scaling
+
+![generated demonstration scaling](/robosplat/figure-7-data-scaling.jpg)
+
+*Figure 7. 같은 개수에서는 실제 demonstration이 대체로 우세하지만 generated data를 늘리면 성능이 계속 증가한다. 파란 선은 100/200개 실제 data만 있고, 빨간 선은 100/200/800/1800개 synthetic data를 평가한다.*
+
+| training data | 5-task average success |
+| --- | ---: |
+| 100 manually collected | 60.0% |
+| 100 generated | 34.7% |
+| 200 manually collected | 87.3% |
+| 200 generated | 65.3% |
+| 800 generated | 84.6% |
+| 1800 generated | **94.7%** |
+
+800 synthetic demonstrations가 200 real demonstrations와 비슷한 수준에 도달하고, 1800 synthetic은 평균 `94.7%`다. 다만 이 curve는 한 real demonstration만 수집한 뒤 generated sample 수를 늘린 결과와 “실제 100/200 demos”를 비교하므로, sample quality와 sample count가 동시에 달라지는 비교다.
+
+한 synthetic demonstration 생성 시간은 8개 process를 쓴 RTX 4090에서 평균 `0.64 s`, real collection은 `19.1 s`로 보고한다. 이는 **reconstruction과 preprocessing 비용을 제외한 per-demonstration generation time**이다.
+
+## 결과 2: lighting과 appearance
+
+![lighting and appearance results](/robosplat/figure-9-lighting-appearance.jpg)
+
+*Figure 9. object-pose-only, 2D ColorJitter/inpainting, RoboSplat의 해당 3D augmentation을 분리해 비교한다.*
+
+- Lighting의 task별 RoboSplat 성공률은 `80.0/93.3/80.0%`, 2D ColorJitter는 `60.0/66.7/46.7%`다.
+- Appearance는 `100.0/93.3/83.3%`, 2D inpainting은 `73.3/93.3/50.0%`다.
+- novel object type은 Collected `23.3%`, ROSIE `60.0%`, RoboSplat `76.7%`다.
+- UR5e cross-embodiment는 RoVi-Aug 대비 Pick Object `6.7→100.0%`, Close Drawer `43.3→96.7%`다.
+
+Embodiment 결과는 두 task뿐이고 target UR5e policy의 state/action dimension과 training data가 이미 UR5e용으로 생성된다. 이는 zero-shot morphology-conditioned universal policy가 아니라 **새 embodiment용 synthetic dataset을 만들어 새 policy를 학습하는 transfer**다.
+
+## 결과 3: 사용자가 찾던 moving-camera 실험
+
+![novel and moving camera results](/robosplat/table-2-camera-view.jpg)
+
+*Table II. 각 camera의 30개 novel poses와 배포 중 계속 움직이는 camera setting을 함께 평가한다.*
+
+| source | Pick novel / moving | Drawer novel / moving | Pick-Place-Close novel / moving | average |
+| --- | ---: | ---: | ---: | ---: |
+| Collected, 200 real | 6.7 / 0.0 | 16.7 / 13.3 | 0.0 / 0.0 | 6.1 |
+| Pose-only, 1800 synthetic | 0.0 / 0.0 | 26.7 / 30.0 | 0.0 / 0.0 | 9.5 |
+| VISTA, 200 real→3200 | 33.3 / 33.3 | 56.7 / 70.0 | 33.3 / 16.7 | 40.6 |
+| RoboSplat, 3200 synthetic | **90.0 / 86.7** | **100.0 / 96.7** | **53.3 / 56.7** | **80.6** |
+
+camera view augmentation이 없는 pose-only policy가 오히려 거의 실패하므로, 개선을 단순 synthetic data volume 효과로 설명하기 어렵다. 다만 VISTA와 RoboSplat은 rendering model뿐 아니라 seed data 구성도 `200 real→3200` 대 `one-shot-derived 3200`으로 다르며, 여러 training seed나 confidence interval은 보고하지 않는다.
+
+## `87.8%`와 `57.2%`를 읽는 법
+
+초록의 `87.8%`는 Figure 1의 여섯 대표 수치 `94.7, 84.4, 92.2, 80.6, 76.7, 98.4`의 산술평균이다. `57.2%`도 대응하는 manually collected + 2D augmentation 결과의 평균이다.
+
+중요한 점은 이 여섯 값이 동일 checkpoint의 하나의 joint benchmark가 아니라는 것이다. generalization 축마다 training demo 수, baseline, task 수, target embodiment가 다르고 별도 policy를 학습한다. 따라서 `87.8%`는 유용한 paper-level summary지만 “한 one-shot policy가 모든 shift를 동시에 87.8% 해결했다”는 뜻은 아니다.
+
+## 공개 코드 확인
+
+공식 저장소의 `372c9c7` snapshot을 확인했다.
+
+- `data_aug/generate_demo.py`는 Pick Object 예제를 실제로 HDF5 trajectory로 생성한다. qpos, EEF pose, 두 RGB stream, action을 저장한다.
+- object position grid, gripper transition keyframes, MPLib trajectory, link-wise Gaussian rendering, lighting/appearance/camera augmentation이 구현되어 있다.
+- `augment_camera_pose=True`이면 각 timestep rendering 안에서 camera pose를 다시 sampling하므로 released example도 time-varying view를 만들 수 있다.
+- README가 안내하는 downloadable asset에는 preprocessed 3D Gaussians와 source demo가 포함된다.
+- 그러나 repository에는 reconstruction, differentiable frame alignment, Grounded-SAM decomposition, object-type generation, AnyGrasp annotation, cross-embodiment generation, policy training/evaluation code가 없다.
+- 공개 generator는 `carrot.ply`, Franka Pick task, hard-coded workspace와 camera 파일을 전제로 한다. 논문의 unified pipeline 전체를 새 scene/task에 그대로 재현하는 release는 아니다.
+
+## 한계
+
+- naive 3DGS는 deformable object를 다루지 못하고 물리 constraint가 없어 contact-rich/dynamic task에 부적합하다.
+- motion planner가 collision-free kinematics를 만들 수는 있지만 grasp 안정성, contact force, object dynamics를 검증하지 않는다.
+- initial setup에 multi-view capture, reconstruction, URDF alignment, object/robot segmentation이 필요하다. per-demo `0.64 s`만으로 전체 도입 비용을 판단하면 안 된다.
+- target object가 gripper와 함께 rigidly 움직인다는 가정이 강하다.
+- six-axis headline은 축별 별도 policy와 서로 다른 protocol의 평균이다.
+- policy seed 반복, confidence interval, reconstruction 품질에 대한 failure-rate/ablation이 없다.
+- 공개 코드는 논문 방법의 일부와 Pick example만 포함한다.
+
+## Figure/Table Inventory
+
+| 항목 | 내용 | 반영 |
+| --- | --- | --- |
+| Fig. 1 | 입력, 여섯 augmentation, 축별 headline 결과 | 개요 이미지와 `87.8%` 해석 |
+| Fig. 2 | reconstruction–alignment–editing 전체 pipeline | method 이미지 |
+| Figs. 3–4 | ICP error와 differentiable alignment | reconstruction 설명 |
+| Fig. 5 | FR3와 camera setup | 실험 protocol |
+| Fig. 6 | 다섯 real tasks | task 범위 |
+| Fig. 7 | real/generated data scaling | 정확한 curve와 수치 |
+| Figs. 8–11 | shift setup, lighting/appearance, object, embodiment | generalization 결과 |
+| Figs. 12–15 | appendix augmentation, policy, lighting/appearance settings | recipe와 protocol |
+| Table I | real collection 대 generation 시간 | efficiency |
+| Table II | novel/moving camera | 핵심 camera 결과 |
+| Tables III–IV | camera randomization과 policy hyperparameters | 정확한 recipe |
+
+Appendix A는 Gaussian rigid transform/scaling, B는 object-pose·camera·lighting augmentation, C는 policy architecture, D는 training hyperparameters, E는 real lighting/appearance settings를 담는다.
+
+## 검증 메모
+
+RSS proceedings metadata, 17쪽 PDF, project videos/설명, 공식 code repository를 교차 확인했다. PDF의 모든 Figure 1–15와 Table I–IV를 inventory로 대조하고 핵심 도표를 local asset으로 직접 추출했다. 코드 확인은 README에 그치지 않고 generator와 augmentation/camera utilities까지 확인했으며, 논문 전체 pipeline과 공개 구현의 범위를 분리해 기록했다.

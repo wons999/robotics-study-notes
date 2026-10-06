@@ -1,4 +1,5 @@
 ---
+research: {"kind": "paper", "topics": ["vla", "action"], "status": "reviewing", "reviewedAt": null, "family": "pi", "source": "https://www.pi.website/download/pi05_KI.pdf"}
 title: Knowledge Insulation
 description: continuous action expert가 VLM backbone knowledge를 망가뜨리는 문제를 분석하고, discrete FAST action token과 flow action expert를 함께 쓰는 Knowledge Insulation recipe를 정리한 Survey.
 sidebar:
@@ -7,6 +8,10 @@ sidebar:
 
 import SectionFeedback from '../../../../components/SectionFeedback.astro';
 import PaperFigure from '../../../../components/PaperFigure.astro';
+
+import ResearchMeta from "../../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/pi/knowledge-insulation" />
 
 # Knowledge Insulation
 
@@ -340,13 +345,13 @@ public OpenPI에서 확인되는 것은 π0.5/π0.5-DROID checkpoint와 fine-tun
 
 | 논문/모델 | 현재 논문에서의 연결 |
 | --- | --- |
-| [π0](./pi0-vla-flow-model/) | continuous action expert/flow VLA baseline. fast inference는 가능하지만 naive training은 language following과 convergence가 약하다. |
-| [π0-FAST](./pi0-fast-action-tokenization/) | FAST token representation. train fast/language following 장점은 있지만 autoregressive inference가 느리다. |
-| [π0.5](./pi05-open-world-generalization/) | π0.5의 two-stage idea를 formalize하고 single-stage KI recipe로 확장한다. |
-| [OpenVLA](../openvla-open-source-vla/) / OpenVLA-OFT | autoregressive VLA와 parallel decoding 계열 비교 축. language following은 가능하지만 일부 real-world task performance가 낮다. |
+| [π0](../pi0-vla-flow-model/) | continuous action expert/flow VLA baseline. fast inference는 가능하지만 naive training은 language following과 convergence가 약하다. |
+| [π0-FAST](../pi0-fast-action-tokenization/) | FAST token representation. train fast/language following 장점은 있지만 autoregressive inference가 느리다. |
+| [π0.5](../pi05-open-world-generalization/) | π0.5의 two-stage idea를 formalize하고 single-stage KI recipe로 확장한다. |
+| [OpenVLA](../../openvla-open-source-vla/) / OpenVLA-OFT | autoregressive VLA와 parallel decoding 계열 비교 축. language following은 가능하지만 일부 real-world task performance가 낮다. |
 | HybridVLA | autoregressive/diffusion hybrid baseline. KI와 비슷해 보이지만 action representation 사이 attention/masking 차이가 중요하다. |
 | Transfusion | 한 transformer 안에서 token prediction과 continuous denoising을 함께 하는 multimodal generation 기반 비교 축. |
-| [GROOT N1](../groot/n1-open-foundation-model/) | 논문은 robotics-specific modules가 포함된 fast inference VLA 예로 GROOT를 언급한다. KI 관점에서는 새 robot-specific module gradient가 VLM knowledge를 어떻게 건드리는지가 공통 질문이다. |
+| [GROOT N1](../../groot/n1-open-foundation-model/) | 논문은 robotics-specific modules가 포함된 fast inference VLA 예로 GROOT를 언급한다. KI 관점에서는 새 robot-specific module gradient가 VLM knowledge를 어떻게 건드리는지가 공통 질문이다. |
 
 ### 기반 방법론
 

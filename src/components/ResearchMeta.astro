@@ -1,0 +1,18 @@
+---
+import { getEntry } from 'astro:content';
+import { kindLabels, statusLabels, topicLabels } from '../data/research';
+interface Props { entryId: string }
+const entry = await getEntry('docs', Astro.props.entryId.replace(/\/index$/, ''));
+const meta = entry?.data.research;
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+---
+{meta && <aside class="research-meta" aria-label="문서 종류와 검토 상태">
+  <span>{kindLabels[meta.kind]}</span>
+  <span>{statusLabels[meta.status]}</span>
+  <span>{meta.reviewedAt ? `마지막 내용 검토: ${meta.reviewedAt}` : '마지막 내용 검토일 미등록'}</span>
+  {meta.topics.map(topic => <a href={`${base}topics/${topic}/`}>{topicLabels[topic]}</a>)}
+</aside>}
+<style>
+.research-meta { display: flex; flex-wrap: wrap; gap: .5rem 1rem; padding: .75rem 1rem; border: 1px solid var(--sl-color-gray-5); border-radius: .4rem; font-size: .85rem; }
+.research-meta > * { margin: 0; }
+</style>

@@ -26,3 +26,9 @@ docker run --rm --user 1000:1000 -v /home/wh/study/robotics-study-notes:/app -w 
 ## Deployment
 
 This project is ready for GitHub Pages through `.github/workflows/deploy.yml`.
+
+## Content Management
+
+Document types, topics, review status, and review dates live in MDX `research` frontmatter. The survey catalog is generated from this metadata; topic pages provide curated reading paths. See `rules/content.md`, `rules/survey.md`, and `rules/seminar.md`. `WORKING.md` records current state, not permanent rules.
+
+`npm run build` checks internal links, local image references, required metadata, Astro types, and site generation. `npm test` verifies the content validator. Pull requests run both before publication.

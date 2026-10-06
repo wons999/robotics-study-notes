@@ -1,0 +1,268 @@
+---
+research: {"kind": "paper", "topics": ["vla"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2502.19645"}
+title: 'Fine-Tuning Vision-Language-Action Models: Optimizing Speed and Success'
+description: OpenVLA-OFT의 parallel decoding, action chunking, continuous action head, FiLM과 proprioception 입력을 논문·부록·공식 코드 기준으로 분석한다.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/openvla-oft-finetuning" />
+
+# Fine-Tuning Vision-Language-Action Models: Optimizing Speed and Success
+
+<SectionFeedback page="OpenVLA-OFT" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Fine-Tuning Vision-Language-Action Models: Optimizing Speed and Success |
+| 저자 | Moo Jin Kim, Chelsea Finn, Percy Liang · Stanford University |
+| 공개 | arXiv:2502.19645 |
+| 링크 | [paper](https://arxiv.org/abs/2502.19645) · [project](https://openvla-oft.github.io/) · [code](https://github.com/moojink/openvla-oft) |
+| 기반 모델 | OpenVLA 7B |
+| 태그 | VLA, fine-tuning, parallel decoding, action chunking, proprioception, FiLM |
+
+## 한 줄 요약
+
+OpenVLA의 느린 autoregressive action-token 생성을 **parallel decoding + action chunking + continuous L1 head**로 바꿔 LIBERO에서 26배 높은 action throughput과 97.1% 평균 성공률을 얻고, ALOHA에서는 multi-view·joint-state·FiLM을 추가해 고주파 양팔 조작으로 확장한다.
+
+단, 97.1% 설정에서 proprioception의 독립 기여는 측정하지 않았다. wrist camera와 proprioception을 동시에 추가한 결과이므로 `95.3→97.1`, 즉 +1.8%p를 proprio 단독 효과로 읽으면 안 된다.
+
+## 문제의식
+
+OpenVLA 같은 VLA는 대규모 robot data와 VLM representation을 이용하지만 원래 recipe는 한 timestep의 7개 action dimension을 token-by-token 생성한다. A100에서도 한 action에 약 0.33초가 걸려 3–5 Hz 수준이며, 25–50 Hz가 필요한 양팔 로봇에는 부족하다.
+
+논문은 새 backbone을 제안하기보다 downstream fine-tuning에서 다음 선택을 통제 비교한다.
+
+- autoregressive decoding인가 parallel decoding인가
+- single action인가 action chunk인가
+- 256-bin discrete action인가 continuous action인가
+- continuous head는 L1 regression인가 diffusion인가
+- 새로운 camera와 robot state를 어떻게 기존 VLA sequence에 넣는가
+
+## Base OpenVLA
+
+| 구성 | OpenVLA 원형 |
+| --- | --- |
+| vision | SigLIP + DINOv2 fused encoder, view당 256 patch embedding |
+| projector | 3-layer GELU MLP, visual feature를 Llama embedding space로 투영 |
+| language model | Llama 2 7B decoder |
+| 기본 입력 | third-person image 1장 + language instruction |
+| 기본 action | 7D delta end-effector pose: position 3, rotation 3, gripper 1 |
+| 표현 | dimension별 `[-1,1]` 정규화 후 256 bin discrete token |
+| objective | next-token cross-entropy |
+
+즉 OpenVLA-OFT는 완전히 새 모델이 아니라 pretrained OpenVLA의 vision-language representation을 유지하면서 fine-tuning 입출력과 objective를 바꾼다.
+
+## Method
+
+![Figure 2: autoregressive/parallel decoding과 discrete/continuous action 비교](/openvla-oft/design-decisions.jpg)
+
+### 1. Parallel decoding
+
+원래 teacher forcing에서는 정답 action token이 한 칸씩 오른쪽으로 shift되고 causal mask가 미래 action token 접근을 막는다. OFT는 action 위치를 빈 embedding으로 채운다. 각 위치는 positional encoding이 달라 서로 구분되며, action 구간은 bidirectional attention으로 한 번에 계산된다.
+
+- 원형: action dimension `D`개를 생성하려면 decoder를 `D`번 순차 호출
+- OFT: `D`개의 output hidden state를 한 번의 decoder pass에서 계산
+- chunk `K`를 쓰면 `K×D`개의 빈 slot을 두지만 여전히 한 번의 pass
+
+빈 slot 자체가 action 값을 담는 것은 아니다. image·language·state와 다른 action query의 context를 읽고, 최종 hidden state를 action head가 continuous value로 바꾼다.
+
+### 2. Action chunking
+
+현재 관측에서 미래 `K` timestep의 action을 함께 예측한다. LIBERO는 `K=8`, ALOHA는 `K=25`이며 본 실험은 chunk 전체를 open-loop로 실행한 뒤 다시 관측한다. 논문은 LIBERO-Long 개선을 temporal dependency와 compounding error 감소로 해석하지만, chunk 전체 실행은 disturbance에 대한 replanning 빈도를 낮추는 trade-off가 있다.
+
+### 3. Continuous action과 L1 head
+
+![Figure 1: ALOHA용 OpenVLA-OFT+ 전체 구조](/openvla-oft/architecture-overview.jpg)
+
+discrete vocabulary projection 대신 마지막 decoder hidden state를 4-layer ReLU MLP에 넣어 continuous action을 직접 출력한다. 공식 구현의 `L1RegressionActionHead`는 timestep마다 `D`개 action-slot hidden state를 concatenate하고 residual MLP로 `D`차원 action을 회귀한다. loss는 normalized ground-truth chunk와 prediction의 mean L1이다.
+
+논문은 conditional diffusion도 비교한다. diffusion variant는 noisy action을 2-layer GELU projector로 LLM embedding에 넣고 4-layer MLP noise predictor를 학습한다. cosine schedule, DDIM, 기본 50 denoising step을 사용한다. 표현력은 높지만 반복 추론 때문에 느리며, 실험상 L1과 성공률이 거의 같아 OFT recipe는 L1을 선택한다.
+
+### 4. Proprioception 입력 경로
+
+low-dimensional robot state `s_t`를 별도의 2-layer GELU MLP로 LLM hidden dimension에 투영한다.
+
+`e_state = W₂ GELU(W₁ s_t + b₁) + b₂`
+
+이 결과는 여러 scalar token이 아니라 **state vector 전체를 압축한 1개 embedding**이다. 구현은 이를 visual patch sequence의 끝에 붙인다. 이후 `[BOS, visual patches, state embedding, language/action slots]` 형태의 unified sequence가 decoder에 들어간다.
+
+| 플랫폼 | proprio dimension | 내용/정규화 |
+| --- | ---: | --- |
+| LIBERO | 8 | simulator robot state, 1–99% quantile를 `[-1,1]`로 mapping 후 clip |
+| ALOHA | 14 | 두 ViperX300S arm의 current joint angles, min/max bounds로 `[-1,1]` |
+| Bridge | 7 | robot state, 1–99% quantile bounds |
+
+이 embedding은 text vocabulary ID가 아니므로 기존 word embedding과 ID 충돌하지 않는다. 다만 같은 LLM latent space에서 attention으로 혼합되므로 scale과 normalization은 중요하다. 코드도 proprio statistics를 action과 같은 dataset metadata에 저장하고 inference에서 동일한 bounds를 적용한다.
+
+### 5. FiLM을 추가한 OFT+
+
+![Figure 8: vision transformer block의 FiLM](/openvla-oft/film.jpg)
+
+ALOHA의 세 camera에는 task와 무관한 시각적 상관이 많아 language instruction을 무시하기 쉽다. OFT+는 task language embedding의 평균을 각 vision-transformer block별 affine projector에 넣어 `γ, β`를 만들고 다음처럼 visual feature를 변조한다.
+
+`F_hat = (1 + γ) ⊙ F + β`
+
+`γ, β`는 patch마다 다른 값이 아니라 visual hidden channel마다 하나이며 모든 patch에 공유된다. SigLIP과 DINOv2의 self-attention 뒤, feed-forward network 전에 적용한다. `(1+γ)`를 써 초기값이 0 근처일 때 pretrained feature를 보존한다.
+
+## Training Recipes
+
+### LIBERO OFT
+
+| 항목 | 설정 |
+| --- | --- |
+| suites | Spatial, Object, Goal, Long; suite당 10 task, 500 demo |
+| data | 실패 demo와 near-zero action을 제거한 modified set이 주 비교 |
+| fine-tuning | suite별 LoRA rank 32 |
+| inputs | third-person + wrist image, current proprio, language |
+| action | 7D delta EEF, chunk 8, full chunk 실행 |
+| optimization | 8×A100/H100 80GB, batch 64, LR `5e-4→5e-5` |
+| steps | Spatial/Object/Long 150k, Goal 50k |
+| trainable | 279M: LoRA 111M + action head 151M + proprio projector 17M |
+
+각 suite는 task당 50회, 총 500 trial로 평가한다. 표의 상단 ablation은 third-person image만 사용하고, 최종 97.1% 설정은 wrist image와 proprioception을 추가한다.
+
+### ALOHA OFT+
+
+| 항목 | 설정 |
+| --- | --- |
+| robot/control | ViperX300S 2대, 25 Hz |
+| observations | top-down 1 + wrist 2 camera, current 14D joint angle, language |
+| action | 14D absolute joint-angle target, chunk 25, full chunk 실행 |
+| task demos | fold shorts 20, fold shirt 30, scoop 45, pot 300 |
+| fine-tuning | task별 LoRA rank 32 + L1 head + proprio projector + FiLM |
+| optimization | 8 GPUs, batch 32, LR `5e-4→5e-5`, 50k–100k steps |
+| trainable | 853M: LoRA 111M + head 269M + proprio 17M + FiLM 456M |
+
+이 설정은 OpenVLA pretraining과 크게 다르다. pretraining은 single-arm, 3–10 Hz, state 없음, single view, relative EEF action이지만 ALOHA는 dual-arm, 25 Hz, state 있음, 3-view, absolute joint action이다.
+
+## Experiments and Results
+
+### LIBERO 성공률
+
+![Tables I–II: LIBERO 성공률과 입력 조건](/openvla-oft/libero-results.jpg)
+
+| variant | 평균 SR | LIBERO-Long |
+| --- | ---: | ---: |
+| OpenVLA autoregressive | 76.5 | 53.7 |
+| + parallel decoding & action chunking | 90.2 | 86.5 |
+| + continuous diffusion | 95.4 | 91.1 |
+| OpenVLA-OFT continuous L1 | 95.3 | 90.7 |
+| OFT + wrist image + proprio | **97.1** | **94.5** |
+| π₀ | 94.2 | 85.2 |
+
+parallel decoding과 chunking만으로 +13.7%p, continuous representation으로 추가 약 +5%p가 난다. L1 95.3과 diffusion 95.4는 사실상 동률이다.
+
+중요한 비교 조건이 있다. 최종 97.1은 modified dataset에서 wrist image와 proprio를 함께 쓴 값이다. 95.3은 third-person image만 쓴 값이므로 +1.8%p에는 camera와 state가 섞여 있다. unfiltered 원본 dataset에서 같은 additional-input OFT는 94.5이므로 data filtering 영향도 크다.
+
+### LIBERO 속도
+
+![Table II: A100 action generation throughput와 latency](/openvla-oft/libero-efficiency.jpg)
+
+| variant | throughput | latency | Long SR |
+| --- | ---: | ---: | ---: |
+| OpenVLA | 4.2 Hz | 0.2396 s | 53.7 |
+| + parallel decoding | 15.9 Hz | 0.0629 s | — |
+| + PD & chunk 8 | 108.8 Hz | 0.0735 s | 86.5 |
+| OFT L1 | 109.7 Hz | 0.0729 s | 90.7 |
+| diffusion 50-step | 4.2 Hz | 1.907 s/chunk | 91.1 |
+| OFT + wrist/proprio | 71.4 Hz | 0.1120 s | 94.5 |
+
+논문의 26×는 생성된 action 수/초 기준이다. additional input은 patch가 256에서 512로 늘고 state token도 추가되어 71.4 Hz로 감소하지만 여전히 실시간 범위다. chunk latency와 effective action throughput을 구분해야 한다.
+
+### ALOHA task performance
+
+![Figure 4: 네 ALOHA task 평균 completion score](/openvla-oft/aloha-results.jpg)
+
+| method | 평균 | fold shorts | fold shirt | scoop | pot |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ACT | 72.3 | 100 | 94 | 71.25 | 23.75 |
+| Diffusion Policy | 77.5 | 100 | 100 | 79.17 | 30.83 |
+| RDT-1B | 78.4 | 100 | 96 | 73.33 | 44.17 |
+| π₀ | 83.9 | 100 | 100 | 93.33 | 42.08 |
+| OpenVLA-OFT+ | **87.8** | 100 | 100 | **100** | **51.25** |
+
+평가는 binary success가 아니라 단계별 rubric의 평균 completion score다. task별 trial 수도 10, 10, 12, 24로 다르다. 따라서 87.8을 87.8% full-task success로 읽으면 안 된다.
+
+OFT에서 FiLM을 제거하면 scoop 35.0, pot 31.67로 떨어진다. 특히 올바른 ingredient/object에 접근하는 단계가 3개 target 중 우연 수준에 가까워져 language grounding의 직접 evidence가 된다. 하지만 이 ablation은 FiLM 효과이며 proprio 효과는 아니다.
+
+### ALOHA inference efficiency
+
+OpenVLA base는 1.8 Hz, OFT+는 77.9 Hz로 43배 증가한다. latency는 base 0.543 s/action, OFT+ 0.321 s/25-action chunk다. ACT 432.8 Hz, Diffusion Policy 267.4 Hz, π₀ 291.6 Hz보다 절대 속도는 느리지만 25 Hz controller에 필요한 throughput은 넘는다.
+
+### 추가 실험
+
+![Appendix Tables XIV–XV: multi-suite, FiLM, pretraining ablations](/openvla-oft/appendix-ablations.jpg)
+
+- 모든 LIBERO suite를 한 policy로 학습: OFT 96.8, OFT+FiLM 97.0. suite별 policy 97.1과 거의 같다.
+- OpenVLA pretrained representation 제거: 97.1→91.9, −5.2%p.
+- BridgeData V2 6 task, 60 trials: OpenVLA 65.8, OFT 69.2.
+
+본문의 “removing them leads to a 5.2% drop”은 pretrained representation을 제거한 Table XV 결과다. proprioception 제거 ablation이 아니다.
+
+## Proprioception 관점의 핵심 해석
+
+1. **입력 단위**: state 각 scalar를 text token으로 만들지 않고 robot-state vector 전체를 한 embedding으로 만든다.
+2. **시점**: history 없이 current state만 사용한다. temporal context는 future action chunk이지 past proprio trajectory가 아니다.
+3. **결합 위치**: visual patch 뒤에 state embedding 하나를 붙여 LLM decoder의 self-attention에서 image·language와 early fusion한다.
+4. **platform-specific schema**: LIBERO 8D, ALOHA 14D, Bridge 7D로 projector input dimension과 normalization이 달라진다.
+5. **효과 측정 한계**: wrist camera와 함께 추가했으므로 proprio-only gain, camera-only gain, interaction을 분해할 수 없다.
+6. **정성 해석 주의**: 논문은 RDT-1B 실패가 proprio에 과의존한 결과일 수 있다고 해석하지만 controlled intervention이 아니므로 인과 evidence가 아니다.
+
+## Code-Level Check
+
+공식 repository의 구현을 논문과 대조했다.
+
+- `ProprioProjector`: `Linear(D_state,4096)→GELU→Linear(4096,4096)`이며 output 한 개를 patch token 뒤에 append한다.
+- constants: LIBERO `K=8,D_action=7,D_state=8`; ALOHA `25,14,14`; Bridge `5,7,7`.
+- inference normalization: dataset `q01/q99` 또는 min/max bounds를 `[-1,1]`로 mapping하고 mask 밖 dimension은 원값을 보존한다.
+- L1 head: `K×D` action-slot hidden state를 `(K,D×hidden)`으로 reshape해 timestep별 action vector를 출력한다.
+- training은 proprio token 하나만큼 `NUM_PATCHES`를 증가시켜 action hidden-state mask alignment를 유지한다.
+
+코드는 model family를 command-line 문자열로 감지해 constants를 고르는 구조여서 새 robot port에서는 상수와 data schema를 명시적으로 확인해야 한다.
+
+## 한계와 주의
+
+1. proprio 단독 ablation이 없다.
+2. LIBERO 97.1은 data filtering, wrist image, proprio가 결합된 설정이다.
+3. ALOHA는 네 task와 소량 demo에 한정되고 task별 trial 수가 작다.
+4. ALOHA score는 staged completion rubric이며 binary success가 아니다.
+5. chunk 전체 open-loop 실행은 외란에 대한 빠른 feedback correction을 희생한다.
+6. L1은 multimodal action distribution에서 median behavior를 낼 수 있다.
+7. OFT recipe 자체를 pretraining부터 적용한 실험은 없다.
+8. LIBERO에서는 FiLM이 거의 무효이고 ALOHA language task에서만 크게 유효하다.
+9. scratch ablation은 representation의 가치만 보여주며 어느 modality representation이 기여했는지는 분해하지 않는다.
+
+## Figure/Table Inventory
+
+| 원문 | 내용 | 반영 |
+| --- | --- | --- |
+| Figure 1 | OpenVLA-OFT+ ALOHA architecture | Method 이미지 |
+| Figure 2 | decoding/action representation choices | Method 이미지 |
+| Figure 3 | LIBERO suites | setup 설명 |
+| Figure 4 | ALOHA aggregate performance | 결과 이미지/표 |
+| Figure 5 | language following | FiLM ablation 설명 |
+| Figures 6–7 | failed/successful rollouts | 정성 evidence로 해석 |
+| Figure 8 | FiLM implementation | FiLM 이미지 |
+| Figures 9–13 | ALOHA initial states | evaluation protocol 확인 |
+| Tables I–II | LIBERO success/efficiency | 결과 이미지/표 |
+| Table III | ALOHA efficiency | 속도 section |
+| Tables IV–IX | OFT/OFT+와 baseline recipes | training recipe |
+| Tables X–XIII | ALOHA staged rubric | task별 결과 표 |
+| Table XIV | multi-suite + FiLM | 추가 실험 |
+| Table XV | scratch ablation | pretraining 해석 |
+| Table XVI | BridgeData | 추가 실험 |
+
+## 검증 메모
+
+- 24쪽 PDF와 appendix 전체를 확인하고 Figure 1–13, Table I–XVI을 inventory했다.
+- LIBERO와 ALOHA 수치를 원문 표와 대조했다.
+- official repository에서 proprio projector, normalization, action head, platform constants를 확인했다.
+- proprio 단독 효과가 없는 점과 5.2%p ablation의 실제 대상을 분리했다.
+- 공개용 문서에 비공개 robot/project 세부를 포함하지 않았다.
+
+<SectionFeedback page="OpenVLA-OFT" section="문서 전체" />

@@ -1,0 +1,247 @@
+---
+research: {"kind": "paper", "topics": ["vla", "sensing"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2602.12032"}
+title: GAP
+description: vision-proprioception policy가 motion-transition 구간에서 실패하는 optimization mechanism과 phase-guided gradient adjustment를 분석한 Survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/gap-vision-proprioception-policy-failure" />
+
+# GAP
+
+<SectionFeedback page="GAP" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | When would Vision-Proprioception Policies Fail in Robotic Manipulation? |
+| 저자 | Jingxian Lu, Wenke Xia, Yuxuan Wu, Zhiwu Lu, Di Hu |
+| 공개 | arXiv:2602.12032v1, 2026-02-12; ICLR 2026 |
+| 링크 | [arXiv](https://arxiv.org/abs/2602.12032) · [PDF](https://arxiv.org/pdf/2602.12032) · [Project](https://gewu-lab.github.io/GAP/) · [Official code](https://github.com/GeWu-Lab/GAP) |
+| 태그 | proprioception, modality competition, motion transition, gradient adjustment, VLA |
+
+## 한 줄 요약
+
+GAP는 proprioception을 제거하지 않고, **target을 다시 찾아야 하는 motion-transition 구간에서 proprioception branch의 gradient만 약화**해 vision representation이 학습될 여지를 만든다.
+
+![vision-proprioception failure와 intervention 진단](/gap-proprioception/figure-1-diagnosis.png)
+
+*Figure 1. 단순 vision-proprioception concat은 vision-only보다 평균 15.8% 낮다. vision-only rollout 일부를 concat policy action으로 바꾸는 intervention은 target localization이 필요한 transition 구간에서만 큰 손실을 만든다.*
+
+## 문제의식
+
+Vision은 object와 goal 위치를 알려 주지만 고차원·중복 신호다. 반면 proprioception은 7D 정도의 compact state로 현재 robot motion을 직접 알려 준다. 공동 학습하면 optimizer는 loss를 더 빨리 줄이는 proprioception을 먼저 사용하고, vision branch는 충분한 representation을 배우지 못할 수 있다.
+
+이 문제는 모든 timestep에서 동일하지 않다.
+
+- **motion-consistent phase:** 이미 정한 방향으로 이동하거나 gripper를 닫는 구간. proprioception으로 정밀하게 이어 가는 것이 유리하다.
+- **motion-transition phase:** locate, reorient, 다음 object로 이동하는 전환 구간. target localization을 위해 vision이 더 중요하다.
+
+논문은 assembly의 vision-only rollout에서 10 timestep 동안만 vision-proprio policy action으로 교체한다. `locate part`, `locate base`, `assemble` transition에서 success가 각각 약 7/14/12%p 낮아지지만, `move down/forward` 같은 consistent phase 영향은 작다. GAP policy action으로 교체하면 같은 transition에서 약 7/13/11%p 회복한다.
+
+## 시스템 설정
+
+| 항목 | 설정 |
+| --- | --- |
+| simulation | Meta-World 5 tasks, RoboSuite/MimicGen 3 tasks |
+| real one-arm | 6-DoF xArm 6 + Robotiq gripper + wrist RealSense D435i |
+| real dual-arm | Cobot Magic; 두 arm을 별도 policy로 학습 |
+| proprioception | gripper Cartesian position 3D, orientation 3D, opening degree 1D; official code의 RoboSuite path는 EEF pos 3 + quaternion 4 + gripper qpos 2 = 9D |
+| observation history | 5 |
+| action chunk | 9 |
+| simulation data | Meta-World 100 demonstrations/task; RoboSuite 500 synthesized trajectories/task |
+| real data | 50 teleoperated demonstrations/task |
+| evaluation | simulation 100 rollouts, real 20 rollouts; simulation main result는 5 seeds |
+
+Real task는 press button, cube into drawer, rag sweep, handover, thermos into bag, lift lid and pour다. Dual-arm은 left/right wrist view와 front camera를 사용하고 arm별 proprioception과 policy를 분리한다. 따라서 “한 policy가 양팔 transition을 공동 추론했다”는 setting은 아니다.
+
+## Method
+
+![GAP의 motion representation, phase estimator, gradient adjustment](/gap-proprioception/figure-2-method.png)
+
+*Figure 2. proprioception은 policy input인 동시에 phase label을 만드는 신호다. CPD의 discrete change point를 LSTM이 연속 확률 `ρ_t`로 확장하고, 그 값으로 proprio branch backward만 조절한다.*
+
+### 1. Motion representation
+
+trajectory state `s_t`에서 gripper position `p_t`, orientation `θ_t`, opening `g_t`를 취한다. 구간 `i:j`의 motion은 다음 변화량으로 표현한다.
+
+```text
+m_i:j = {p_j-p_i, θ_j-θ_i, g_j-g_i}
+```
+
+phase 전체 motion과 각 adjacent motion 사이 distance는 position/orientation cosine direction과 gripper opening sign agreement를 조합한다.
+
+```text
+d(m_t1:t2, m_i:i+1)
+  = -cos(p_t1:t2, p_i:i+1)
+    - α cos(θ_t1:t2, θ_i:i+1)
+    - β [sign(g_t1:t2) = sign(g_i:i+1)]
+```
+
+기본값은 `α=1`, `β=2×10^-3`이다. opening 항은 binary라 numerical scale을 맞추기 위해 작게 둔다.
+
+### 2. CPD와 LSTM
+
+Change Point Detection이 phase 내부 inconsistency 총합을 최소화하는 boundary 집합 `I`를 구한다. 그러나 실제 transition은 한 timestep의 사건이 아니라 연속 구간이므로, state difference `Δs_t=s_{t+1}-s_t`를 2-layer LSTM에 넣어 각 timestep의 transition probability `ρ_t`를 예측한다.
+
+CPD label 주변에는 penalty를 낮춰 transition이 부드러운 구간임을 반영한다. appendix에서 human label, HDBSCAN, action cosine 기반 CoTPC와 비교하며, motion direction을 직접 쓴 GAP segmentation이 대체로 가장 높다.
+
+### 3. Proprioception gradient만 조절한다
+
+Vision encoder `φ_v`와 proprio encoder `φ_s`의 feature를 fuse한 policy를 학습한다. 논문 Equation 5는 proprio parameter update를 다음처럼 쓴다.
+
+```text
+ω_s^(j+1) = ω_s^j - λ(1-ρ) η ∇_{ω_s} L_BC
+```
+
+`ρ`가 큰 transition에서 proprio gradient가 작아지고, vision branch는 정상 update된다. 논문은 이 adjustment를 100 epochs 중 처음 50 epochs에만 적용한다. 뒤까지 계속 억제하면 정밀 control에 필요한 proprioception까지 학습하지 못해 성능이 떨어진다.
+
+## Model Architecture
+
+기본 policy는 modality별 encoder와 temporal Transformer, fusion, action head로 구성된다.
+
+| component | 구성 |
+| --- | --- |
+| vision | ResNet-18 spatial encoder → 512D projection → 4-layer temporal Transformer |
+| proprio | 3-layer MLP → 4-layer temporal Transformer |
+| fusion | 기본 concat; sum과 FiLM도 실험 |
+| head | 기본 3-layer MLP; appendix에서 UNet diffusion head 검증 |
+| hidden | temporal Transformer hidden 256이라고 appendix가 설명; 공개 config는 shared hidden_dim 512를 사용해 문서·코드 설정을 구분해야 함 |
+
+## Training Recipe
+
+| 항목 | 값 |
+| --- | --- |
+| optimizer | Adam |
+| learning rate | `3×10^-4` |
+| batch | 128 |
+| epochs | 100; official config는 101 |
+| loss | continuous action MSE behavior cloning |
+| gradient scale | `λ=0.3`, early 50 epochs |
+| hardware | single RTX 3090 |
+| 시간 | Meta-World 약 2시간, RoboSuite 약 8시간 |
+
+## Experiments and Results
+
+### Main results
+
+![real task와 simulation/real main result](/gap-proprioception/figure-3-table-1-results.png)
+
+*Figure 3와 Table 1. 단순 concat은 8개 simulation task 모두 vision-only보다 낮고, GAP는 8개 모두 vision-only보다 높다. real task도 같은 방향이다.*
+
+대표 수치는 다음과 같다.
+
+| task | vision-only | concat | Mask | GAP |
+| --- | ---: | ---: | ---: | ---: |
+| assembly | 82.6±3.0 | 74.6±2.1 | 89.2±1.6 | **94.2±0.8** |
+| push-wall | 63.2±1.9 | 54.4±2.9 | **79.2±3.7** | 73.6±1.3 |
+| hammer drawer | 85.8±1.3 | 78.6±1.1 | 78.6±1.8 | **91.0±0.7** |
+| threading | 43.6±1.7 | 33.2±1.9 | 47.2±1.6 | **53.0±1.2** |
+
+GAP가 모든 task·baseline을 항상 이기는 것은 아니다. push-wall에서는 fixed proprio mask가 GAP보다 높다. 다만 8개 task 모두에서 vision-only와 concat보다 높다는 일관성이 강점이다.
+
+Real dual-arm의 lift lid and pour는 vision-only 9/20, concat 5/20, GAP 15/20이다. thermos into bag은 11/20, 7/20, 16/20이다.
+
+### OOD와 vision representation
+
+![intervention과 placement OOD 결과](/gap-proprioception/figure-4-table-2-ood.png)
+
+Placement OOD에서 assembly는 vision-only/concat/GAP가 78/62/88%, threading은 32/28/49%, real cube는 12/20, 7/20, 15/20이다. appendix의 table/object color와 lighting OOD에서도 GAP가 가장 높다.
+
+Vision branch를 freeze하고 linear action head만 학습하는 probe에서 assembly는 `61→74%`, assembly OOD는 `45→69%`, threading은 `26→41%`, threading OOD는 `14→27%`다. 이는 GAP가 단지 action head를 보정한 것이 아니라 vision feature quality를 개선했다는 직접 증거다.
+
+### Octo VLA와 fusion generality
+
+![Octo와 concat/sum/FiLM에 GAP를 붙인 결과](/gap-proprioception/tables-3-4-vla-fusion.png)
+
+| task | Octo-V | Octo-VP | Octo-VP + GAP |
+| --- | ---: | ---: | ---: |
+| disassemble | 95 | 82 | **100** |
+| push-wall | 77 | 65 | **85** |
+| hammer drawer | 92 | 88 | **97** |
+| threading | 69 | 57 | **78** |
+
+저자는 평균 17% 개선이라고 요약한다. 다만 이 값은 Octo-VP 대비의 absolute success-rate point 평균으로 읽어야 하며, 대규모 VLA pretraining 전체에 GAP를 적용한 것이 아니라 task fine-tuning에 적용한 결과다.
+
+Concat, sum, FiLM 모두 GAP를 붙이면 원래 fusion보다 좋아진다. 예를 들어 threading은 concat 34→52, sum 30→48, FiLM 41→46이다. fusion 선택만 바꾸는 것보다 optimization schedule이 중요하다는 증거다.
+
+## Appendix Notes
+
+### Phase estimator ablation
+
+- human, HDBSCAN, CoTPC, GAP를 비교한다. GAP는 assembly 96%, threading 52%로 가장 높다.
+- fixed `ρ`, Gaussian smooth, LSTM을 비교하면 hammer/threading/real cube에서 LSTM GAP가 91/52/85%로 가장 높다.
+- CPD index에 noise를 넣어도 LSTM 기반 결과가 88/49/85%로 상당 부분 유지된다.
+
+### Hyperparameter ablation
+
+- `λ=0.2~0.4`는 비교적 안정적이다. `λ=0.1`은 약하고 `λ=0.8`은 collapse에 가깝게 떨어진다.
+- gradient adjustment를 10/30/50/70/90 epochs 적용할 때 50이 가장 좋다. 90 epochs는 assembly/threading/banana가 72/35/50%로 concat과 비슷해진다.
+- UNet diffusion head에서도 GAP는 disassemble/push-wall/bin-picking/stack/threading 전부 vision-only보다 높다.
+- on-policy update에서도 assembly/bin-picking/threading이 94/82/61%로 vision-only 88/71/50과 concat 78/50/37보다 높다.
+
+## Code-Level Check
+
+공식 repository의 `gap/` 구현을 model, dataset, loss, inference path까지 확인했다.
+
+| 경로 | 확인 내용 |
+| --- | --- |
+| `gap/dataset.py` | PELT `model="direction"`, penalty 4, 2-layer LSTM hidden 64, 100 epochs; 9D EEF/gripper state |
+| `gap/policies/visual_encoder.py` | 3-layer proprio MLP와 4-layer temporal Transformer, concat fusion |
+| `gap/gap.py` | MSE loss backward 뒤 encoder gradient를 직접 곱하고 optimizer step |
+| `gap/cfgs/gap.yaml` | history 5, horizon 9, batch 128, lambda 0.3, hidden 512, 101 epochs |
+
+현재 공개 snapshot에는 중요한 재현 문제가 있다.
+
+1. `gap.py`가 `lambda = self.cfg.lambda`를 사용한다. `lambda`는 Python 예약어이므로 `python -m py_compile gap.py`에서 **SyntaxError**가 발생한다.
+2. 논문 Equation 5는 `λ(1-ρ)`지만 코드는 의도상 `1-λρ`를 사용한다. 두 식은 non-transition에서도 각각 0.3과 1.0으로 크게 다르다.
+3. 논문 algorithm은 mini-batch의 average `ρ`를 쓰지만 코드는 `torch.max(batch['phase'])`를 쓴다.
+4. gradient 대상이 `if 'pro' in name`이다. `proencoder`뿐 아니라 image encoder의 `projection` 이름도 `pro`를 포함해, 수정 없이 실행한다면 vision projection까지 scale될 수 있다.
+5. CosineAnnealingLR의 `T_max`는 epoch 수인데 scheduler를 batch마다 step한다.
+
+따라서 공개 code는 method skeleton과 tensor path를 확인하는 데는 유용하지만, 현재 commit 그대로 main result를 재현하는 실행 가능한 reference implementation으로 간주하기 어렵다.
+
+## 한계와 주의
+
+1. 모든 policy는 task별 single embodiment data로 학습한다. cross-embodiment GAP는 미검증이다.
+2. dual-arm은 arm별 policy라 coordinated phase probability를 직접 모델링하지 않는다.
+3. motion transition label이 proprioception 자체에서 생성되므로 sensor noise와 rotation representation에 민감하다.
+4. 더 복잡한 VLA에서는 modality가 shared Transformer 안에서 일찍 섞인다. 저자도 Octo에서는 Transformer 이전 proprio extractor만 조절한다.
+5. `λ`, `ρ` 식과 공개 코드가 불일치하고 code snapshot은 문법 오류가 있다.
+6. vision-proprio competition이라는 설명은 intervention과 probe로 지지되지만, 다른 dataset·optimizer에서도 같은 causal mechanism인지 추가 검증이 필요하다.
+
+## 다른 proprioception 논문과의 연결
+
+| 연구 | 진단과 처방 |
+| --- | --- |
+| [State-free Policy](../state-free-vision-language-action-policy/) | absolute state shortcut을 제거하고 camera+relative EEF로 대체 |
+| GAP | transition 시점에만 proprio branch 학습을 약화 |
+| NADA | rollout/train state distribution에 맞춰 noise를 선택 |
+| [HPT](../hpt-heterogeneous-pretrained-transformers/) | proprio-visual joint pretraining은 transfer에 도움 |
+| [ThinkProprio](../thinkproprio-state-grounded-token-selection/) | proprio를 vision selection query로 써 오히려 시각 처리에 활용 |
+
+## Figure / Table Inventory
+
+| 원문 | 내용 | Survey 반영 |
+| --- | --- | --- |
+| Figures 1–2 | failure intervention와 GAP pipeline | 문제의식·Method |
+| Figures 3–4 | real tasks와 intervention after GAP | Experiments |
+| Figures 5–6 | phase probability/visual uncertainty, loss curves | Appendix 해석 |
+| Figure 7 | simulation task visualization | 시스템 설정 |
+| Tables 1–4 | main, OOD, Octo, fusion | Experiments |
+| Tables 5–11 | hyperparameter와 phase estimator ablations | Appendix Notes |
+| Tables 12–13 | linear probe, diffusion head | Appendix Notes |
+| Tables 14–16 | additional OOD, on-policy | Appendix Notes |
+
+## 검증 메모
+
+- arXiv PDF 21쪽의 main text와 appendix를 직접 확인했다.
+- Figures 1–7과 Tables 1–16을 inventory하고 핵심 figure/table crop 5개를 전수 검수했다.
+- official project page와 GitHub repository의 dataset/model/training/inference/config를 확인했다.
+- 공개 `gap.py`의 SyntaxError와 paper/code gradient 차이를 실제 compile check 및 source 대조로 확인했다.
+
+<SectionFeedback page="GAP" section="전체 Survey" />

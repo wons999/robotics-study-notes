@@ -1,0 +1,62 @@
+---
+import { getCollection } from 'astro:content';
+import { kindLabels, statusLabels, topicLabels } from '../data/research';
+interface Props { topic?: keyof typeof topicLabels; family?: string; scope?: 'papers' | 'all'; kind?: keyof typeof kindLabels }
+const { topic, family, kind: requestedKind, scope = 'papers' } = Astro.props;
+const entries = (await getCollection('docs')).filter(entry => {
+  const meta = entry.data.research;
+  return meta && !entry.id.endsWith('/slides') && meta.kind !== 'index'
+    && (scope === 'all' || entry.id.startsWith('paper-notes/'))
+    && (!requestedKind || meta.kind === requestedKind) && (!topic || meta.topics.includes(topic)) && (!family || meta.family === family);
+}).sort((a,b) => (b.data.research?.reviewedAt ?? '').localeCompare(a.data.research?.reviewedAt ?? '') || a.data.title.localeCompare(b.data.title, 'ko')); 
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+---
+<section class="research-catalog" data-research-catalog>
+  <div class="catalog-filters">
+    <label>제목 검색 <input type="search" data-query placeholder="논문 또는 모델 이름" /></label>
+    <label>상태 <select data-status><option value="">전체</option>{Object.entries(statusLabels).map(([key,label]) => <option value={key}>{label}</option>)}</select></label>
+    <label>종류 <select data-kind><option value="">전체</option>{Object.entries(kindLabels).map(([key,label]) => <option value={key}>{label}</option>)}</select></label>
+  </div>
+  <p aria-live="polite" data-count>문서 {entries.length}개</p>
+  <ul class="catalog-list">
+    {entries.map(entry => {
+      const meta = entry.data.research!;
+      return <li data-entry data-title={entry.data.title.toLocaleLowerCase()} data-status={meta.status} data-kind={meta.kind}>
+        <a class="catalog-title" href={`${base}${entry.id}/`}>{entry.data.title}</a>
+        <p>{entry.data.description}</p>
+        <small>{kindLabels[meta.kind]} · {statusLabels[meta.status]} · {meta.reviewedAt ?? '검토일 미등록'}</small>
+        <div class="catalog-topics">{meta.topics.map(key => <a href={`${base}topics/${key}/`}>{topicLabels[key]}</a>)}</div>
+      </li>;
+    })}
+  </ul>
+</section>
+<script>
+  document.querySelectorAll<HTMLElement>('[data-research-catalog]').forEach(root => {
+    const query = root.querySelector<HTMLInputElement>('[data-query]')!;
+    const status = root.querySelector<HTMLSelectElement>('select[data-status]')!;
+    const kind = root.querySelector<HTMLSelectElement>('select[data-kind]')!;
+    const entries = Array.from(root.querySelectorAll<HTMLElement>('[data-entry]'));
+    const filter = () => {
+      let count = 0;
+      for (const entry of entries) {
+        entry.hidden = !(entry.dataset.title!.includes(query.value.trim().toLocaleLowerCase())
+          && (!status.value || entry.dataset.status === status.value)
+          && (!kind.value || entry.dataset.kind === kind.value));
+        if (!entry.hidden) count++;
+      }
+      root.querySelector('[data-count]')!.textContent = `문서 ${count}개`;
+    };
+    for (const control of [query, status, kind]) control.addEventListener('input', filter);
+  });
+</script>
+<style>
+.catalog-filters { display: flex; flex-wrap: wrap; gap: 1rem; }
+.catalog-filters label { display: flex; flex-direction: column; gap: .3rem; margin: 0; }
+input, select { padding: .4rem .6rem; background: var(--sl-color-bg); color: var(--sl-color-text); border: 1px solid var(--sl-color-gray-4); border-radius: .25rem; }
+.catalog-list { padding: 0; list-style: none; }
+.catalog-list li { padding: 1rem 0; border-bottom: 1px solid var(--sl-color-gray-5); }
+.catalog-list li[hidden] { display: none; }
+.catalog-list p { margin: .3rem 0; }
+.catalog-title { font-weight: 600; }
+.catalog-topics { display: flex; flex-wrap: wrap; gap: .75rem; font-size: .8rem; margin-top: .4rem; }
+</style>

@@ -1,4 +1,5 @@
 ---
+research: {"kind": "overview", "topics": ["vla"], "status": "reviewing", "reviewedAt": null, "family": "ecot"}
 title: ECoT Reasoning Family
 description: Embodied Chain-of-Thought 계열 논문을 시간 순서와 기술 발전 축으로 정리한 survey map.
 sidebar:
@@ -6,6 +7,10 @@ sidebar:
 ---
 
 import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/ecot/index" />
 
 # ECoT Reasoning Family
 
@@ -108,3 +113,10 @@ ECoT-Lite와 ERVLA는 explicit CoT를 test-time에 항상 생성해야 하는지
 ## 검증 메모
 
 arXiv metadata/abstract, ECoT-Lite HTML/PDF, MolmoAct/MolmoAct2 PDF와 AllenAI blog/code 링크를 확인했다. MolmoAct/MolmoAct2/ECoT-Lite는 PDF를 직접 확보하고 대표 Figure 1/3 crop을 local asset으로 저장했다. ECoT family의 일부 논문은 현재 overview 수준으로 정리했으며, 각 논문별 full figure/table deep dive는 후속 개별 survey로 분리하는 것이 맞다.
+
+
+import ResearchCatalog from "../../../../components/ResearchCatalog.astro";
+
+## 계열 문서와 검토 상태
+
+<ResearchCatalog family="ecot" />

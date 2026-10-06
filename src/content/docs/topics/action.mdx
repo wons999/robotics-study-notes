@@ -1,0 +1,26 @@
+---
+title: Action 생성과 제어
+description: action chunk와 생성 모델의 시간 구조가 latency와 feedback을 어떻게 제한하는가?
+---
+
+import ResearchCatalog from "../../../components/ResearchCatalog.astro";
+
+## 핵심 질문
+
+action chunk와 생성 모델의 시간 구조가 latency와 feedback을 어떻게 제한하는가?
+
+## 권장 읽기 순서
+
+1. [Diffusion·Flow 지도](../../robot-learning/diffusion-flow-action-generation/): 주요 방법의 관계.
+2. [ACT](../../paper-notes/act-action-chunking-transformer/): action chunking의 출발점.
+3. [Diffusion Policy](../../paper-notes/diffusion-policy-visuomotor-policy-learning/): 조건부 action sequence 생성.
+4. [π0](../../paper-notes/pi/pi0-vla-flow-model/): VLA와 flow action expert.
+5. [DPPO](../../paper-notes/dppo-diffusion-policy-policy-optimization/): 정책 생성과 RL fine-tuning.
+
+## 비교와 후속 검증
+
+control frequency, chunk 길이, 재계획 주기, 생성 step 수를 각각 기록합니다. trajectory 품질과 실제 closed-loop 성공을 함께 비교합니다.
+
+## 연결된 자료
+
+<ResearchCatalog topic="action" scope="all" />

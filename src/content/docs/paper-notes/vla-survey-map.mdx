@@ -1,7 +1,12 @@
 ---
+research: {"kind": "map", "topics": ["vla"], "status": "reviewing", "reviewedAt": null}
 title: VLA Survey Map
 description: vision-language-action model 연구를 따라가기 위한 시작 지도.
 ---
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/vla-survey-map" />
 
 # VLA Survey Map
 
@@ -31,34 +36,34 @@ VLA는 visual observation과 language instruction을 받아 robot action을 생�
 
 | Survey | 핵심 질문 |
 | --- | --- |
-| [MolmoB0T](./molmo/molmobot-large-scale-simulation/) | real robot demonstration 없이 procedural simulation data만으로 DROID/RB-Y1 manipulation에 zero-shot transfer할 수 있는가 |
-| [GR00T Model Family](./groot/) | real, synthetic, human video, neural-generated data를 하나의 humanoid foundation model training recipe로 어떻게 섞는가 |
-| [PI Model Family](./pi/) | real robot data 중심의 flow/action-token route가 simulation-only route와 어떤 baseline 관계를 만드는가 |
-| [Molmo Model Family](./molmo/) | open action reasoning model이 spatial reasoning과 deployment data를 어떻게 결합하는가 |
+| [MolmoB0T](../molmo/molmobot-large-scale-simulation/) | real robot demonstration 없이 procedural simulation data만으로 DROID/RB-Y1 manipulation에 zero-shot transfer할 수 있는가 |
+| [GR00T Model Family](../groot/) | real, synthetic, human video, neural-generated data를 하나의 humanoid foundation model training recipe로 어떻게 섞는가 |
+| [PI Model Family](../pi/) | real robot data 중심의 flow/action-token route가 simulation-only route와 어떤 baseline 관계를 만드는가 |
+| [Molmo Model Family](../molmo/) | open action reasoning model이 spatial reasoning과 deployment data를 어떻게 결합하는가 |
 
 ## Reasoning / Action Reasoning 축
 
 | Survey | 핵심 질문 |
 | --- | --- |
-| [ECoT Reasoning Family](./ecot/) | explicit embodied CoT, visual CoT, training-only reasoning, adaptive spatial reasoning이 시간 순서로 어떻게 이어지는가 |
-| [ECoT-Lite](./ecot/ecot-lite-efficient-embodied-reasoning/) | CoT reasoning을 test-time에 생성하지 않아도 representation/curriculum signal로 성능을 유지할 수 있는가 |
-| [MolmoAct](./molmo/molmoact-action-reasoning-models/) | text CoT 대신 depth perception token과 visual reasoning trace로 robot action을 spatially ground할 수 있는가 |
-| [MolmoAct2](./molmo/molmoact2-real-world-deployment/) | action reasoning model을 real-world deployment에 맞게 flow expert, OpenFAST, adaptive depth reasoning으로 빠르게 만들 수 있는가 |
+| [ECoT Reasoning Family](../ecot/) | explicit embodied CoT, visual CoT, training-only reasoning, adaptive spatial reasoning이 시간 순서로 어떻게 이어지는가 |
+| [ECoT-Lite](../ecot/ecot-lite-efficient-embodied-reasoning/) | CoT reasoning을 test-time에 생성하지 않아도 representation/curriculum signal로 성능을 유지할 수 있는가 |
+| [MolmoAct](../molmo/molmoact-action-reasoning-models/) | text CoT 대신 depth perception token과 visual reasoning trace로 robot action을 spatially ground할 수 있는가 |
+| [MolmoAct2](../molmo/molmoact2-real-world-deployment/) | action reasoning model을 real-world deployment에 맞게 flow expert, OpenFAST, adaptive depth reasoning으로 빠르게 만들 수 있는가 |
 
 ## Continuous Action Generation 축
 
 | Survey | 핵심 질문 |
 | --- | --- |
-| [Flow Matching](./flow-matching-generative-modeling/) | continuous action expert를 vector field regression으로 이해할 수 있는가 |
-| [3D Diffusion Policy](./3d-diffusion-policy-dp3/) | 2D image-conditioned diffusion policy 대신 sparse 3D point cloud를 넣으면 어떤 일반화 이득이 생기는가 |
-| [Diffusion Policy Policy Optimization](./dppo-diffusion-policy-policy-optimization/) | diffusion policy를 behavior cloning 이후 policy-gradient RL로 fine-tune할 수 있는가 |
-| [Reactive Diffusion Policy](./reactive-diffusion-policy/) | tactile feedback을 빠른 action refinement에 넣어 contact-rich manipulation을 보강할 수 있는가 |
+| [Flow Matching](../flow-matching-generative-modeling/) | continuous action expert를 vector field regression으로 이해할 수 있는가 |
+| [3D Diffusion Policy](../3d-diffusion-policy-dp3/) | 2D image-conditioned diffusion policy 대신 sparse 3D point cloud를 넣으면 어떤 일반화 이득이 생기는가 |
+| [Diffusion Policy Policy Optimization](../dppo-diffusion-policy-policy-optimization/) | diffusion policy를 behavior cloning 이후 policy-gradient RL로 fine-tune할 수 있는가 |
+| [Reactive Diffusion Policy](../reactive-diffusion-policy/) | tactile feedback을 빠른 action refinement에 넣어 contact-rich manipulation을 보강할 수 있는가 |
 
 ## Tactile / Contact-Rich VLA 축
 
 | Survey | 핵심 질문 |
 | --- | --- |
-| [VTLA](./vtla-preference-learning-insertion/) | insertion manipulation에서 vision, tactile, language, action을 함께 넣고 DPO preference learning으로 continuous action mismatch를 줄일 수 있는가 |
-| [Tactile-VLA](./tactile-vla-physical-knowledge/) | pretrained VLA의 physical knowledge를 tactile feedback으로 contact-rich manipulation에 연결할 수 있는가 |
-| [T-Rex](./t-rex-tactile-reactive-dexterous-manipulation/) | 느린 VLA reasoning과 빠른 tactile correction을 hierarchical policy로 나눌 수 있는가 |
-| [Reactive Diffusion Policy](./reactive-diffusion-policy/) | tactile feedback을 diffusion policy의 action refinement loop에 넣으면 삽입/접촉 안정성이 좋아지는가 |
+| [VTLA](../vtla-preference-learning-insertion/) | insertion manipulation에서 vision, tactile, language, action을 함께 넣고 DPO preference learning으로 continuous action mismatch를 줄일 수 있는가 |
+| [Tactile-VLA](../tactile-vla-physical-knowledge/) | pretrained VLA의 physical knowledge를 tactile feedback으로 contact-rich manipulation에 연결할 수 있는가 |
+| [T-Rex](../t-rex-tactile-reactive-dexterous-manipulation/) | 느린 VLA reasoning과 빠른 tactile correction을 hierarchical policy로 나눌 수 있는가 |
+| [Reactive Diffusion Policy](../reactive-diffusion-policy/) | tactile feedback을 diffusion policy의 action refinement loop에 넣으면 삽입/접촉 안정성이 좋아지는가 |

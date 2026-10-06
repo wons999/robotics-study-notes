@@ -1,0 +1,278 @@
+---
+research: {"kind": "paper", "topics": ["vla"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2605.18722"}
+title: Dexora
+description: 36-DoF dual-arm·dual-hand VLA를 위한 sim-real corpus, current proprioception 기반 Diffusion Transformer, discriminator-weighted post-training과 실로봇 결과를 정리한 Survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/dexora-bimanual-dexterous-manipulation" />
+
+# Dexora
+
+<SectionFeedback page="Dexora" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Dexora: Open-source VLA for High-DoF Bimanual Dexterity |
+| 저자 | Zongzheng Zhang, Jingrui Pang 외 23인 |
+| 공개 | arXiv:2605.18722v1, ICRA 2026 |
+| 링크 | [arXiv](https://arxiv.org/abs/2605.18722) · [PDF](https://arxiv.org/pdf/2605.18722) · [Project](https://dexoravla.github.io/) · [Official repository](https://github.com/ZZongzheng0918/Dexora) · [Real-world dataset](https://huggingface.co/datasets/Dexora/Dexora_Real-World_Dataset) |
+| 기준 버전 | 8쪽 arXiv v1 PDF와 2026-07-15 기준 공식 repository |
+| 태그 | VLA, dual-arm dual-hand, proprioception, high-DoF dexterity, diffusion transformer, data quality |
+
+## 한 줄 요약
+
+Dexora는 두 6-DoF arm과 두 12-DoF hand의 **36차원 joint state/action**을 current-state token과 32-step noisy action token으로 Diffusion Transformer에 넣는다. embodiment-matched MuJoCo 100K trajectories로 기본기를 학습하고 실세계 10K-class demonstrations로 dexterity를 보강하며, offline discriminator가 덜 매끄럽거나 실패한 demonstration의 diffusion loss weight를 낮춘다.
+
+![Dexora의 teleoperation system과 sim-real dataset](/dexora/figures-3-4-system-dataset.png)
+
+*Figures 3–4. arm은 exoskeleton, finger는 Vision Pro tracking으로 teleoperate한다. 같은 interface가 physical robot과 MuJoCo twin을 구동한다.*
+
+## 문제의식
+
+기존 VLA는 대체로 다음 두 영역 중 하나에 머문다.
+
+- dual-arm이지만 parallel gripper처럼 hand action dimension이 낮다.
+- dexterous hand지만 single-arm 중심이다.
+
+Dexora는 dual-arm coordination과 12-DoF finger control을 한 policy에서 결합한다. 이때 병목은 model만이 아니다. 36-DoF demonstration을 오래 수집하면 operator skill, occlusion, hand-keypoint tracking noise, latency 때문에 quality 편차가 커진다. 저자들은 이를 `embodiment-matched data + quality-aware training` 문제로 정의한다.
+
+“고차원 policy를 저차원 embodiment로 줄이는 것이 그 반대보다 쉽다”는 주장도 세운다. 다만 이를 지지하는 cross-embodiment 실험은 qualitative task completion 중심이며, pretraining만으로 zero-shot projection하는 것이 아니라 각 task를 100 demonstrations로 fine-tune한다.
+
+## 시스템 설정
+
+| 항목 | 설정 |
+| --- | --- |
+| robot | 2×AIRBOT 6-DoF arm + 2×XHAND 12-DoF hand |
+| total state/action | 36D absolute joint vector |
+| sensing | four RGB views + full joint state |
+| logging/control | 20 Hz |
+| teleoperation | dual-arm exoskeleton backpack + Apple Vision Pro markerless finger skeleton |
+| simulator | 동일 kinematics/controller의 MuJoCo digital twin |
+| policy action horizon | 32 |
+| real evaluation | task당 100 demonstrations, 50K steps, 20 rollouts |
+
+XHAND는 모든 finger joint가 actuated되고 thumb/index에는 lateral ab/adduction이 있어 cap twisting과 in-hand tool use를 겨냥한다.
+
+## Dataset
+
+### simulation corpus
+
+- 297 objects, 30 categories
+- 200 tasks: pick-and-place, assembly/disassembly, articulated object
+- task당 3–5 teleoperated seed demonstrations
+- DexMimicGen식 scene/initial-state retargeting으로 task당 500 trajectories
+- 총 100K trajectories, 약 6.5M frames, 361 hours
+- Qwen2.5-VL로 Objaverse object와 physical parameter 후보를 만들고 scene layout/success criterion을 자동 생성
+
+simulation에는 dexterous tool-use보다 basic task가 중심이다. 따라서 저자도 simulation을 basic competence bootstrap으로 해석한다.
+
+### real-world corpus
+
+논문 Dataset section의 기준은 200 tasks×50 demonstrations = 10K episodes, 2.92M frames, 40.5 hours다. 347 objects, 17 categories이며 basic task 외에 tool use와 dexterous manipulation을 약 20% 포함한다. record는 LIBERO-2.1 형식으로 변환한다.
+
+공식 repository의 최신 README는 real data를 **12.2K episodes**로 확장해 공개했다고 적는다. 따라서 paper training corpus의 10K와 현재 release의 12.2K를 섞어 쓰면 안 된다.
+
+또한 PDF 앞부분은 real corpus를 `177.5 hours, 3.2M frames`라고 쓰지만 Dataset section·repository는 `40.5 hours, 2.92M frames`다. 본 Survey는 더 구체적이고 공개 release와 일치하는 후자를 사용하며, 이 불일치를 재현성 주의사항으로 남긴다.
+
+### 공개 schema
+
+repository가 설명하는 episode는 다음을 포함한다.
+
+- multi-view RGB와, available한 경우 depth/segmentation
+- dual-arm/dual-hand joint position·velocity 및 hand state
+- 36-DoF low-level action command
+- task language instruction; 현재 README 기준 task당 5개 표현
+- Parquet episode, MP4 video, `info.json`, `episodes.jsonl`, `stats.json` 등 LeRobot/LIBERO-2.1 계열 metadata
+
+simulation dataset은 repository에서 아직 “coming soon”으로 표시되어 있다.
+
+## Proprioception 처리
+
+Dexora policy가 받는 proprioception `s_t∈R^36`은 두 arm과 두 hand의 현재 joint angle이다. history를 별도로 쌓지 않고 noisy future action chunk와 함께 latent로 projection한다.
+
+```text
+current state s_t: 36D
+noisy action a_t:t+31: 32×36D
+diffusion timestep
+    -> latent projection + concatenate
+    -> decoder-only Diffusion Transformer
+```
+
+joint velocity와 jerk는 dataset quality 판정과 공개 dataset field에는 등장하지만, policy method section은 현재 joint angle state를 policy input으로 명시한다. 또한 논문 Eq. 1–3의 **per-dimension min-max normalization은 acceleration/jerk quality score를 계산하기 위한 전처리**다. policy state/action normalization으로 일반화해서는 안 되며, 정책 입출력 normalization은 PDF에 명시돼 있지 않다.
+
+## Quality-aware Training
+
+![data filtering, discriminator, weighted post-training](/dexora/figure-5-quality-aware-training.png)
+
+*Figure 5. quality score model은 학습 때만 쓰이고 inference policy에는 남지 않는다.*
+
+### 1. episode-level positive set 만들기
+
+state를 dimension별 min-max normalize한 뒤 centered finite difference로 velocity, acceleration, jerk를 계산한다. episode 전체 time×dimension RMS인 `A_ep`, `J_ep`가 낮은 각각의 하위 20%를 고르고 그 교집합을 취하면 약 18%가 남는다. 그 episode를 open-loop replay하여 task 성공이고 collision-free인 약 15%를 high-quality positive set으로 정한다.
+
+chunk가 정지해 있으면 acceleration/jerk가 낮아 보일 수 있으므로 저자들은 episode-level aggregation과 movement-coverage guard를 사용한다.
+
+### 2. policy compatibility proxy
+
+pretrained diffusion policy가 clip action을 얼마나 잘 설명하는지 diffusion residual energy `E_t`로 계산하고 dataset 전체에서 z-score한다.
+
+```text
+log π_hat(t) = -zscore(E_t)
+```
+
+clip token은 `[state; action chunk; logπ proxy]`이며 image와 language가 condition stream이다. shallow Transformer와 global average, sigmoid MLP가 `d(C)∈(0,1]`를 출력한다.
+
+### 3. positive-unlabeled discriminator와 weighted diffusion
+
+high-quality set은 positive, 나머지는 unlabeled negative로 놓고 positive BCE에 `η=0.5`를 둔다. score는 안정성을 위해 `[0.1,0.9]`로 clip하고 DWBC mapping으로 loss weight `w_i`로 바꾼다.
+
+```text
+L_policy = Σ_i w_i || εθ(condition, noisy_action) - ε ||²
+```
+
+score를 미리 계산한 뒤 짧은 weight warm-up과 함께 real dataset post-training에 사용한다. inference에는 discriminator가 필요 없다.
+
+## Model Architecture
+
+policy는 decoder-only Diffusion Transformer다.
+
+| 구성 | policy | discriminator |
+| --- | ---: | ---: |
+| layers | 28 | 12 |
+| hidden width | 1024 | 512 |
+| attention heads | 16 | 8 |
+| parameters | 논문 미기재 | 30M |
+
+current state, noisy action, diffusion timestep이 main input token이고, T5 language와 SigLIP multi-view image token은 condition이다. language/image는 RDT-1B와 유사하게 Transformer block에 번갈아 주입된다. standard DDPM으로 학습하고 DPM-Solver++로 sampling을 가속한다.
+
+이 구조는 pretrained VLM backbone 내부에 state를 넣는 형태가 아니다. frozen/pretrained language·vision encoder와 decoder-only DiT를 결합한 continuous action policy다.
+
+## Training Recipe
+
+1. simulation 100K trajectories로 policy를 100K gradient steps pretrain한다.
+2. pretrained policy를 freeze하여 real clip의 `logπ` proxy를 계산한다.
+3. high-quality positive와 unlabeled pool로 discriminator를 10K steps 학습한다.
+4. discriminator score를 weight로 삼아 real dataset에서 policy를 post-train한다.
+
+policy/discriminator 학습은 AdamW를 사용한다. discriminator는 8×A100, global batch 64다. downstream comparison은 4×L20에서 LoRA로 50K steps fine-tune하고 RTX 4090 한 장에서 inference한다. learning rate, weight decay, DDPM step 수 같은 세부 hyperparameter는 PDF에 공개되지 않았다.
+
+## Experiments and Results
+
+### basic·dexterous 실로봇 task
+
+![basic, dexterous, OOD 결과](/dexora/figures-6-8-main-results.png)
+
+*Figures 6–8, Tables I–II. basic 12 tasks, dexterous 6 tasks와 6개 OOD condition을 각각 20 rollouts로 평가한다.*
+
+| method | basic average | dexterous average |
+| --- | ---: | ---: |
+| Diffusion Policy | 34.2 | 6.7 |
+| π0 | 50.4 | 26.7 |
+| GR00T N1 | 82.1 | 51.7 |
+| Dexora | **89.6** | **66.7** |
+
+Dexora는 basic 12 tasks 중 7개에서 90% 이상이다. dexterous task별 성능은 Use pen 65, Fetch book 80, Cut leek 80, Place plates 70, Rough dough 80, Twist cap 25%다. average만 보면 강하지만 tactile feedback이 없고 fingertip friction이 낮아 cap twisting은 명확한 약점이다.
+
+OOD Apple→plate는 base/background 100, unseen lighting/object 95, occlusion/clutter 90, height change 95%다. 그러나 한 task에 대한 20 rollouts이므로 task 다양성을 포괄하는 OOD 증거는 아니다.
+
+### baseline adaptation caveat
+
+- DP는 36D action을 직접 regression한다.
+- π0에는 L/R arm과 L/R hand로 factorize한 2-layer MLP projector를 붙여 native lower-DoF output을 36D로 확장한다.
+- GR00T N1 comparison은 6-DoF hand setting이다.
+
+따라서 architecture, hand DoF, embodiment-matched pretraining data가 함께 바뀐다. Dexora의 승리를 오직 “36D state representation” 하나의 효과로 볼 수 없다.
+
+### cross-embodiment transfer와 ablation
+
+![cross-embodiment, data composition, discriminator ablation](/dexora/figures-9-11-table-3-ablations.png)
+
+*Figures 9–11, Table III. lower-DoF embodiment transfer는 qualitative sequence이며, data/discriminator 효과는 수치로 평가한다.*
+
+cross-embodiment 대상은 single-arm Franka gripper, dual-arm Cobot Magic ALOHA grippers, single-arm Unitree G1 arm+6-DoF Inspire Hand다. unused action dimension을 pad하고 없는 camera를 mask한 뒤 각 task 100 demonstrations로 fine-tune한다. Figure 9는 task completion example을 보여주지만 embodiment별 aggregate success table은 없다.
+
+real-data 비율 ablation은 다음과 같다.
+
+| task | sim only | +50% real | +all real |
+| --- | ---: | ---: | ---: |
+| Apple→plate | 75 | 90 | 100 |
+| Stack ring blocks | 65 | 80 | 85 |
+| Use pen | 0 | 35 | 65 |
+| Cut leek | 10 | 60 | 85 |
+
+simulation만으로 basic task는 bootstrap되지만 dexterous task는 real data 의존성이 크다.
+
+discriminator는 Corn→plate 성공률을 85→95%, Lift basket을 55→80%로 높인다. normalized acceleration/jerk도 각각 `0.034/0.043→0.020/0.032`, `0.041/0.052→0.023/0.036`으로 낮아진다. 성공뿐 아니라 trajectory smoothness까지 같은 방향으로 움직인다는 것이 핵심이다.
+
+## Code-Level Check
+
+공식 GitHub repository는 현재 dataset release 문서와 image/video asset은 제공하지만 다음은 포함하지 않는다.
+
+- policy/discriminator model source
+- diffusion loss와 score-to-weight 구현
+- training/inference scripts와 configs
+- MuJoCo generation code
+- checkpoint loading/deployment code
+
+따라서 model/loss 구현은 PDF 수식 이상으로 code-level 검증할 수 없다. README의 installation/loading 예제도 HTML comment 처리되어 있고 구체 loader package는 제공하지 않는다. 제목의 “open-source VLA”는 현재 공개 상태에서 **real dataset 공개**와는 부합하지만 full training stack 공개로 읽으면 안 된다.
+
+repository는 MIT license이며 real dataset 12.2K release와 LIBERO-2.1-style tree를 문서화한다. simulation 100K corpus는 coming soon이다.
+
+## 한계와 주의
+
+- paper 안에서도 real data의 hours/frames가 서로 불일치하며, repository release episode 수도 paper와 다르다.
+- quality discriminator의 positive는 replay success로 정해지므로 real robot replay 비용과 collision 판단이 필요하다.
+- quality score는 episode-level이라 한 episode 안의 좋은/나쁜 구간을 세밀하게 분리하지 못한다.
+- high-DoF model, embodiment-matched data, hand hardware가 함께 바뀌어 representation 효과가 분리되지 않는다.
+- cross-embodiment 결과는 task별 100-demo fine-tuning 후의 qualitative evidence다.
+- tactile sensing이 없어 cap twisting이 25%에 머문다.
+- 공개 repository에는 아직 model/training code와 simulation data가 없다.
+
+## Figure/Table Inventory
+
+| 항목 | 내용 | Survey 반영 |
+| --- | --- | --- |
+| Figure 1 | motivation, corpus, quality training, headline result | 문제의식·결과 |
+| Figure 2 | 기존 VLA의 arm/hand/DoF coverage | 문제의식 |
+| Figure 3 | teleoperation hardware와 MuJoCo twin | 시스템 이미지 |
+| Figure 4 | sim/real objects, task/trajectory distribution | Dataset 이미지 |
+| Figure 5 | filtering, discriminator, weighted post-training | Method 이미지·수식 |
+| Figure 6, Table I | 12 basic tasks와 성공률 | main result 이미지·표 |
+| Figure 7, Table II | 6 dexterous tasks와 성공률 | main result 이미지·task별 해석 |
+| Figure 8 | six OOD conditions | OOD 수치 |
+| Figure 9 | three lower-DoF embodiments | transfer caveat |
+| Figure 10 | real-data composition ablation | data ablation 수치 |
+| Figure 11, Table III | discriminator trajectory와 smoothness | quality ablation 수치 |
+
+## Citation Trail
+
+- **RDT-1B**: state/noisy action main stream과 alternating language/image conditioning의 직접 architecture 기반이다.
+- **π0와 GR00T N1**: continuous action VLA baseline이며 36D adaptation 난도를 드러낸다.
+- **DexMimicGen**: 소수 seed demonstration에서 100K embodiment-matched simulation corpus를 만드는 기반이다.
+- **DWBC**: discriminator score를 behavior-cloning weight로 바꾸는 기반이다.
+- **Diffusion Policy**: continuous action denoising baseline이다.
+
+## 기억할 점
+
+proprioception 관점에서 Dexora의 재사용 가능한 부분은 “36D라서 좋다”가 아니다.
+
+1. arm/hand를 L/R physical group으로 나눈 projector가 high-DoF adaptation에 실용적이다.
+2. current joint state를 noisy action과 같은 denoising stream에 넣는다.
+3. proprioception의 acceleration/jerk는 policy input 추가보다 demonstration quality label을 만드는 데도 쓸 수 있다.
+
+다만 정책 normalization과 state ablation은 없다. proprioception 설계의 인과 증거보다 high-DoF end-to-end system과 data-quality recipe의 증거로 읽는 편이 정확하다.
+
+## 검증 메모
+
+- 8쪽 PDF 전체와 Figures 1–11, Tables I–III를 직접 확인했다.
+- system/dataset, method, main result, transfer/ablation asset을 PDF에서 추출하고 모든 이미지를 열어 확인했다.
+- 공식 repository의 전체 file inventory와 README를 확인했으며 model code 미공개 상태를 명시했다.
+- 공개 paper·repository 사이의 dataset 수치 불일치를 숨기지 않고 분리했다.
+
+<SectionFeedback page="Dexora" section="전체 Survey" />

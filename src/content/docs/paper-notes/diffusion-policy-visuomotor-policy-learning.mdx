@@ -1,0 +1,255 @@
+---
+research: {"kind": "paper", "topics": ["vla", "action"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2303.04137"}
+title: 'Diffusion Policy: Visuomotor Policy Learning via Action Diffusion'
+description: Diffusion Policy의 conditional action denoising, receding horizon, CNN/Transformer conditioning과 proprioception 입력·ablation을 분석한다.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/diffusion-policy-visuomotor-policy-learning" />
+
+# Diffusion Policy: Visuomotor Policy Learning via Action Diffusion
+
+<SectionFeedback page="Diffusion Policy" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Diffusion Policy: Visuomotor Policy Learning via Action Diffusion |
+| 저자 | Cheng Chi, Zhenjia Xu, Siyuan Feng, Eric Cousineau, Yilun Du, Benjamin Burchfiel, Russ Tedrake, Shuran Song |
+| 공개 | arXiv:2303.04137, IJRR 2024 |
+| 링크 | [paper](https://arxiv.org/abs/2303.04137) · [project](https://diffusion-policy.cs.columbia.edu/) · [code](https://github.com/real-stanford/diffusion_policy) |
+| 태그 | imitation learning, diffusion, visuomotor policy, receding horizon, proprioception |
+
+## 한 줄 요약
+
+Diffusion Policy는 observation-conditioned action sequence distribution을 DDPM noise prediction으로 학습해 multimodal continuous action을 반복 denoising하고, observation 2 step에서 미래 16 step을 예측해 8 step만 실행하는 receding-horizon control로 smoothness와 feedback reactivity를 절충한다.
+
+visual policy도 image만 쓰는 것이 아니라 end-effector pose·gripper state 같은 proprioception을 함께 쓴다. state-policy vs visual-policy 표는 있지만 **proprio를 제거한 image-only ablation은 없다.**
+
+## Policy Representation
+
+![Figure 1: explicit, implicit, diffusion policy 표현 비교](/diffusion-policy/policy-representations.jpg)
+
+- explicit regression/GMM/categorical policy는 한 번에 action을 출력하지만 multimodality·고차원 precision에 제약이 있다.
+- implicit policy는 energy를 최소화하는 action을 찾지만 negative sampling과 inference optimization이 불안정하다.
+- diffusion policy는 Gaussian noise action sequence에서 시작해 learned score 방향으로 반복 정제한다.
+
+Diffusion formulation의 장점은 continuous high-dimensional distribution을 fixed bin이나 mixture component 수 없이 표현하고, training은 noise-prediction MSE로 안정화하는 데 있다.
+
+## Conditional Action Diffusion
+
+training sample에서 action sequence `A⁰`와 diffusion step `k`, Gaussian noise `ε`를 뽑는다. noise scheduler로 `Aᵏ`를 만든 뒤 network가 observation `O`를 condition으로 noise를 복원한다.
+
+`L = MSE(ε, εθ(O, Aᵏ, k))`
+
+inference는 `Aᴷ ~ N(0,I)`에서 시작해 reverse step을 반복한다. observation을 함께 생성하는 trajectory diffusion과 달리 **action만 denoise**한다. future state를 생성하지 않아 더 빠르고 vision encoder end-to-end training이 가능하다.
+
+## Three Horizons
+
+![Figure 2: observation, prediction, execution horizon과 두 backbone](/diffusion-policy/architecture.jpg)
+
+| 기호 | 의미 | 대표 설정 |
+| --- | --- | ---: |
+| `T_o` | latest observation history | 2 |
+| `T_p` | denoise하는 full action prediction horizon | 16 |
+| `T_a` | 실제 실행 후 replan하는 action horizon | 8 |
+
+`T_p > T_a`이므로 policy는 미래 trajectory 문맥을 보고 앞부분만 실행한다. 다음 query에서는 새 observation을 받고 다시 16-step sequence를 만든다. 논문은 previous prediction으로 warm-start할 수도 있다고 설명하지만 공개 benchmark recipe의 핵심은 receding horizon이다.
+
+action horizon 1은 매우 reactive하지만 idle section과 temporal consistency를 모델링하기 어렵다. 너무 긴 horizon은 disturbance 반응이 늦다. Figure 5에서 대부분 task의 optimum은 8 step이다.
+
+## Network Variants
+
+### CNN-based Diffusion Policy
+
+1D temporal U-Net이 noisy action sequence를 처리한다. observation feature와 diffusion timestep embedding으로 각 convolution block을 channel-wise FiLM한다. temporal convolution의 low-frequency bias 덕분에 일반 task에서 안정적이지만 빠르게 변하는 velocity command에는 oversmoothing할 수 있다.
+
+### Transformer-based Diffusion Policy
+
+noisy action을 token으로 만들고 diffusion timestep token을 prepend한다. observation embedding은 각 decoder block의 cross-attention key/value가 된다. action token은 causal self-attention으로 이전 noisy action만 본다. state-based complex task나 high-rate 변화에서는 강하지만 hyperparameter에 민감하다.
+
+저자 recommendation은 CNN부터 시작하고 sharp action 변화로 부족할 때 Transformer를 시도하는 것이다.
+
+## Visual and Proprioceptive Conditioning
+
+### Image path
+
+camera view마다 별도 ResNet18을 쓰고 timestep별 image를 독립 encoding한 뒤 concatenate한다. global average pooling은 spatial softmax로 바꿔 위치 정보를 보존하고, BatchNorm은 EMA training 안정성을 위해 GroupNorm으로 바꾼다. encoder는 scratch end-to-end training이 기본이다.
+
+### Low-dimensional path
+
+official Robomimic visual config는 다음을 동시에 넣는다.
+
+- `agentview_image`, `eye_in_hand_image`
+- `robot0_eef_pos` 3D
+- `robot0_eef_quat` 4D
+- `robot0_gripper_qpos` 2D
+
+즉 visual policy의 low-dimensional proprio는 timestep당 9D다. observation encoder가 image feature와 low-dim key를 합쳐 하나의 observation feature를 만들고 `T_o=2` frame을 flatten해 U-Net global condition 또는 Transformer cross-attention condition으로 쓴다.
+
+state policy는 여기에 object state를 포함한다. 예를 들어 Square low-dim config는 `object + EEF pose + gripper` 총 23D다. 따라서 Table 1의 state policy와 Table 2의 visual policy 차이는 **ground-truth object state vs pixels** 차이에 가깝고 proprio 유무 비교가 아니다.
+
+### Real bimanual extension
+
+bimanual task에서는 actual/desired pose와 gripper width를 두 arm 모두에 대해 observation에 넣고, action은 desired dual-EEF pose와 gripper width다. actual과 desired를 함께 주므로 tracking error와 prior command 상태를 policy가 읽을 수 있다.
+
+## Action Interface and Normalization
+
+position control이 velocity control보다 전반적으로 높았다. position action은 6D continuous rotation representation, velocity action은 3D axis-angle을 사용한다.
+
+Appendix는 action dimension별 min/max를 `[-1,1]`로 scaling할 것을 강조한다. DDPM reverse step에서 output을 `[-1,1]`로 clip하므로 z-score normalization은 action-space 일부를 접근 불가능하게 만들 수 있다. near-constant dimension은 mean centering만 하고 quaternion은 그대로 둔다.
+
+이 결과는 position target가 proprio feedback과 결합될 때 생기는 안정성까지 포함한다. position-vs-velocity ablation은 action interface 효과이지 proprio input ablation은 아니다.
+
+## Simulation Benchmarks
+
+![Tables 1–2: state와 visual behavior-cloning benchmark](/diffusion-policy/simulation-results.jpg)
+
+Robomimic Lift, Can, Square, Transport, ToolHang과 Push-T를 state/image observation으로 평가한다. proficient-human(PH) 200 demo, multi-human(MH) 300 demo가 주 구성이다. 각 cell은 `best checkpoint / last 10 checkpoint average`, 3 seed×50 initial condition이다.
+
+### State policy highlights
+
+| task | LSTM-GMM last-10 | best Diffusion last-10 |
+| --- | ---: | ---: |
+| Square PH | 0.73 | **0.93** CNN |
+| Square MH | 0.59 | **0.82** CNN |
+| Transport PH | 0.47 | **0.84** Transformer |
+| Transport MH | 0.20 | **0.46** CNN |
+| ToolHang PH | 0.31 | **0.87** Transformer |
+| Push-T | 0.61 | **0.91** CNN |
+
+### Visual policy highlights
+
+| task | LSTM-GMM last-10 | best Diffusion last-10 |
+| --- | ---: | ---: |
+| Square PH | 0.59 | **0.92** CNN |
+| Square MH | 0.38 | **0.84** CNN |
+| Transport PH | 0.62 | **0.93** CNN |
+| Transport MH | 0.24 | **0.69** CNN |
+| ToolHang PH | 0.49 | **0.73** CNN |
+| Push-T | 0.54 | **0.84** CNN |
+
+논문의 46.9% 평균 improvement는 Table 1, 2, 4의 task별 best baseline 대비 best Diffusion variant의 상대 개선을 평균한 값이다. 하나의 고정 model이 모든 task에서 46.9%p 상승했다는 의미가 아니다.
+
+### Long-horizon multimodality
+
+![Table 4: BlockPush와 Kitchen multi-stage 결과](/diffusion-policy/multistage-results.jpg)
+
+BlockPush에서 두 block을 모두 넣는 `p2`는 BeT 0.71 대비 Diffusion Transformer 0.94다. Kitchen에서 네 subtask를 완료하는 `p4`는 LSTM-GMM 0.34, BeT 0.44, Diffusion CNN 0.99, Transformer 0.96이다. diffusion sample 하나 안에서 일관된 mode를 유지한다는 evidence다.
+
+## Ablations
+
+### Action horizon and latency
+
+대부분 task에서 `T_a=8`이 optimum이다. simulated latency를 4 step까지 넣어도 position-control Diffusion Policy peak performance가 유지되며 velocity control은 더 크게 악화한다. action horizon, position control, receding horizon을 함께 설계한 결과다.
+
+### Observation horizon
+
+![Figures 14–15: observation history와 data-efficiency ablation](/diffusion-policy/horizon-data-ablations.jpg)
+
+state policy는 `T_o=1…8`에 크게 민감하지 않다. vision-CNN은 1보다 큰 짧은 history가 좋지만 길어질수록 악화하며 `T_o=2`가 compromise다. 이는 raw proprio history만의 효과가 아니라 pixels와 proprio를 함께 늘린 observation history ablation이다.
+
+### Vision encoder
+
+Square PH에서 scratch/frozen/fine-tuned success:
+
+| encoder | scratch | frozen | finetune |
+| --- | ---: | ---: | ---: |
+| ResNet18 ImageNet-21k | 0.94 | 0.58 | 0.92 |
+| ResNet34 ImageNet-21k | 0.92 | 0.40 | 0.94 |
+| ViT-B/16 CLIP | 0.22 | 0.70 | **0.98** |
+
+frozen pretrained feature는 낮고 end-to-end scratch ResNet 또는 low-LR fine-tuned ViT가 좋다. architecture와 pretraining을 동시에 바꾼 cell도 있어 순수 pretraining effect는 제한적으로 읽어야 한다.
+
+### Data efficiency and training stability
+
+Push-T와 Square에서 40–200 demo 전 구간에서 LSTM-GMM보다 높다. IBC는 energy loss가 감소해도 training action recovery와 evaluation success가 불안정한 반면 diffusion은 checkpoint variance가 낮다.
+
+## Real-World Results
+
+![Table 6: real Push-T와 vision encoder/action interface 비교](/diffusion-policy/real-pusht.jpg)
+
+### Push-T
+
+UR5, 136 demo, 20 evaluation에서 end-to-end CNN Diffusion Policy는 success 95%, IoU 0.80, duration 22.9초다. human은 100%, 0.84, 20.3초다. LSTM-GMM position은 20%, IBC는 0%다. camera blocking·block displacement에 대응한 separate perturbation episode는 qualitative evidence이며 repeated success statistics는 없다.
+
+### Mug flip and sauce
+
+- mug flip: 250 demo, 20 trial, 90%; LSTM-GMM 0%.
+- sauce pour: IoU 0.74 vs human 0.79, success 79%.
+- sauce spread: coverage 0.77 vs human 0.79, success 100%.
+- LSTM-GMM은 pour/spread success 0%이며 self-termination에 실패했다.
+
+### Bimanual tasks
+
+| task | demos | trials | success |
+| --- | ---: | ---: | ---: |
+| egg beater | 210 | 20 | 55% |
+| mat unrolling | 162 | 20 | 75% |
+| shirt folding | 284 | 20 | 75% |
+
+동일 Diffusion Policy hyperparameter가 dual-arm observation/action dimension 확장에도 동작했다. 다만 task별 baseline 비교는 없고 mid-level collision avoidance와 low-level controller가 함께 사용된다.
+
+## Proprioception 관점의 핵심
+
+1. visual policy도 EEF pose와 gripper state를 condition으로 쓴다.
+2. state policy는 proprio-only가 아니라 object state까지 포함한다.
+3. 기본 history 2는 image+proprio joint history다.
+4. low-dimensional observation은 diffusion target이 아니라 condition이며 future state는 생성하지 않는다.
+5. bimanual setup은 actual/desired state를 모두 넣어 tracking context를 제공한다.
+6. action target가 position command라 proprio feedback과 함께 receding-horizon tracking loop를 이룬다.
+7. image-only 또는 proprio-removal ablation이 없어 proprio의 독립 gain은 알 수 없다.
+
+## Code-Level Check
+
+공식 repository에서 다음을 확인했다.
+
+- hybrid image policy는 `shape_meta`에서 RGB와 low-dim key를 나눠 Robomimic observation encoder로 joint feature를 만든다.
+- 기본 U-Net config는 `horizon=16`, `n_obs_steps=2`, `n_action_steps=8`이다.
+- Square image config는 2 camera + 9D robot state, absolute action은 10D 6D-rotation representation이다.
+- low-dim Square는 23D object+robot state를 사용한다.
+- normalized observation `T_o` frame을 encode해 flatten한 global condition으로 모든 U-Net denoising step에 재사용한다.
+- inference output slice는 `start=T_o-1`, `end=start+T_a`다. prediction sequence의 observation-aligned 구간부터 실행한다.
+
+repository는 논문 reproduction을 위한 여러 legacy/new workspace를 함께 포함하므로 paper Table 7/8과 일치하는 config family를 기준으로 읽었다.
+
+## 한계와 주의
+
+1. visual policy의 proprio 제거 ablation이 없다.
+2. 46.9%는 task별 best architecture/baseline 기반 상대 개선 평균이다.
+3. real task는 20 trial 규모이며 bimanual task에는 직접 baseline이 없다.
+4. diffusion은 100 train step, simulation 100 inference step으로 계산량이 크다.
+5. real-time 16-step DDIM은 3080에서 약 0.1초지만 hardware/control stack에 따라 달라진다.
+6. benchmark마다 architecture/hyperparameter와 checkpoint selection이 다르다.
+7. perturbation robustness는 separate qualitative episode다.
+8. predicted action sequence가 멀리 갈수록 정확하다는 보장은 없고 앞 `T_a`만 쓴다.
+9. normalization과 rotation representation이 잘못되면 method gain을 재현하기 어렵다.
+
+## Figure/Table Inventory
+
+| 원문 | 내용 | 반영 |
+| --- | --- | --- |
+| Figures 1–2 | representation와 architecture | Method 이미지 |
+| Figures 3–6 | multimodality, action/latency, stability | key finding/ablation |
+| Figures 7–10 | Push-T, perturbation, mug, sauce | real results |
+| Figures 11–13 | bimanual tasks | bimanual 결과 |
+| Figures 14–15 | observation horizon, data efficiency | appendix 이미지 |
+| Figures 16–21 | bimanual initial/final states | protocol 확인 |
+| Tables 1–2 | state/visual benchmark | 결과 이미지/표 |
+| Tables 3–4 | task summary, multi-stage | setup/result |
+| Tables 5–6 | vision encoder, real Push-T | ablation/result |
+| Tables 7–8 | CNN/Transformer hyperparameters | recipe 이미지 |
+
+## 검증 메모
+
+- 19쪽 IJRR/arXiv PDF와 appendix, Figure 1–21, Table 1–8을 확인했다.
+- state/visual benchmark와 real task 수치를 원문 표에 대조했다.
+- official code에서 hybrid observation keys, horizon slicing, normalization, action representation을 확인했다.
+- state-vs-visual 비교를 proprio ablation으로 잘못 읽지 않도록 구분했다.
+- current/history proprio와 future action horizon의 역할을 분리했다.
+
+<SectionFeedback page="Diffusion Policy" section="문서 전체" />

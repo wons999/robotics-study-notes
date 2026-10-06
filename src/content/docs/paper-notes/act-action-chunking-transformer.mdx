@@ -1,0 +1,235 @@
+---
+research: {"kind": "paper", "topics": ["vla", "action"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2304.13705"}
+title: Learning Fine-Grained Bimanual Manipulation with Low-Cost Hardware
+description: ALOHA와 ACT의 CVAE action chunking, temporal ensemble, current joint-state 입력을 논문·부록·공식 코드 기준으로 분석한다.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/act-action-chunking-transformer" />
+
+# Learning Fine-Grained Bimanual Manipulation with Low-Cost Hardware
+
+<SectionFeedback page="ACT" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Learning Fine-Grained Bimanual Manipulation with Low-Cost Hardware |
+| 저자 | Tony Z. Zhao, Vikash Kumar, Sergey Levine, Chelsea Finn |
+| 공개 | arXiv:2304.13705, RSS 2023 |
+| 링크 | [paper](https://arxiv.org/abs/2304.13705) · [project](https://tonyzhaozh.github.io/aloha/) · [code](https://github.com/tonyzhaozh/act) |
+| 시스템/방법 | ALOHA · Action Chunking with Transformers (ACT) |
+| 태그 | bimanual manipulation, imitation learning, CVAE, action chunking, proprioception |
+
+## 한 줄 요약
+
+ALOHA는 저가 leader-follower 양팔 teleoperation으로 50 Hz demonstration을 수집하고, ACT는 현재 multi-view image와 14D follower joint position에서 미래 100 step의 absolute joint target을 한 번에 예측한다. 매 timestep 새 chunk를 만들고 같은 실행 시점의 겹친 예측을 평균해 긴 task의 effective horizon과 human demonstration noise를 줄인다.
+
+proprioception은 CVAE encoder와 policy decoder 모두의 핵심 condition이지만, joint-state 제거·history 길이·state dimension에 대한 독립 ablation은 없다.
+
+## ALOHA Hardware and Data Interface
+
+![Figure 1: ALOHA teleoperation과 learned task](/act/aloha-overview.jpg)
+
+ALOHA는 두 대의 ViperX300S follower arm과 더 작은 WidowX leader arm을 joint-space로 직접 mapping한다. off-the-shelf robot과 3D print part를 포함해 약 2만 달러 이하다. follower에는 low-cost Dynamixel의 high-frequency PID가 있고 learned policy는 target joint position을 보낸다.
+
+| signal | 내용 |
+| --- | --- |
+| proprio observation | 두 follower arm의 current joint position `7+7=14D` |
+| visual observation | front, top, left wrist, right wrist RGB 4장, 480×640 |
+| demonstration action | 두 leader arm의 joint position `14D` |
+| policy action | 다음 timestep의 absolute target joint position `14D` |
+| collection/control | 50 Hz |
+
+action label로 follower measured joint가 아니라 leader command를 쓴다. leader와 follower 위치 차이가 low-level PID를 통해 가해지는 force를 암묵적으로 정하기 때문이다. 따라서 `(follower qpos → leader target qpos)`는 단순 next-state prediction이 아니라 feedback controller의 command interface를 모방한다.
+
+## Why Action Chunking
+
+single-step BC는 50 Hz, 8–14초 episode에서 수백 번의 결정을 내려야 해 compounding error가 크다. human demonstration에는 같은 image/joint state에서도 pause timing이나 approach path가 달라지는 temporally correlated confounder도 있다.
+
+ACT는 `π(a_t:t+k | o_t)`를 학습한다.
+
+- `k=1`: ordinary one-step policy
+- `k=100`: 50 Hz 기준 약 2초의 future target joint sequence
+- effective decision horizon을 대략 `k`배 줄인다.
+- chunk 내부의 pause와 coordinated motion을 함께 표현한다.
+
+chunk가 길수록 reactive feedback가 느려질 수 있으므로 ACT는 chunk 하나를 끝까지 open-loop 실행하지 않는다. 매 timestep 새 observation으로 다시 query하고 overlapping prediction을 합친다.
+
+## ACT Architecture
+
+![Figures 4–5: CVAE architecture, action chunking, temporal ensemble](/act/architecture-and-ensemble.jpg)
+
+### CVAE encoder during training
+
+입력 sequence는 `[CLS], current qpos, action_1, …, action_k`로 총 `k+2` token이다. qpos와 action은 각각 linear layer로 512D에 projection하고 sinusoidal position embedding을 더한다. 4-layer BERT-like transformer encoder의 `[CLS]` output에서 32D latent `z`의 mean/log-variance를 예측한다.
+
+image를 CVAE encoder에서 제외한 이유는 속도다. 즉 latent posterior는 **current proprioception + demonstrated future action sequence**만 보고 human action style을 압축한다.
+
+### Policy decoder during train and test
+
+4개 image는 camera별 ResNet18을 거쳐 `15×20×512` spatial feature가 되고, 모두 flatten하면 1200 visual token이다. current 14D qpos와 32D `z`도 각각 512D token 하나로 projection한다. transformer encoder가 이 1202개 token을 융합하고, 7-layer transformer decoder의 `k`개 fixed sinusoidal query가 cross-attention해 `k×14` action을 출력한다.
+
+test에서는 CVAE encoder를 버리고 `z=0`, 즉 unit Gaussian prior mean을 사용한다. sampling하지 않으므로 evaluation policy는 deterministic하다.
+
+### Objective
+
+`L = L_reconstruction + β KL(q(z|qpos,a_chunk) || N(0,I))`, 기본 `β=10`이다.
+
+Algorithm 1 pseudocode에는 MSE라고 적혀 있지만 method implementation과 공식 code는 padded step을 mask한 **L1 action reconstruction loss**를 사용한다. 저자는 L1이 L2보다 precise action modeling에 좋았다고 보고한다.
+
+## Temporal Ensemble
+
+![Algorithms 1–2: ACT training과 inference](/act/training-inference-algorithms.jpg)
+
+timestep `t`에 실행할 action은 과거 여러 query에서 예측되어 FIFO buffer에 쌓인다. ACT는 서로 다른 실제 timestep의 action을 smoothing하지 않고 **동일한 실행 timestep을 겨냥한 예측들**만 평균한다.
+
+`a_t = Σ_i w_i A_t[i] / Σ_i w_i`, `w_i = exp(-m i)`
+
+논문 표기에서 `i=0`은 가장 오래된 prediction이다. 새 observation 반영 속도는 `m`으로 조절한다. 공식 코드의 evaluation loop는 매 step policy를 호출해 `all_time_actions[t:t+k,t]`에 저장하고 nonzero prediction을 지수 가중 평균한다.
+
+이 구조는 explicit proprio history encoder는 아니다. 과거 observation으로 만든 action proposal이 ensemble buffer에 남아 있어 **output space에서 간접 temporal memory**를 제공한다.
+
+## Training Recipe
+
+| 항목 | 설정 |
+| --- | --- |
+| model | 약 80M parameters |
+| transformer | encoder 4, decoder 7, hidden 512, FFN 3200, head 8 |
+| latent | 32D |
+| chunk | 100 |
+| optimizer | Adam, LR `1e-5` |
+| batch/dropout | 8 / 0.1 |
+| KL weight | 10 |
+| training | task별 scratch, single 3090 약 5시간 |
+
+real task는 기본 50 demo, Thread Velcro만 100 demo다. episode는 8–14초이며 task당 10–20분의 usable demonstration, reset과 mistake를 포함한 wall time은 30–60분이다. simulation은 scripted 50개와 human 50개를 별도로 수집한다.
+
+## Tasks
+
+![Figure 6: 여섯 real-world task와 staged success definition](/act/real-world-tasks.jpg)
+
+real task는 Slide Ziploc, Slot Battery, Open Cup, Thread Velcro, Prep Tape, Put On Shoe다. millimeter precision, deformable object, mid-air bimanual handover, contact sequence를 포함한다. simulation은 Cube Transfer와 Bimanual Insertion이다.
+
+각 success는 final binary만이 아니라 subtask별 cumulative rate로 보고한다. real-world는 단일 seed, 25 rollout이며 simulation은 3 seed×50 rollout이다.
+
+## Experiments and Results
+
+![Tables I–II: simulation과 real-world staged success](/act/results-tables.jpg)
+
+### Main comparison
+
+| task/final stage | best baseline | ACT |
+| --- | ---: | ---: |
+| Cube Transfer, scripted | 27 | **86** |
+| Cube Transfer, human | 1 | **50** |
+| Bimanual Insertion, scripted | 3 | **32** |
+| Bimanual Insertion, human | 0 | **20** |
+| Slide Ziploc, open | 0 | **88** |
+| Slot Battery, insert | 0 | **96** |
+| Open Cup, open lid | 0 | **84** |
+| Thread Velcro, insert | 0 | **20** |
+| Prep Tape, hang | 0 | **64** |
+| Put On Shoe, secure | 0 | **92** |
+
+baseline은 BC-ConvMLP, BeT, RT-1, VINN이며 real task의 마지막 네 개는 계산 비용 때문에 best baseline BeT만 비교한다. ACT가 큰 폭으로 앞서지만 image encoder, continuous absolute action, action chunk, CVAE, end-to-end training이 함께 달라진 비교다.
+
+### Action chunking ablation
+
+![Figure 8: chunk size, temporal ensemble, CVAE, control frequency](/act/ablations.jpg)
+
+temporal ensemble을 끄고 4개 setting 평균을 비교하면 ACT는 `k=1` 약 1%에서 `k=100` 약 44%로 증가하고, `k=200/400`에서는 약간 감소한다. fully open-loop의 반응성 저하와 긴 sequence modeling 난이도가 원인으로 제시된다.
+
+BC-ConvMLP와 VINN에도 chunking을 추가하면 함께 개선되어, gain이 ACT transformer에만 국한되지 않음을 보인다.
+
+### Temporal ensemble ablation
+
+각 method별로 따로 tuning한 best result에서 temporal ensemble은 ACT +3.3%p, BC-ConvMLP +4%p, VINN −20%p다. parametric predictor의 modeling noise는 smoothing되지만 VINN은 dataset의 ground-truth action을 retrieve하므로 평균이 오히려 해친다는 저자 해석이다.
+
+### CVAE ablation
+
+scripted data에서는 CVAE 제거가 60%→59%로 거의 영향이 없다. human data에서는 35.3%→2%로 크게 떨어진다. CVAE가 task dynamics 자체보다 stochastic/multimodal human demonstration modeling에 필요하다는 강한 evidence다.
+
+### 50 Hz user study
+
+6명이 5 Hz와 50 Hz teleoperation으로 cable tie threading과 cup unstacking을 수행했다. completion time은 cable tie 약 33→20초, cup 약 16→10초로 감소해 전체적으로 62% slowdown을 피했다. repeated-measures test `p<0.001`이다. 이는 data collection interface의 control frequency 효과이며 ACT inference frequency ablation과 동일하지 않다.
+
+## Proprioception 관점 분석
+
+### 어디에 쓰는가
+
+1. CVAE posterior encoder: current qpos가 demonstrated action chunk의 style 해석을 돕는다.
+2. policy transformer encoder: current qpos 한 token이 visual feature와 latent를 함께 condition한다.
+3. normalization: official data loader는 qpos와 action을 dataset mean/std로 각각 standardize한다.
+4. controller interface: follower qpos는 measured state, leader qpos는 desired target이므로 두 값의 차이가 low-level effort와 연결된다.
+
+### history는 있는가
+
+policy input에 qpos history나 image history는 없다. 매 query는 current observation만 본다. `k=100`은 과거 observation horizon이 아니라 **future action horizon**이다. temporal ensemble도 raw qpos history를 concatenate하지 않는다.
+
+### ablation이 분리하는가
+
+아니다. 다음 비교가 없다.
+
+- image-only vs image+qpos
+- qpos-only vs image+qpos
+- current qpos vs qpos history
+- measured follower qpos 대신 error/velocity/torque
+- qpos encoder token 수나 fusion 위치
+
+따라서 ACT 성능에서 proprio의 필요성은 architecture와 task mechanics로는 설득력 있지만 정량 기여율은 알 수 없다.
+
+## Code-Level Check
+
+공식 `tonyzhaozh/act` repository를 확인했다.
+
+- `state_dim=14`와 qpos/action dimension이 구현에 hard-code되어 있다.
+- CVAE encoder는 `Linear(14,512)` qpos token과 `k×14` action token을 `[CLS]` 뒤에 붙인다.
+- policy path는 qpos를 `Linear(14,512)`로 한 token화하고 latent token과 image feature에 append한다.
+- test는 `latent_sample=zeros`, current qpos 한 frame만 사용한다.
+- temporal ensemble buffer shape는 `[episode, episode+k,14]`이고 현재 timestep을 예측한 nonzero action을 평균한다.
+- qpos/action normalization statistics는 training dataset 전체에서 계산한다.
+
+repository는 원 논문 ALOHA code이며 이후 ACT++/Mobile ALOHA 계열의 변경을 이 결과에 소급하지 않았다.
+
+## 한계와 주의
+
+1. real-world 결과는 method당 단일 training seed, task당 25 trial이다.
+2. proprio 독립 ablation이 없다.
+3. 4-camera vision과 state를 함께 바꾸는 baseline 비교라 component attribution이 어렵다.
+4. 기본 chunk 100은 task/control frequency에 종속적이다.
+5. temporal ensemble은 매 step full model query를 요구해 chunk open-loop의 계산 절감을 쓰지 않는다.
+6. deterministic `z=0`은 demonstration diversity를 학습에 쓰지만 test-time mode selection은 하지 않는다.
+7. low-cost motor force/precision 한계와 parallel-jaw gripper 제약이 남는다.
+8. candy unwrap과 flat ziploc은 50 demo로 최종 stage 0/10이었다.
+9. absolute joint target가 delta보다 좋았다는 관찰에 정량 표는 없다.
+
+## Figure/Table Inventory
+
+| 원문 | 내용 | 반영 |
+| --- | --- | --- |
+| Figures 1–3 | ALOHA overview, hardware, camera workspace | hardware/interface |
+| Figure 4 | ACT CVAE architecture | architecture 이미지 |
+| Figure 5 | chunking + temporal ensemble | method 이미지 |
+| Figure 6 | six real tasks | task 이미지 |
+| Figure 7 | two simulated tasks | setup 설명 |
+| Figure 8 | four ablation groups | ablation 이미지/수치 |
+| Figures 9–10 | teleoperation skills, camera observations | appendix 확인 |
+| Figure 11 | detailed ACT graph | code와 architecture 대조 |
+| Figure 12 | user-study objects | protocol 확인 |
+| Tables I–II | staged success | main results |
+| Tables III–VII | ACT/baseline hyperparameters | training recipe |
+
+## 검증 메모
+
+- 18쪽 PDF와 appendix 전체, Figure 1–12, Table I–VII을 확인했다.
+- main task staged success와 Figure 8 ablation 수치를 원문과 대조했다.
+- official code에서 qpos path, 14D hard-code, latent test path, temporal ensemble을 확인했다.
+- Algorithm의 MSE 표기와 실제 L1 구현 차이를 명시했다.
+- proprio history와 action horizon을 혼동하지 않고 ablation 부재를 기록했다.
+
+<SectionFeedback page="ACT" section="문서 전체" />

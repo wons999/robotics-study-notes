@@ -1,0 +1,318 @@
+---
+research: {"kind": "paper", "topics": ["vla", "action"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2410.07864"}
+title: RDT-1B
+description: 128차원 물리 의미 기반 state/action 공간과 1.2B Diffusion Transformer로 다중 로봇 데이터를 사전학습한 RDT-1B의 proprioception 설계, 학습, 실험, 공개 코드를 정리한 Survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/rdt-1b-robot-diffusion-transformer" />
+
+# RDT-1B
+
+<SectionFeedback page="RDT-1B" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | RDT-1B: a Diffusion Foundation Model for Bimanual Manipulation |
+| 저자 | Songming Liu, Lingxuan Wu, Bangguo Li, Hengkai Tan, Huayu Chen, Zhengyi Wang, Ke Xu, Hang Su, Jun Zhu |
+| 공개 | arXiv:2410.07864v2; ICLR 2025 |
+| 링크 | [arXiv](https://arxiv.org/abs/2410.07864) · [PDF](https://arxiv.org/pdf/2410.07864) · [Project](https://rdt-robotics.github.io/rdt-robotics/) · [Official code](https://github.com/thu-ml/RoboticsDiffusionTransformer) · [RDT-1B checkpoint](https://huggingface.co/robotics-diffusion-transformer/rdt-1b) |
+| 기준 버전 | 28쪽 arXiv v2 PDF와 2026-07-15 기준 공식 코드 |
+| 태그 | bimanual manipulation, diffusion transformer, proprioception, unified action space, cross-robot pretraining |
+
+## 한 줄 요약
+
+RDT-1B는 로봇마다 다른 state와 action을 물리 의미가 지정된 **128차원 공통 공간**에 배치하고, 현재 proprioception과 64-step noisy action chunk를 동일한 연속 token stream으로 처리하는 1.2B Diffusion Transformer다. 46개 dataset의 1M+ trajectory로 사전학습한 뒤 ALOHA 계열 6K+ episode에 fine-tune하여, from-scratch 및 ACT·OpenVLA·Octo보다 실로봇의 unseen object/scene, instruction following, few-shot, dexterous task에서 높은 성공률을 보고한다.
+
+![RDT의 unified action space와 multimodal Diffusion Transformer](/rdt-1b/figure-3-architecture.png)
+
+*Figure 3. 현재 state와 noisy action은 같은 저차원 stream에 들어가 self-attention하고, image와 language는 번갈아 cross-attention으로 주입된다.*
+
+## 문제의식
+
+양팔 조작은 한 물체를 어느 손이 먼저 잡을지처럼 여러 유효 action mode를 가진다. 단일 deterministic regression이나 discrete action token은 이 분포와 미세한 연속 제어를 동시에 표현하기 어렵다. 반면 target dual-arm dataset은 비싸고 작다. 다른 robot dataset을 합치려 해도 joint 수, EEF 표현, camera 수, control frequency가 서로 다르다.
+
+RDT는 이를 세 문제로 나눈다.
+
+1. bimanual multi-modality는 diffusion으로 모델링한다.
+2. image·language·state의 token 수와 통계 차이는 modality별 encoder와 alternating cross-attention으로 다룬다.
+3. robot별 state/action schema는 물리 의미가 고정된 unified space로 정렬한다.
+
+목표는 새 embodiment에 zero-shot으로 직접 실행하는 것이 아니다. heterogeneous robot data로 transferable prior를 만들고 target robot dataset으로 fine-tune하는 방식이다.
+
+## 시스템 설정
+
+| 항목 | 설정 |
+| --- | --- |
+| target robot | Cobot Mobile ALOHA, 정적 양팔 조작에 사용 |
+| arm/action | 좌·우 7 joint command, 총 14차원 target qpos |
+| camera | exterior, right wrist, left wrist 3개 |
+| image history | 2 timestamps, 각 view를 `384×384`로 aspect-ratio padding |
+| proprioception | 현재 시점 하나; joint position/velocity, gripper, EEF, base field 중 dataset이 제공하는 값 |
+| action chunk | 64 future actions |
+| control frequency | dataset별 scalar를 별도 condition으로 입력 |
+| inference | DPM-Solver++ 5 denoising steps; RTX 4090에서 chunk 6 Hz, action 환산 381 Hz 보고 |
+
+Mobile ALOHA의 이동 기능은 쓰지 않았고 모든 평가가 stationary bimanual manipulation이라는 점이 중요하다.
+
+## Proprioception과 unified action space
+
+### 128차원은 learned embedding이 아니라 schema다
+
+![RDT의 128차원 unified action/state slot](/rdt-1b/table-4-unified-space.png)
+
+*Table 4. 좌·우 arm/gripper의 joint, velocity, EEF pose/velocity와 base velocity에 의미가 지정되어 있다. 없는 값은 reserved 또는 padding으로 남긴다.*
+
+RDT의 unified space는 다음 구간을 고정한다.
+
+| 구간 | 물리량 |
+| --- | --- |
+| 0–49 | right arm/gripper joint position·velocity, EEF position·6D rotation·velocity, reserved |
+| 50–99 | left arm/gripper의 같은 구조 |
+| 100–102 | base linear/angular velocity |
+| 103–127 | reserved |
+
+single-arm data는 right-arm slot에 넣고, 6-DoF arm은 10개 joint slot 중 앞 6개만 채운다. 이렇게 하면 같은 index가 dataset 사이에서 같은 물리 단위를 유지한다.
+
+### padding indicator까지 붙여 256차원으로 만든다
+
+값 `0`은 속도 0이나 각도 0이라는 실제 의미가 있으므로 padding 0과 구분되지 않는다. 공식 구현은 128차원 값 뒤에 각 dimension의 유효 여부를 나타내는 128차원 0/1 indicator를 concatenate한다.
+
+```text
+[unified physical vector 128D ; valid/padded indicator 128D]
+    -> 3-layer GELU MLP
+    -> 2048D state/action token
+```
+
+proprioception과 각 future action은 동일한 adaptor를 공유한다. 논문의 설계 의도는 state와 action이 같은 물리 의미를 가진다는 것이다.
+
+### normalization과 history 선택
+
+RDT는 dataset별 값을 일괄 `[-1,1]`이나 z-score로 재정규화하지 않는다. m, rad, m/s, rad/s처럼 unit을 통일하고 물리 scale을 보존한다. EEF rotation은 discontinuity를 줄이기 위해 6D representation을 사용한다.
+
+image는 두 시점을 쓰지만 proprioception은 **현재 시점 하나만** 사용한다. 저자들은 state history가 저차원 motion pattern shortcut을 만들 수 있다고 설명한다. 다만 이 선택의 독립 ablation은 제공하지 않는다. 공개 training loop도 state trajectory의 마지막 원소만 `states[:, -1:, :]`로 잘라 사용한다.
+
+## Model Architecture
+
+### token streams
+
+한 sample의 low-dimensional stream은 다음 길이를 갖는다.
+
+```text
+[diffusion timestep; control frequency; current state; 64 noisy actions]
+```
+
+language는 frozen T5-XXL, image는 frozen SigLIP으로 encoding한 뒤 각각 2-layer GELU adaptor로 2048 width에 맞춘다. image token에는 time·camera·patch를 구분하는 multi-dimensional sinusoidal position을 사용한다.
+
+### 1.2B RDT trunk
+
+| 설정 | 값 |
+| --- | ---: |
+| Transformer blocks | 28 |
+| hidden width | 2048 |
+| attention heads | 32 |
+| parameter count | 1.2B |
+| language encoder | frozen T5-XXL, 4096D |
+| vision encoder | frozen SigLIP, 1152D |
+| state/action adaptor | 3-layer GELU MLP |
+| output | 64×128 clean action sample |
+
+각 block은 low-dimensional stream 내부 self-attention 후 condition cross-attention을 수행한다. 짝수/홀수 block에서 language와 image condition을 번갈아 넣어, image token 수가 language보다 많은 상황에서 language가 묻히는 것을 줄인다.
+
+Q와 K를 head dimension별 RMSNorm하는 QKNorm, activation을 center하지 않는 RMSNorm, linear가 아닌 MLP decoder도 사용한다.
+
+![QKNorm/RMSNorm, MLP decoder, alternating condition injection ablation](/rdt-1b/figure-4-architecture-ablation.png)
+
+*Figure 4. normalization을 제거하면 pretraining loss spike가 생긴다. MLP decoder와 alternating condition injection 제거도 dexterity와 instruction following을 크게 낮춘다. 이 ablation은 resource 제약으로 사전학습 없이 수행됐다.*
+
+## Diffusion objective와 inference
+
+clean action chunk를 `a⁰`, diffusion step을 `k`, noise를 `ε`라 하면 training은 noisy `aᵏ`를 만들고 condition `ℓ,o,z,c`로 clean sample을 복원한다.
+
+```text
+aᵏ = forward_diffusion(a⁰, ε, k)
+fθ([z; aᵏ], k, c, language, images) -> â⁰
+L = MSE(â⁰, a⁰)
+```
+
+공개 `RDTRunner.compute_loss()`의 `prediction_type` 기본값은 `sample`이므로 ε-prediction이 아니라 clean action `x0`가 target이다. inference에서는 Gaussian action chunk에서 시작해 DPM-Solver++로 5번 갱신하고 invalid dimension을 indicator mask로 0 처리한다.
+
+CFG는 fine-tuning에서 이득이 없고 robot arm을 불안정하게 만들어 사용하지 않았다고 Appendix가 밝힌다.
+
+## Dataset
+
+### pretraining mixture
+
+논문은 46개 dataset, 1M+ trajectories, 약 21TB를 보고한다. RT-1, DROID, RH20T, Mobile ALOHA, RoboSet, BridgeData V2와 Open X-Embodiment 자료를 함께 쓴다.
+
+![RDT pretraining dataset별 sample weight](/rdt-1b/table-5-pretraining-mixture.png)
+
+*Table 5. dataset size의 제곱근을 초기 weight로 삼고 diversity·quality·중간 loss에 따라 조정한다. DROID 10.06%, RH20T 10.99%, RT-1 9%, BridgeData V2 7.44% 등이 큰 비중을 차지한다.*
+
+cleaning은 repetitive/failure episode, blank image, 잘못 기록된 velocity, 너무 짧은 trajectory를 제거하고 긴 trajectory를 downsample한다. 각 modality는 10% 확률로 독립 masking한다.
+
+### target fine-tuning corpus
+
+저자 수집 dataset은 300+ tasks, 6K+ trajectories, 3M+ frames, 100+ objects, 15+ scenes다. front와 두 wrist RGB, 양팔 6-DoF joint position/velocity와 gripper angle, 수동 instruction을 기록한다. task당 GPT-4-Turbo로 100개 expanded instruction과 1개 simplified instruction을 만들고 원문·확장·단순 instruction을 각각 1/3 확률로 sample한다.
+
+공개 loader는 HDF5/TFRecord 경로를 제공한다. episode가 32 step보다 짧으면 제외하고, 2048보다 길면 2048 step으로 downsample한다.
+
+## Training Recipe
+
+![RDT model과 encoder 설정](/rdt-1b/tables-8-10-model-training.png)
+
+*Tables 8–9. frozen T5-XXL/SigLIP과 28-layer, width 2048 RDT 구성.*
+
+![RDT 공통 optimizer hyperparameters](/rdt-1b/table-10-training-hyperparameters.png)
+
+*Table 10. pretraining과 fine-tuning에 같은 optimizer 설정을 쓴다.*
+
+| 항목 | pretraining | fine-tuning |
+| --- | ---: | ---: |
+| hardware | 48×H100 80GB | 48×H100 80GB |
+| steps | 1M | 130K |
+| wall time | 약 1개월 | 약 3일 |
+| global batch | 32×48 = 1536 | 32×48 = 1536 |
+| optimizer | AdamW | AdamW |
+| learning rate | `1e-4`, constant | `1e-4`, constant |
+| warmup | 500 steps | 500 steps |
+| weight decay | `1e-2` | `1e-2` |
+| precision | bf16 | bf16 |
+
+스케줄 이유로 fine-tuning은 1M checkpoint가 아니라 500K pretraining checkpoint에서 시작했다. 따라서 “1M-step pretraining 결과를 그대로 fine-tune한 수치”라고 읽으면 안 된다.
+
+fine-tuning augmentation은 color jitter/image corruption과 40dB SNR의 proprioception Gaussian noise다. episode 시작의 operator 정지 구간도 제거한다.
+
+## Experiments and Results
+
+### 평가 protocol
+
+| 평가 축 | task | trials |
+| --- | --- | ---: |
+| unseen object | Wash Cup, seen 1 + unseen 2 cups | cup당 8 |
+| unseen scene | Pour Water, unseen 3 rooms | room당 8 |
+| instruction | left 1/3, right 2/3 water | task당 8 |
+| few-shot | Handover 5 demos, Fold Shorts 1 demo | task당 25 |
+| dexterity | joystick로 robot dog 직진 | 25 |
+
+success는 최종 성공만이 아니라 table의 intermediate stage도 함께 보고한다. Figure 1의 `68.2%` overall은 각 task의 total과 추가 requirement를 먼저 평균하고, 5개 평가 축을 다시 동일 가중 평균한 값이다.
+
+### main result
+
+![ACT, OpenVLA, Octo, RDT scratch와 pretrained RDT의 task별 결과](/rdt-1b/table-3-main-results.png)
+
+*Table 3. pretrained RDT의 강점은 특히 긴 multi-stage task와 unseen setting에서 나타난다. 한편 모든 task가 완전 성공에 가깝지는 않다.*
+
+- Wash Cup total: 세 컵에 대해 RDT `50/75/50%`; 나머지 baseline은 total 0%다.
+- instruction following total: RDT `100/87.5%`, correct amount `100/75%`; scratch는 total `62.5/25%`다.
+- unseen rooms Pour Water total: RDT `62.5/100/62.5%`; scratch `25/75/25%`다.
+- Handover total: RDT 40%, scratch 16%, 다른 baseline 0%다.
+- Fold Shorts: RDT 68%, scratch 40%, Octo 4%, ACT/OpenVLA 0%다.
+- Robot Dog walk straight: RDT 48%, scratch/ACT 32%, OpenVLA/Octo 0%다.
+
+결과는 RDT가 우세하다는 주장을 지지하지만, baseline adaptation이 완전히 대칭적이지는 않다. OpenVLA와 Octo는 전체 multi-task fine-tuning에서 action accuracy/MSE가 수렴하지 않아 evaluation task 관련 약 100 demonstrations마다 별도로 fine-tune됐다. ACT는 language-conditioned가 아니어서 instruction 축을 평가할 수 없다.
+
+### diffusion, model size, pretraining ablation
+
+![RDT task 정의와 핵심 ablation](/rdt-1b/tables-1-2-tasks-ablation.png)
+
+*Tables 1–2. unseen object/scene/instruction 축에서 regression, small, scratch와 비교한다.*
+
+| variant | unseen object | unseen scene | instruction following |
+| --- | ---: | ---: | ---: |
+| regression | 12.5 | 50 | 12.5 |
+| small 166M | 37.5 | 62.5 | 25 |
+| scratch | 0 | 25 | 62.5 |
+| RDT-1B | 50 | 62.5 | 100 |
+
+세 축을 한 평균으로 뭉치기보다 해석해야 한다. scratch가 instruction 축에서는 62.5로 regression/small보다 높고, unseen scene에서는 small과 1.2B가 같다. 각 설계가 모든 축에서 단조 개선되는 것은 아니다.
+
+## Code-Level Check
+
+공식 저장소는 model, loss, pretraining/fine-tuning loader, ALOHA deployment, ManiSkill evaluation과 checkpoint를 공개한다.
+
+| 경로 | 확인 내용 |
+| --- | --- |
+| `models/rdt_runner.py` | 256D state+indicator adaptor, DDPM training, DPM-Solver++ 5-step sampling, clean-sample MSE |
+| `models/rdt/model.py` | `[timestep, frequency, state, action]`, 28 blocks, language/image alternating injection |
+| `models/rdt/blocks.py` | self/cross-attention QKNorm, RMSNorm, MLP final layer |
+| `train/train.py` | state history에서 마지막 state만 사용, modality encoder와 distributed training |
+| `train/dataset.py` | 10% condition masking, 40dB state noise option, mean-state replacement과 validity mask |
+| `data/hdf5_vla_dataset.py` | qpos/action을 128D schema에 배치하고 indicator 생성 |
+| `scripts/agilex_inference.py` | observation window, action buffer, joint command deployment loop |
+
+### 논문과 코드에서 다르게 보이는 지점
+
+- 본문은 low-dimensional input에 “MLP with Fourier features”를 쓴다고 설명하지만, 공개 `state_adaptor`는 plain 3-layer GELU MLP다. Fourier-style timestep embedder는 diffusion time과 control frequency에는 존재한다.
+- Appendix는 modality별 10% independent masking이라고 설명한다. 코드는 state를 dataset mean으로, indicator를 0으로, image를 background로, language를 empty embedding/string으로 바꾸어 구현한다.
+- 공개 config는 `prediction_type: sample`이다. 따라서 code-level loss target은 noise가 아니라 clean action이다.
+- 논문은 EMA 설정을 표로 다루지 않으며 공개 config도 “currently do not use EMA”라고 명시한다.
+
+## 한계와 주의
+
+- proprioception history 배제가 shortcut을 줄인다는 주장은 독립 ablation 없이 설계 근거로만 제시된다.
+- unified space는 gripper robot 중심의 128개 수동 schema다. 고DoF hand나 새 sensor는 reserved slot과 converter를 다시 설계해야 한다.
+- 48×H100을 한 달 사용한 pretraining은 재현 비용이 매우 높다.
+- target fine-tuning dataset과 test task가 같은 hardware family다. cross-robot pretraining의 이득과 target-corpus 규모의 이득이 함께 섞인다.
+- 실험 trial 수가 task당 8 또는 25로 작아 12.5% 단위 변동이 크다. confidence interval은 제공하지 않는다.
+- task별 완전 성공은 여전히 40–68%인 어려운 task가 많다.
+- language augmentation에 proprietary GPT-4-Turbo를 사용했다.
+
+## Appendix Notes
+
+- Figure 6은 100+ objects, 15+ scenes, challenging task와 instruction augmentation을 시각화한다.
+- Figure 7/Table 6은 target hardware 사양을 공개한다.
+- Figures 8–9는 OpenVLA/Octo를 전체 dataset으로 fine-tune했을 때 action accuracy와 test MSE가 수렴하지 않은 근거다.
+- Figure 10은 water-level 8 trials를 확대해 1/3 조건은 근접하지만 2/3 조건에서 empty cup과 amount 오류가 각각 한 번 있음을 보여준다.
+- Tables 11–13은 ACT, OpenVLA, Octo adaptation hyperparameter를 제공한다.
+
+## Figure/Table Inventory
+
+| 항목 | 내용 | Survey 반영 |
+| --- | --- | --- |
+| Figures 1–2 | 전체 성능 요약, target robot와 bimanual multi-modality | 문제의식·metric 설명 |
+| Figure 3 | RDT architecture | Architecture 이미지 |
+| Figure 4 | normalization/decoder/condition injection ablation | architecture ablation 이미지 |
+| Figure 5, Table 1 | 7개 평가 task와 평가 축 | protocol 표 |
+| Table 2 | regression/small/scratch ablation | ablation 이미지·수치 |
+| Table 3 | task·stage별 main results | main result 이미지·수치 |
+| Table 4 | 128D unified space | proprioception 이미지·schema |
+| Table 5 | 46-dataset sampling weights | dataset 이미지 |
+| Figure 6 | fine-tuning dataset | Dataset 설명 |
+| Figure 7, Table 6 | target hardware | 시스템 설정·Appendix |
+| Table 7 | baseline/variant 속성 비교 | baseline caveat |
+| Tables 8–10 | encoder, model, optimizer | model/training 이미지·표 |
+| Figures 8–9, Tables 11–13 | OpenVLA/Octo/ACT adaptation | baseline caveat·Appendix |
+| Figure 10 | instruction-following water level | failure/qualitative note |
+
+## Citation Trail
+
+- **Diffusion Policy / DiT / DPM-Solver++**: continuous multi-modal action distribution, scalable Transformer denoiser, 5-step inference의 기반이다.
+- **ACT / Mobile ALOHA**: action chunking과 target bimanual platform의 직접 기반이다.
+- **Open X-Embodiment, RT-1, DROID, RH20T**: heterogeneous pretraining corpus의 핵심 데이터 출처다.
+- **OpenVLA와 Octo**: discrete VLA와 smaller diffusion generalist policy 비교군이다.
+- **6D Rotation Representation**: EEF rotation discontinuity를 줄이는 unified-space 구성요소다.
+
+## 기억할 점
+
+RDT가 proprioception을 “이해”하게 만드는 핵심은 큰 MLP 자체가 아니라 세 가지다.
+
+1. state와 action을 같은 물리 schema와 같은 adaptor에 놓는다.
+2. padding인지 실제 0인지 indicator로 분리한다.
+3. 현재 state만 action denoising self-attention stream에 넣고, vision/language는 별도 cross-attention condition으로 유지한다.
+
+하지만 state history 배제와 physical-unit normalization의 우월성을 직접 비교한 ablation은 없다. 이는 검증된 결론보다 재현 가능한 강한 설계 가설로 보는 편이 정확하다.
+
+## 검증 메모
+
+- PDF 28쪽의 main text와 Appendix A–I를 직접 확인했다.
+- Figures 1–10과 Tables 1–13 inventory를 작성하고 method·main result·ablation·schema·training asset을 PDF에서 추출해 전수 확인했다.
+- 공식 repository의 model, block, loss, training loop, dataset loader, inference 경로를 README 이상으로 확인했다.
+- 논문/코드 차이는 별도 항목으로 분리했으며, 공개되지 않은 private system 정보는 포함하지 않았다.
+
+<SectionFeedback page="RDT-1B" section="전체 Survey" />

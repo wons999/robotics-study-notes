@@ -1,4 +1,5 @@
 ---
+research: {"kind": "paper", "topics": ["vla", "data"], "status": "reviewing", "reviewedAt": null, "family": "molmo", "source": "https://arxiv.org/abs/2603.16861"}
 title: MolmoB0T
 description: MolmoB0T 논문의 simulation-only robot manipulation data engine, policy architecture, zero-shot sim-to-real 결과, 공개 코드 범위를 정리한 Survey.
 sidebar:
@@ -6,6 +7,10 @@ sidebar:
 ---
 
 import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/molmo/molmobot-large-scale-simulation" />
 
 # MolmoB0T: Large-Scale Simulation Enables Zero-Shot Manipulation
 
@@ -335,8 +340,8 @@ Appendix에서 중요한 부분은 benchmark task prompt와 external benchmark c
 
 | 연결 논문/계열 | 연결 이유 |
 | --- | --- |
-| [π0 / PI Model Family](./pi/) | flow matching VLA baseline이자 π0.5/DROID 비교 대상 |
-| [GR00T Model Family](./groot/) | simulation/real/human data를 섞는 data pyramid와 대비되는 simulation-only claim |
+| [π0 / PI Model Family](../../pi/) | flow matching VLA baseline이자 π0.5/DROID 비교 대상 |
+| [GR00T Model Family](../../groot/) | simulation/real/human data를 섞는 data pyramid와 대비되는 simulation-only claim |
 | DROID | real-world tabletop manipulation benchmark와 hardware setup 기준 |
 | Open X-Embodiment / RT-X | real robot trajectory scaling의 대표 비교축 |
 | MolmoSpaces | MolmoBot-Engine의 scene/object/procedural environment 기반 |

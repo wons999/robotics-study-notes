@@ -29,6 +29,7 @@
 
 ```md
 ---
+research: {kind: paper, topics: [vla], status: draft, reviewedAt: null}
 title: 논문 대표 이름
 description: 논문의 핵심 주제와 Survey 범위를 한 문장으로 적는다.
 ---

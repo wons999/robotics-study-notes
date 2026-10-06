@@ -1,0 +1,224 @@
+---
+research: {"kind": "paper", "topics": ["vla", "sensing"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2509.18644"}
+title: State-free Policy
+description: proprioception 제거가 visuomotor policy의 spatial generalization에 미치는 영향과 relative EEF action·full visual observation이라는 전제조건을 분석한 Survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/state-free-vision-language-action-policy" />
+
+# State-free Policy
+
+<SectionFeedback page="State-free Policy" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Do You Need Proprioceptive States in Visuomotor Policies? |
+| 저자 | Juntu Zhao, Wenbo Lu, Di Zhang, Yufeng Liu, Yushen Liang, Tianluo Zhang, Yifeng Cao, Junyuan Xie, Yingdong Hu, Shengjie Wang, Junliang Guo, Dequan Wang, Yang Gao |
+| 공개 | arXiv:2509.18644v2, 2025-09-24 |
+| 링크 | [arXiv](https://arxiv.org/abs/2509.18644) · [PDF](https://arxiv.org/pdf/2509.18644) |
+| 공개 범위 | PDF 공개. 논문이 가리키는 공식 project page, code, checkpoint는 확인되지 않았다. |
+| 태그 | proprioception, state-free policy, shortcut learning, spatial generalization, relative EEF action |
+
+## 한 줄 요약
+
+이 논문은 proprioception이 항상 도움이 되는 것이 아니라 **절대 robot configuration과 demonstration trajectory 사이의 shortcut**이 될 수 있음을 보이고, `state 제거 + relative EEF action + 충분한 wrist-camera 관측`이라는 묶음이 spatial OOD에서 강한 결과를 낸다고 보고한다.
+
+![state 유무와 camera 설정에 따른 spatial generalization 개요](/state-free-policy/figure-1-overview.png)
+
+*Figure 1. 논문의 결론은 state 제거 하나가 아니라 relative EEF action과 full task observation이 함께 성립할 때의 결론이다.*
+
+## 문제의식
+
+일반적인 visuomotor policy는 RGB와 함께 EEF pose, joint angle 같은 proprioception을 받는다. 이 신호는 정확하고 loss를 쉽게 줄여 주지만, demonstration의 공간 범위가 좁으면 policy가 `현재 state → 다음 action` 대응을 외울 수 있다. 물체나 테이블 위치가 바뀌어도 vision으로 목표를 다시 찾기보다 training trajectory의 절대 configuration을 재현하려 하기 때문에 spatial OOD에서 실패한다는 가설이다.
+
+논문은 Pick Pen의 table height를 80 cm에서만 학습한다. state를 쓰는 π0는 80 cm에서 30/30이지만 72 cm와 90 cm에서 모두 0/30이다. 테스트 state의 height만 수동 보정하는 **state hack**은 양쪽 OOD를 30/30으로 복원한다. 이는 실패 원인이 action capability 부족보다 state channel에 묶인 좌표 shortcut일 가능성이 높다는 강한 개입 증거다.
+
+![state hack, noise, state 제거와 camera 범위를 비교한 초기 실험](/state-free-policy/table-1-camera-setting.png)
+
+*Table I와 Figure 2. 일반 wrist camera에서 state 제거만 해도 OOD가 좋아지지만, 90 cm에서는 17/30에 머문다. dual wide-angle wrist cameras가 관측 부족을 보완해 29/30까지 올린다.*
+
+## 시스템 설정
+
+| 항목 | 설정 |
+| --- | --- |
+| main policy | π0 fine-tuning recipe |
+| 추가 architecture 검증 | ACT, Diffusion Policy |
+| state 예 | absolute EEF pose, joint angle |
+| main action | relative EEF translation·rotation |
+| camera | overhead camera, normal wrist camera(약 87°×58°), 또는 end-effector 위·아래 dual wide-angle wrist cameras(각 약 120°×120°) |
+| robot | 2×8 DoF human-like dual arm, 2×7 DoF Arx5 dual arm, 26-DoF whole-body platform |
+| real evaluation | 조건당 30 trials; 두 OOD 위치를 평균할 때 60 trials |
+| simulation | LIBERO Goal/Object/Spatial/10 |
+
+![세 robot embodiment와 Pick & Place, Fold Shirt, Fetch Bottle](/state-free-policy/figures-3-4-tasks.png)
+
+*Figure 3. whole-body task도 포함하지만 논문은 구체 robot state를 모두 모델에 넣는 것이 아니라 torso·waist·leg motion을 6D torso pose 형태의 action으로 제어한다.*
+
+## Dataset과 평가 split
+
+| task | data | spatial OOD |
+| --- | --- | --- |
+| Pick Pen / Pick Bottle / Put Lid | task당 300 episodes, 약 5시간 | table 80→72/90 cm, target 5/10 cm 이동 |
+| Fold Shirt | 10,000 episodes, 약 80시간 | 한 팔 또는 양팔 base를 15 cm 이동 |
+| Fetch Bottle | 10,000 episodes, 약 80시간 | refrigerator 위치를 5/10 cm 이동 |
+
+수집 시 table height와 task-relevant object 위치를 의도적으로 좁게 제한한다. 따라서 이 논문은 풍부한 위치 다양성이 있는 대규모 dataset보다 **low-diversity demonstration에서 생기는 state shortcut**을 시험한다.
+
+평가는 trajectory 전체를 완료해야 success다. 30초 동안 합리적인 action이 없거나 중간 단계가 한 번이라도 실패하면 전체 failure로 센다. Fold Shirt와 Fetch Bottle은 hardware상 table height를 바꿀 수 없어 horizontal OOD만 평가한다.
+
+## Method
+
+### 1. State를 제거한다
+
+기존 policy를
+
+```text
+a_t ~ π(a_t | image_t, proprio_t)
+```
+
+로 쓴다면 State-free Policy는
+
+```text
+a_t ~ π(a_t | image_t)
+```
+
+로 바꾼다. 별도 regularizer나 새 module은 없다. 그러나 이것만으로 충분하지 않다.
+
+### 2. Relative EEF action이 필요하다
+
+EEF pose를 `p_t=[x_t,q_t]`라 하면 policy는 `Δp_t=[Δx_t,Δq_t]`를 예측하고 `p_{t+1}=p_t⊕Δp_t`로 실행한다. 같은 visual geometry라면 절대 robot pose가 달라도 같은 EEF displacement를 낼 수 있다는 것이 invariance의 핵심이다.
+
+반대로 relative joint action `Δθ_t`는 EEF motion이 `Δp_t=f(Δθ_t,θ_t)`에 의존한다. state를 입력하지 않으면 같은 image에서 같은 `Δθ_t`를 내더라도 현재 joint configuration에 따라 Cartesian motion이 달라질 수 있다.
+
+Table III의 결과는 이 전제가 사실상 hard requirement임을 보인다.
+
+| state-free action space | in-domain | height OOD | horizontal OOD |
+| --- | ---: | ---: | ---: |
+| relative EEF | 1.000 | 0.984 | 0.584 |
+| absolute EEF | 1.000 | 0 | 0 |
+| relative joint angle | 1.000 | 0 | 0 |
+| absolute joint angle | 1.000 | 0 | 0 |
+
+따라서 이 논문을 “proprioception을 빼면 일반적으로 좋아진다”라고 읽으면 안 된다. joint-space controller에서는 현재 configuration을 모르면 동일 action이 동일한 Cartesian effect를 보장하지 않는다.
+
+### 3. Full task observation이 필요하다
+
+state를 제거하면 policy는 robot과 target의 관계를 image에서 모두 복원해야 한다. 논문은 end-effector 위와 아래에 wide-angle camera를 달아 gripper에 가려지는 영역과 주변 workspace를 함께 본다.
+
+Table IV에서 overhead-only는 height/horizontal OOD가 0.217/0.133이고, normal wrist camera 한 개는 0.867/0.267, dual wide-angle wrist cameras는 0.983/0.583이다. overhead를 제거하고 dual wide-angle만 쓰면 해당 Pick Pen setting에서 1.0/1.0이 된다. 이는 state-free result의 일부가 **더 좋은 camera geometry**에서 온다는 점도 뜻한다.
+
+## Training Recipe
+
+논문은 π0 공개 fine-tuning recipe를 따른다고 쓰지만 optimizer, batch size, learning rate 같은 모든 hyperparameter를 본문·appendix에서 다시 제시하지 않는다. 공개 code도 확인되지 않아 exact reproduction recipe는 불완전하다.
+
+확인 가능한 비교 조건은 다음과 같다.
+
+- 같은 demonstration과 model에서 state channel만 on/off한다.
+- data-efficiency 실험은 50/100/200/300 episodes와 2/4 fine-tuning epochs를 비교한다.
+- cross-embodiment 실험은 Arx5 checkpoint에서 human-like dual arm으로 5k/10k steps fine-tune한다.
+- ACT와 Diffusion Policy 비교도 dual wide-angle wrist-camera와 relative EEF action을 사용한다.
+
+## Experiments and Results
+
+### Main spatial generalization
+
+![세 Pick & Place task의 height와 horizontal OOD 결과](/state-free-policy/figure-5-main-results.png)
+
+*Figure 5. state-based policy는 이 OOD split에서 거의 모두 0이며, camera 범위를 넓힌 state-free policy가 가장 높다.*
+
+| task | metric | state | state-free, normal wrist | state-free, dual wide-angle |
+| --- | --- | ---: | ---: | ---: |
+| Pick Pen | height | 0 | 0.87 | 0.98 |
+| Pick Pen | horizontal | 0 | 0.27 | 0.58 |
+| Pick Bottle | height | 0 | 0.33 | 0.78 |
+| Pick Bottle | horizontal | 0 | 0.63 | 0.73 |
+| Put Lid | height | 0 | 0.48 | 0.80 |
+| Put Lid | horizontal | 0 | 0.27 | 0.28 |
+
+난도가 높은 normal wrist-camera setting에서도 Fold Shirt는 `0.183→0.834`, whole-body Fetch Bottle은 `0.117→0.784`로 증가한다. 다만 state-free와 state-based의 차이가 너무 큰 만큼, narrow training position과 특정 OOD construction이 결과에 강하게 작용한다.
+
+### Architecture independence
+
+| model | state | height OOD | horizontal OOD |
+| --- | --- | ---: | ---: |
+| π0 | with / without | 0 / 0.984 | 0 / 0.584 |
+| ACT | with / without | 0 / 0.933 | 0.084 / 0.517 |
+| Diffusion Policy | with / without | 0 / 0.867 | 0 / 0.533 |
+
+세 architecture에서 방향은 일치한다. 그러나 모두 같은 relative EEF·wide-angle setting이고 별도 task family에서 재검증한 것은 아니므로 architecture-independent라는 표현은 이 실험 범위 안에서 읽어야 한다.
+
+### Data efficiency와 cross-embodiment
+
+![camera, architecture, data efficiency, cross-embodiment ablation](/state-free-policy/tables-4-6-data-camera-architecture.png)
+
+50 episodes·2 epochs에서 state는 0, state-free는 0.60이며, 100 episodes·4 epochs에서는 0 대 1.0이다. 300 episodes에서는 모두 1.0으로 수렴한다. 즉 state-free의 data-efficiency 이득은 state model이 충분한 trajectory coverage를 얻기 전 구간에서 크다.
+
+Arx5→human-like dual-arm Fold Shirt adaptation에서는 5k steps가 `0.333→0.700`, 10k가 `0.767→0.967`이다. state-space alignment 부담이 사라지는 효과와 camera/image shift만 적응하면 되는 효과가 함께 들어 있다.
+
+### In-domain 성능
+
+real tasks는 거의 parity다. Pick Pen/Bottle/Put Lid는 둘 다 1.0, Fold Shirt는 state 1.0 대 state-free 0.967, Fetch Bottle은 0.900 대 0.933이다. LIBERO 평균도 0.938 대 0.945다. 따라서 이 setting에서는 state를 제거해도 nominal performance를 거의 잃지 않았다는 것이 핵심이다.
+
+## Appendix Notes
+
+- state 유지형 보완책의 Pick Pen height OOD: random noise 0.633, diverse height data 0.117, task-mixed fine-tuning 0, LoRA 0, state-free 0.983.
+- overhead camera를 유지하면 100 cm table, taller holder, holder 20 cm 이동에서 각각 0/0.467/0이지만, 제거하면 1.0/0.867/0.800이다. global camera image가 OOD appearance를 만들 수 있다는 반례다.
+- vision-only policy는 background 변경에 민감할 수 있다.
+- dual-arm에서 한 팔만 사용할 때 미사용 팔의 visual distribution shift가 예기치 않은 movement를 만들 수 있다고 논문이 명시한다.
+
+## Code-Level Check
+
+공식 code repository는 PDF와 arXiv metadata에서 확인되지 않았다. 따라서 state removal이 실제 π0/OpenPI config에서 어떤 key와 mask로 구현됐는지, camera preprocessing과 action transform이 동일했는지, training seed와 checkpoint selection은 검증할 수 없다.
+
+이 부재는 특히 결과 해석에 중요하다. 논문의 main intervention은 입력 state뿐 아니라 action convention과 camera hardware라는 시스템 수준 조건을 포함하므로, 재현 시 세 조건을 따로 ablate해야 한다.
+
+## 한계와 주의
+
+1. **state-free가 보편적 정답은 아니다.** relative joint/absolute action에서는 OOD가 전부 0이다.
+2. **camera가 state의 대체재다.** wider dual wrist view가 없으면 OOD 성능이 낮아진다.
+3. **narrow-data regime다.** training position을 의도적으로 제한했기 때문에 trajectory shortcut이 극대화된다.
+4. **camera와 state의 비용을 직접 비교하지 않는다.** proprioception 제거 대신 camera 두 개와 mounting/calibration이 추가된다.
+5. **정밀 접촉 feedback은 별도 문제다.** image만으로 관절 토크, compliance, occluded contact를 복원할 수 있다는 증거는 아니다.
+6. **공개 코드가 없어 exact recipe 검증이 제한된다.**
+
+## 다른 proprioception 논문과의 연결
+
+| 연구 | 차이 |
+| --- | --- |
+| [ThinkProprio](../thinkproprio-state-grounded-token-selection/) | state를 제거하지 않고 visual-token selection query로 적극 사용한다. |
+| [HPT](../hpt-heterogeneous-pretrained-transformers/) | proprioception까지 포함한 pretraining이 transfer에 기여한다고 본다. |
+| GAP | state를 유지하되 motion-transition 구간의 proprio gradient를 약화한다. |
+| NADA | rollout과 demonstration의 state distribution shift에 맞춘 noise를 넣는다. |
+| [TA-VLA](../ta-vla-torque-aware-vla/) | 단순 configuration이 아니라 contact를 반영하는 effort history를 action expert에 넣는다. |
+
+State-free, GAP, NADA는 서로 모순이라기보다 서로 다른 실패 원인을 겨냥한다. State-free는 absolute-state shortcut, GAP는 modality optimization competition, NADA는 rollout distribution shift를 진단한다.
+
+## Figure / Table Inventory
+
+| 원문 | 내용 | Survey 반영 |
+| --- | --- | --- |
+| Figure 1 | camera·state와 generalization 개요 | 한 줄 요약 |
+| Figure 2 | normal vs dual wide-angle wrist camera | Method |
+| Figure 3 | robot·task examples | 시스템 설정 |
+| Figure 4 | train/OOD object position | Dataset 설명 |
+| Figure 5 | 세 Pick & Place main results | Experiments |
+| Figure 6 | data-efficiency curve | Experiments |
+| Tables I–III | state hack, hard tasks, action space | 문제의식·Method |
+| Tables IV–VI | camera, architecture, embodiment transfer | ablation |
+| Tables VII–VIII | overhead camera와 state 보완책 | Appendix Notes |
+| Tables IX–X | real in-domain과 LIBERO | In-domain 성능 |
+
+## 검증 메모
+
+- arXiv v2 PDF 9쪽의 main text와 appendix를 직접 확인했다.
+- Figures 1–6과 Tables I–X를 전수 inventory하고 핵심 figure/table crop을 로컬 asset으로 검수했다.
+- main result의 trial 수, action-space 전제, camera FOV, task별 수치를 PDF와 재대조했다.
+- 공식 code는 확인되지 않아 미확인으로 분리했다.
+
+<SectionFeedback page="State-free Policy" section="전체 Survey" />

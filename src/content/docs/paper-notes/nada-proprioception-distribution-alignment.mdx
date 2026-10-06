@@ -1,0 +1,257 @@
+---
+research: {"kind": "paper", "topics": ["vla", "sensing"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2506.23944"}
+title: NADA (Withdrawn)
+description: 철회된 NADA 논문의 proprioception shift 진단과 noise-augmented distribution alignment를 비권위적 연구 아이디어로 검토한 Survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/nada-proprioception-distribution-alignment" />
+
+# NADA (Withdrawn)
+
+> **철회 상태:** 이 manuscript는 arXiv에서 저자에 의해 철회되었고 현재 공식 PDF URL도 제공되지 않는다. 아래 수치와 결론은 동료심사된 확립 증거가 아니라, 철회 전 공개본과 공식 project page에 남은 **비권위적 연구 아이디어**를 기록한 것이다. 설계 근거로 단독 인용하면 안 된다.
+
+<SectionFeedback page="NADA (Withdrawn)" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Adapt Your Body: Mitigating Proprioception Shifts in Imitation Learning |
+| 방법 | Noise-Augmented Distribution Alignment (NADA) |
+| 저자 | Fuhang Kuang, Jiacheng You, Yingdong Hu, Tong Zhang, Chuan Wen, Yang Gao |
+| 공개 | arXiv:2506.23944v2, 2025-07-01; 이후 withdrawn |
+| 링크 | [arXiv record](https://arxiv.org/abs/2506.23944) · [Official project](https://proprioception-shift.github.io/) |
+| 공개 상태 | arXiv PDF 현재 404; project의 Paper/arXiv 버튼도 빈 URL. Code 버튼은 generic GitHub와 `Coming soon`만 표시한다. |
+| 검토 근거 | 철회 전 PDF의 보존된 full-text mirror와 공식 project page·그림. 공식 arXiv PDF 원본은 재확보하지 못했다. |
+| 태그 | withdrawn, proprioception shift, imitation learning, Wasserstein distance, noise augmentation |
+
+## 한 줄 요약
+
+NADA는 demonstration과 rollout에서 방문하는 proprioception distribution의 시간별 차이를 Wasserstein distance로 재고, 그 차이를 줄이는 Gaussian noise level을 선택해 두 번째 behavior-cloning policy를 학습한다.
+
+![NADA의 9-task 평균 success와 proprioception Wasserstein distance](/nada-proprioception/overview-results.png)
+
+*공식 project page의 overview. 저자가 보고한 평균은 BC-RGB 69.19%, BC-Full 56.72%, NADA 73.66%이며, 평균 Wasserstein distance는 각각 0.24, 1.10, 0.23이다. 철회된 manuscript의 자체 보고 수치다.*
+
+## 문제의식
+
+Behavior cloning policy는 expert demonstration distribution에서 학습하지만 deployment에서는 작은 action error가 누적되어 다른 state를 방문한다. Proprioception은 action과 강하게 상관되어 validation loss를 쉽게 낮추지만, rollout에서 조금만 벗어나면 학습하지 않은 configuration을 만나 shortcut이 오히려 실패를 증폭할 수 있다.
+
+논문이 강조하는 정량적 역설은 Square task다.
+
+| policy | validation loss `×10^-2` | rollout success |
+| --- | ---: | ---: |
+| BC-Full | **2.94** | 3.0±3.0% |
+| BC-RGB | 4.13 | 52.8±4.0% |
+| NADA | 3.01 | **56.7±4.3%** |
+
+낮은 offline loss가 높은 closed-loop success를 보장하지 않는다는 예다. 저자는 이를 proprioception shift와 shortcut learning의 결합으로 해석한다. 다만 distribution shift가 유일한 원인이라는 causal isolation은 부족하며, 논문 limitation도 Wasserstein distance와 success가 항상 상관하지 않는다고 인정한다.
+
+## 시스템 설정
+
+### Simulation
+
+| 항목 | 설정 |
+| --- | --- |
+| benchmark | Robomimic: Square, Can; MimicGen: Coffee, HammerCleanup, MugCleanup, Stack, StackThree, Threading, ThreePieceAssembly |
+| demonstrations | Robomimic task당 200 PH trajectories; MimicGen task당 1,000 D0 trajectories |
+| RGB | wrist + third-view, 각각 84×84×3 |
+| action | delta EEF pose + gripper |
+| evaluation | 3 seeds, 각 seed의 마지막 5 checkpoints를 50 rollouts로 평가 |
+
+### Proprioception 구성
+
+| signal | dimension |
+| --- | ---: |
+| EEF pose | 7 |
+| EEF velocity | 6 |
+| gripper position | 1 |
+| gripper velocity | 1 |
+| joint positions | 7 |
+| joint velocities | 7 |
+| 합계 | 29 |
+
+### Real robot
+
+- 7-DoF Franka Emika Panda, two RealSense cameras.
+- Pick-and-place와 Open-locker, task당 GELLO 100 demonstrations, 50 rollout evaluations.
+- absolute EEF pose + gripper action.
+- 최근 RGB 두 frame을 stack하고 action chunk 16을 temporal ensemble한다.
+
+## Method
+
+![NADA와 Full/RGB/Dropout proprioception 처리 비교](/nada-proprioception/figure-1-method.png)
+
+*Figure 1의 공식 project version. 첫 policy rollout으로 shift를 측정하고, 선택한 `σ*`를 demonstration proprioception augmentation에 사용한다.*
+
+### 1. Time-conditioned Wasserstein distance
+
+Expert observation distribution을 `O`, initial policy rollout distribution을 `O'`라 한다. 전체 trajectory를 한 distribution으로 합치지 않고 normalized time `t∈[0,1]`에서 marginal을 비교한다.
+
+```text
+W_T(O,O') = ∫_0^1 W(O_t, O'_t) dt
+```
+
+실제로는 trajectory를 `K=10` equal intervals로 나누고 interval별 Wasserstein distance를 평균한다. 서로 support가 겹치지 않아도 정의되는 optimal-transport distance를 선택한 것이다.
+
+### 2. Noise level 선택
+
+Empirical distribution의 각 sample을 Dirac delta로 보면, Gaussian noise `ε~N(0,σ²I)`는 각 점을 작은 Gaussian으로 넓힌다. train과 rollout 양쪽에 같은 noise를 가상으로 더해 `W_T(O_σ,O'_σ)`가 작아지는 `σ`를 찾는다.
+
+```text
+σ* = argmin_σ W_T(O_σ, O'_σ)
+```
+
+무한히 큰 noise는 distance를 줄이면서 정보도 없애므로 exact argmin을 쓰지 않는다. `σ=0`에서 `δ=0.05`씩 늘리고 Wasserstein 감소량이 `0.001`보다 작아지면 멈춘다. 각 proprioception type에 독립적으로 noise level을 선택한다.
+
+### 3. Two-pass training
+
+```text
+1. original RGB+proprio demonstrations로 π0 학습
+2. π0 rollout observation O' 수집
+3. train O와 rollout O'에서 σ* 계산
+4. demonstration proprioception에 N(0,σ*²I) noise를 넣어 π1 학습
+5. π0와 π1 중 rollout success가 높은 policy 반환
+```
+
+중요한 세부사항은 다음과 같다.
+
+- noise는 두 distribution의 distance를 계산할 때 양쪽에 적용하지만, 실제 second-pass training augmentation은 demonstration에 적용한다.
+- inference에는 outlier input을 피하기 위해 noise를 넣지 않는다.
+- MugCleanup은 어떤 noise도 악화시켜 π1 대신 π0를 반환했다.
+- “둘 중 rollout success가 높은 policy” 선택에는 closed-loop evaluation이 필요하므로 완전히 offline인 recipe가 아니다.
+
+## Model Architecture와 Training Recipe
+
+| 항목 | 값 |
+| --- | --- |
+| visual encoder | ResNet-18 |
+| proprio encoder | 2-layer MLP |
+| fusion/head | feature concatenate → MLP action head |
+| objective | behavior cloning action prediction |
+| batch | 64 |
+| steps | 75k per pass |
+| optimizer | Adam |
+| learning rate | `2×10^-4`, cosine annealing |
+| shift estimation | train/rollout 각각 150 trajectories, time intervals 10 |
+| baseline dropout | proprioception을 80% 확률로 zero mask |
+
+이 논문은 VLA나 diffusion policy가 아니라 작은 BC architecture에서 mechanism을 분리하려 한다. 따라서 대형 VLA action expert에 같은 noise selection이 그대로 적용된다는 증거는 아니다.
+
+## Experiments and Results
+
+### Simulation main table
+
+| task | BC-Full | BC-RGB | PrimeNet | Dropout | NADA |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Square | 3.0±3.0 | 52.8±4.0 | 4.7±1.9 | 44.8±5.6 | **56.7±4.3** |
+| Can | 51.3±6.8 | 90.3±3.4 | 67.6±7.1 | 90.8±1.6 | **93.3±1.8** |
+| Coffee | 93.6±4.0 | 91.1±4.8 | **95.2±3.0** | 89.6±1.4 | 93.1±2.8 |
+| Hammer Cleanup | 94.7±4.5 | 99.0±1.0 | 96.7±1.5 | **99.1±0.8** | 97.9±0.9 |
+| Mug Cleanup | 43.3±7.6 | 31.4±3.9 | **44.7±7.4** | 38.5±3.2 | 43.3±7.6 |
+| Stack | 81.5±8.4 | 87.4±2.9 | 84.6±8.5 | 87.7±1.5 | **90.5±3.6** |
+| Stack Three | 38.4±12.2 | 53.7±2.6 | 51.0±5.6 | 52.7±2.7 | **61.4±2.0** |
+| Threading | 73.5±7.8 | 84.5±1.9 | 81.5±3.5 | **92.1±0.5** | 88.3±3.3 |
+| Three Assembly | 33.9±5.7 | 32.5±2.7 | 31.7±6.0 | 35.1±2.4 | **38.4±4.9** |
+
+NADA는 9개 중 6개에서 표의 최고값이다. 그러나 Coffee, Hammer Cleanup, Threading에서는 다른 baseline이 높다. 특히 Threading은 단순 dropout이 NADA보다 3.8%p 높다. “항상 proprioception을 살리면서 최고”라고 요약하면 안 된다.
+
+BC-Full은 6/9 task에서 BC-RGB보다 낮다. 반대로 Mug Cleanup은 proprioception이 크게 유리하고 Coffee/Hammer Cleanup은 거의 parity다. 유용성은 task와 state component에 따라 달라진다.
+
+### Validation loss와 distribution metric
+
+NADA의 validation loss는 대부분 BC-Full과 BC-RGB 사이에 있다. 저자는 이를 shortcut은 약화하면서 proprio information은 일부 남긴 결과로 해석한다.
+
+Time-conditioned Wasserstein distance는 Square에서 BC-Full 1.05→NADA 0.23, Stack 0.24→0.18, StackThree 0.31→0.27로 감소한다. 하지만 Coffee 0.13→0.15, Three Assembly 0.23→0.26처럼 오히려 증가하는 task도 있다. 즉 headline mechanism은 평균적으로 맞아도 task-level correlation은 완전하지 않다.
+
+### Oracle noise 비교
+
+Success를 직접 grid-search한 oracle과 NADA의 automatic noise를 비교하면 Square 57.6±1.0 vs 56.7±4.3, Can 94.3±1.0 vs 93.3±1.8, Threading 89.5±3.4 vs 88.3±3.3이다. 대체로 근접하지만 StackThree는 67.3±4.8 vs 61.4±2.0, ThreeAssembly는 40.7±8.4 vs 38.4±4.9다.
+
+### 어떤 proprioception이 해로운가
+
+Table 5의 6-task ablation은 velocity가 특히 위험할 수 있음을 보여 준다.
+
+| proprio input | Square | Can | Mug | StackThree | Threading | Assembly |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| none | 52.8 | 90.3 | 31.4 | 53.7 | 84.5 | 32.5 |
+| EEF pose | 37.3 | 87.2 | 35.7 | 52.1 | 83.7 | 29.7 |
+| EEF velocity | 5.6 | 66.6 | 18.5 | 27.0 | **87.1** | 22.6 |
+| joint position | 40.6 | 83.4 | 38.1 | 52.0 | 84.6 | 35.2 |
+| joint velocity | 5.8 | 66.7 | 29.9 | 16.2 | 82.5 | 27.8 |
+| all | 3.0 | 51.3 | **43.3** | 38.4 | 73.5 | 33.9 |
+
+Square와 StackThree에서는 velocity를 넣으면 크게 무너지지만, Threading의 EEF velocity는 오히려 최고다. proprioception을 하나의 modality로 뭉뚱그리기보다 position/velocity/gripper별로 판단해야 한다는 유용한 관찰이다.
+
+### Real robot
+
+Figure 4는 Pick-and-place와 Open-locker에서 NADA가 BC-Full과 BC-RGB보다 높다고 보고한다. 보존된 text에는 task별 bar의 exact 숫자가 전사되지 않아 여기서는 방향만 기록한다. withdrawn paper의 bar를 눈대중으로 숫자화하지 않았다.
+
+## Appendix Notes
+
+- Pick-and-place는 banana와 plate를 workspace에 randomize한다.
+- Open-locker는 locker 위치와 initial opening 0–15°를 randomize하며 70° 이상 열면 success다.
+- PrimeNet implementation과 state-component ablation을 제공한다.
+- noise grid는 `σ=0~2.0`, step 0.2다. Square는 0.6, Can 0.2, StackThree 1.2, Stack 1.0 부근에 peak가 있다.
+- MugCleanup은 noise가 증가할수록 명확히 악화한다. NADA가 모든 task에서 second pass를 강제하지 않고 first pass를 선택한 이유다.
+
+## Code-Level Check
+
+공식 project page는 `Code (Coming soon)`을 표시하지만 링크가 특정 repository가 아닌 `https://github.com`이다. 확인 가능한 official implementation, dataset loader, training script, model checkpoint는 없다.
+
+따라서 다음은 검증할 수 없다.
+
+- Wasserstein distance의 dimension별 normalization과 exact OT estimator.
+- state type별 noise를 joint로 최적화하는지 순차 최적화하는지.
+- policy selection에 쓰는 rollout과 final evaluation rollout의 분리 여부.
+- real-robot success raw count와 seed/checkpoint selection.
+
+## 한계와 주의
+
+1. **철회 논문이다.** 결과를 확립된 evidence로 인용하지 않는다.
+2. **공식 PDF와 code가 현재 제공되지 않는다.** exact reproduction이 불가능하다.
+3. **two-pass 비용이 든다.** initial policy 학습과 rollout, second training이 필요하다.
+4. **deployment data를 요구한다.** rollout 수집이 어려운 real robot에서는 비용과 safety 문제가 있다.
+5. **metric-success 상관이 불완전하다.** 논문 자체가 이를 limitation으로 인정한다.
+6. **best-of-two selection이 필요하다.** MugCleanup처럼 noise가 해로우면 π0를 반환하므로 automatic metric만으로 final choice가 닫히지 않는다.
+7. **작은 BC model의 결과다.** VLA, flow matching, high-DoF bimanual에 대한 직접 증거가 아니다.
+8. **Gaussian noise가 physical semantics를 무시한다.** joint limit, quaternion manifold, 서로 다른 단위에 독립 Gaussian을 넣는 구현 세부가 중요하다.
+
+## 다른 proprioception 논문과의 연결
+
+| 연구 | failure mechanism | 처방 |
+| --- | --- | --- |
+| [State-free Policy](../state-free-vision-language-action-policy/) | absolute configuration shortcut | proprioception 제거 + relative EEF + full vision |
+| GAP | transition phase에서 proprio gradient가 vision을 억제 | early phase-guided gradient attenuation |
+| NADA | demonstration-rollout proprio distribution shift | shift-adaptive Gaussian noise, two passes |
+| [ThinkProprio](../thinkproprio-state-grounded-token-selection/) | vision token redundancy | proprio token을 visual selection query로 사용 |
+
+NADA의 가장 안전한 활용 방식은 “noise가 해로운 state shortcut을 줄일 수 있다”는 실험 후보를 얻는 것이다. 방법의 타당성은 새 실험에서 BC-RGB, raw proprio, fixed-noise, phase-guided gradient와 다시 비교해야 한다.
+
+## Figure / Table Inventory
+
+| 원문 | 내용 | Survey 반영 |
+| --- | --- | --- |
+| Figure 1 | NADA/Full/RGB/Dropout schema | Method, 공식 project asset |
+| Figure 2 | 9-task proprioception 성능 변화 | 문제의식·main table |
+| Figure 3 | Square의 state별 distribution shift | 문제의식·metric |
+| Figure 4 | two real tasks와 results | Real robot |
+| Figure 5 | PrimeNet architecture | Appendix Notes |
+| Table 1 | 9-task main success | Experiments |
+| Tables 2–4 | validation loss, Wasserstein, oracle noise | Experiments |
+| Table 5 | state component ablation | Experiments |
+| Table 6 | noise-level grid | Appendix Notes |
+
+## 검증 메모
+
+- current arXiv record와 PDF URL의 철회/미제공 상태를 확인했다.
+- 철회 전 manuscript의 보존된 13-page full-text mirror에서 main text, appendix, Figures 1–5, Tables 1–6을 대조했다.
+- official project page의 method/result image 2개를 로컬 asset으로 저장하고 전수 검수했다.
+- code 버튼이 `Coming soon` placeholder임을 HTML source에서 확인했다.
+- 철회 상태 때문에 모든 claim을 비권위적·잠정적 결과로 한정했다.
+
+<SectionFeedback page="NADA (Withdrawn)" section="전체 Survey" />

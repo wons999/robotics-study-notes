@@ -1,0 +1,123 @@
+---
+research: {"kind": "paper", "topics": ["vla", "sensing"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2508.06426"}
+title: Shortcut Learning in Generalist Robot Policies
+description: OXE sub-dataset의 낮은 내부 다양성과 높은 dataset fragmentation이 visual/text shortcut을 만드는 원인과 bridge augmentation 실험을 정리한 survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/shortcut-learning-generalist-robot-policies" />
+
+# Shortcut Learning in Generalist Robot Policies
+
+<SectionFeedback page="Shortcut Learning in Generalist Robot Policies" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Shortcut Learning in Generalist Robot Policies: The Role of Dataset Diversity and Fragmentation |
+| 저자 | Youguang Xing, Xu Luo, Junlin Xie, Lianli Gao, Hengtao Shen, Jingkuan Song |
+| 공개 | arXiv:2508.06426v1, CoRL 2025 |
+| 링크 | [arXiv](https://arxiv.org/abs/2508.06426) · [PDF](https://arxiv.org/pdf/2508.06426) · [Project](https://lucky-light-sun.github.io/proj/shortcut-learning-in-grps/) |
+| 기준 | 29쪽 PDF, Appendix A–I 전체 |
+
+## 한 줄 요약
+
+OXE는 규모는 크지만 각 robot sub-dataset 안의 visual/text diversity가 낮고 sub-dataset 사이가 분리되어, viewpoint·background만으로 dataset/task identity를 맞히는 shortcut이 생긴다. LIBERO와 실제 π0 실험에서 within-dataset diversity를 높이고 dataset 사이에 shared factor를 만드는 “bridge” data/augmentation이 shortcut과 OOD failure를 줄였다.
+
+## Proprioception과의 관계
+
+이 논문이 측정한 것은 visual·text diversity이며 controlled shortcut 변수는 camera viewpoint, background, object identity/position, language다. Appendix D는 Diffusion Policy와 MiniVLA 실험에서 **proprioception을 입력에서 제외했다**고 명시한다. π0 configuration은 action dimension/horizon은 주지만 state input ablation을 하지 않는다.
+
+따라서 proprioception shortcut의 evidence로 인용하면 안 된다. 저자도 limitation에서 proprioception/tactile shortcut 분석을 future work로 둔다. 이 survey에 포함하는 이유는 “state를 추가하면 visual shortcut이 해결되는가?”라는 질문에 대해 이 논문이 답하지 않으며, dataset 구조 자체가 어떤 modality에도 shortcut을 만들 수 있다는 인접 evidence를 제공하기 때문이다.
+
+## OXE dataset 진단
+
+OXE Magic Soup++의 27 sub-datasets를 분석한다. episode 첫 image의 DINOv2+SigLIP feature와 CLIP language feature를 쓰며, normalized feature pair의 Gaussian similarity로 내부 diversity와 dataset 간 disparity를 정의한다.
+
+```text
+S_diversity(D_i) = 1 / E[u,v~D_i] exp(-t ||u-v||²)
+S_disparity      = m(m-1) / Σ_{i≠j} E[u~D_i,v~D_j] exp(-t ||u-v||²)
+```
+
+OXE sub-dataset은 web vision/multimodal datasets보다 visual/text diversity가 여러 orders 낮다. t-SNE에서도 sub-dataset cluster가 거의 겹치지 않는다. 전체 182,158 task labels 중 dataset 간 overlapping tasks는 165개, overlap이 있는 dataset pair는 3.70%뿐이다. 다만 이 feature metric은 action-centric diversity나 target pose/affordance diversity를 직접 측정하지 않는다.
+
+## 이론적 설명
+
+task-relevant factor `u`와 irrelevant factor `v`가 각 sub-dataset 내부에서는 독립이어도, 서로 다른 support를 가진 dataset들을 mixture하면 dataset identity라는 공통 원인 때문에 전체에서는 상관된다. 두 dataset의 support가 disjoint일 때 normalized mutual information은 `4/(C_diversity+4)`가 되어 내부 entropy가 낮을수록 shortcut proxy가 커진다. support overlap `C_interleave`가 커지면 mutual-information upper bound는 낮아진다.
+
+이는 제한된 mixture model의 분석이지 neural policy generalization theorem은 아니다. Appendix H는 entropy algebra proof를, Appendix I는 task-irrelevant feature의 between-dataset variance가 클 때 linear model gradient가 이를 먼저 학습한다는 분석을 제공한다.
+
+## LIBERO controlled experiments
+
+LIBERO-Spatial 10 tasks에서 bowl initial position/language는 task-relevant, camera viewpoint `[-10°,90°]`는 irrelevant factor다. task별 50 base trajectories에서 4 viewpoints를 뽑아 task당 200 demonstrations를 만든다. OOD에서는 viewpoint range와 position set의 training pairing을 교차시킨다.
+
+- Diffusion Policy: ResNet-18, 2-frame history, no proprioception, 30k iterations.
+- MiniVLA: 1B 미만 autoregressive VLA, horizon 8, no wrist/proprio/history, 10k steps.
+- π0: PaliGemma 2B LoRA + 300M action expert, action dimension 32, horizon 50, 10k steps.
+
+shortcut degree는 human video evaluator가 wrong correlated task를 수행하면 1, ambiguous하면 0.5, instruction을 따르려 하면 성공 여부와 무관하게 0으로 매긴 평균이다. 따라서 task success와 다른, 주관적 behavior metric이다.
+
+![diversity/disparity와 controlled shortcut 결과](/shortcut-learning/figures-6-7-controlled.png)
+
+*Figures 6–7. within-subdataset viewpoint diversity 증가와 center disparity 감소가 shortcut을 줄이지만, task마다 다른 viewpoint를 배정해 factor correlation을 만들면 nominal diversity가 늘어도 OOD success는 0이 된다.*
+
+Figure 6은 세 model 모두 shortcut degree가 먼저 낮아지고 이후 OOD success가 나타나는 경향을 보인다. object-position diversity는 language가 없는 Diffusion Policy에서는 shortcut을 줄이지 못했다. plot별 intentionally different setting이라 model 간 curve 높이를 직접 비교할 수 없다.
+
+## Real π0와 augmentation
+
+AgileX PIPER와 두 camera를 쓴다. viewpoint A–instruction C, viewpoint B–instruction D로 각 20 demonstrations를 수집하고 swapped OOD condition당 10 trials를 평가한다.
+
+![bridge object와 viewpoint augmentation 결과](/shortcut-learning/table-1-bridge-augmentation.png)
+
+*Table 1, Figures 8–9. 두 viewpoint에 공통 third-object instruction을 추가하면 dataset을 연결하는 bridge가 된다. ZeroNVS로 opposite view를 합성하는 방법도 개선한다.*
+
+| variant | shortcut degree ↓ | OOD success ↑ |
+| --- | ---: | ---: |
+| π0 baseline | 0.60 | 0.20 |
+| + third bridge object | **0.00** | **0.75** |
+| + viewpoint augmentation | 0.15 | 0.55 |
+
+추가로 Grounded-SAM2 segmentation, inpainting, object swap/paste로 object와 scene을 분리한다. SIMPLER는 RT-1 116 + Bridge 126 successful trajectories, real은 sub-dataset당 20 demonstrations이며 모두 2,500 steps fine-tune한다.
+
+![object augmentation과 shortcut degree](/shortcut-learning/figure-10-table-2-object-augmentation.png)
+
+*Figure 10, Table 2. object augmentation은 shortcut degree를 SIMPLER 1.0→0.68, real 0.80→0.25로 낮춘다.*
+
+이 실험은 object segmentation/inpainting artifact가 있어 success가 아니라 human shortcut score만 보고한다. “generalization 향상”을 전체 task success 개선으로 확대하면 안 된다.
+
+## Data collection에 주는 결론
+
+1. dataset별로 relevant/irrelevant factor를 충분히 변화시키되 서로 독립적으로 조합한다.
+2. 중요한 factor는 dataset 사이 support overlap을 의도적으로 만든다.
+3. difficult-to-vary factor를 무작정 늘리기보다 고정하고 관심 factor를 체계적으로 변화시킨다.
+4. 기존 offline data에는 viewpoint/object augmentation이나 shared-task bridge data를 추가한다.
+
+단순 episode 수가 아니라 factor coverage matrix를 설계하라는 주장이다. proprioception 연구에 적용하면 robot embodiment마다 state distribution과 task가 완전히 결박되지 않도록 common behaviors/poses를 공유하고, state normalization/token mapping의 효과를 OOD cross-pairing으로 평가해야 한다는 가설을 얻을 수 있다. 이는 논문 결과의 직접 검증이 아니라 본 survey의 적용적 추론이다.
+
+## 한계
+
+- OXE에서 실제 policy가 쓰는 shortcut feature를 pinpoint하지 않고 dataset embedding statistics와 controlled experiments를 연결한다.
+- diversity metric은 첫 visual frame과 language에 국한한다. temporal, action, proprioception, tactile diversity는 빠진다.
+- shortcut degree가 human-assisted이며 evaluator 수·inter-rater agreement를 보고하지 않는다.
+- real trial은 condition당 10회로 작고 single arm/setup이다.
+- synthetic augmentation artifact와 target label leakage 가능성을 별도 ablation하지 않는다.
+- Figure 6의 model settings가 달라 architecture robustness ranking을 만들 수 없다.
+
+## Figure/Table Inventory
+
+| 항목 | 내용 | 반영 |
+| --- | --- | --- |
+| Fig. 1 | OXE/SIMPLER와 real π0 shortcut 사례 | 문제 정의 |
+| Figs. 2–4 | OXE diversity, t-SNE fragmentation, disparity | dataset 진단 |
+| Fig. 5 | LIBERO cross-pairing setup | protocol |
+| Figs. 6–7 | diversity/disparity와 factor dependence | 핵심 결과 이미지 |
+| Figs. 8–10 | bridge, viewpoint/object augmentation | real/offline 결과 |
+| Figs. 11–16 | appendix layouts, metrics, OXE clusters, real setup | protocol/한계 |
+| Tables 1–2 | real bridge/viewpoint, object augmentation | 정확한 수치 |
+| Table 3 | OXE task overlap | dataset statistic |
+
+Appendix A는 related work, B temperature, C OXE fragmentation, D LIBERO recipe, E real setup, F object augmentation, G human scoring, H proposition proofs, I gradient analysis다.

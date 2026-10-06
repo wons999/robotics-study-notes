@@ -1,4 +1,5 @@
 ---
+research: {"kind": "overview", "topics": ["vla"], "status": "reviewing", "reviewedAt": null, "family": "molmo"}
 title: Molmo Model Family
 description: MolmoB0T, MolmoAct, MolmoAct2, Molmo2-ER 계열을 robot policy 관점에서 연결하는 overview.
 sidebar:
@@ -6,6 +7,10 @@ sidebar:
 ---
 
 import SectionFeedback from '../../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/molmo/index" />
 
 # Molmo Model Family
 
@@ -63,3 +68,10 @@ Molmo family의 핵심 질문은 두 갈래다. 첫째, robot policy는 어떤 d
 - Molmo2-ER, MolmoAct2-FAST Tokenizer처럼 component가 독립적으로 커지면 별도 note로 분리한다.
 - blog 수치와 paper 수치가 다를 수 있으므로, 수치 옆에 paper/blog 기준을 명시한다.
 - `public/molmobot/`와 `public/molmoact/`의 이미지는 paper PDF에서 직접 crop한 local asset으로 관리한다.
+
+
+import ResearchCatalog from "../../../../components/ResearchCatalog.astro";
+
+## 계열 문서와 검토 상태
+
+<ResearchCatalog family="molmo" />

@@ -1,0 +1,427 @@
+---
+research: {kind: paper, topics: [vla, sensing, action, humanoid], status: verified, reviewedAt: '2026-10-06', source: 'https://arxiv.org/abs/2609.38537v1'}
+title: GPT-6 Astra as Embodied Policies
+description: 범용 reasoning model의 수치 action 생성과 learned-policy 협력을 여섯 로봇 영역에서 평가한 연구의 방법, 비교 조건, 전체 결과와 추론 비용.
+---
+
+import ResearchMeta from '../../../components/ResearchMeta.astro';
+import PaperFigure from '../../../components/PaperFigure.astro';
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+<ResearchMeta entryId="paper-notes/astra-embodied-policy-capabilities" />
+
+
+<SectionFeedback page="GPT-6 Astra as Embodied Policies" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Systematically Exploring the Capabilities of GPT-6 Astra as Embodied Policies |
+| 저자 | Galbot Team — Xuchuan Chen 외; 전체 저자 목록은 arXiv 원문 참조 |
+| 공개 | arXiv:2609.38537v1, 2026-09-29; 46쪽, main text와 Appendix A–I |
+| 원문 | [arXiv](https://arxiv.org/abs/2609.38537v1), [PDF v1](https://arxiv.org/pdf/2609.38537v1) |
+| 프로젝트 | [논문 내 project 링크](https://galaxygeneralrobotics.github.io/astra-policy/), [공개 코드·RoboDojo/RoboLab report](https://github.com/anonymous-report-421/GPT-as-Policy) |
+| 코드 확인 기준 | 공개 저장소 commit `8f3d362b077d8efb77e2a7274d5b2c20e2243846` |
+| 문서 범위 | 여섯 영역의 control interface·평가·실패·자원 비용. 공개 코드는 확인 가능한 gripper integration 범위로 제한 |
+
+## 한 줄 요약
+
+범용 reasoning model이 숫자 action과 policy 보정을 만들 수 있음을 보여주지만, **유용한 task decision, 지속적인 contact control, 실제 시간 안의 실행, 성공 상태 검증은 각각 다른 능력**이라는 점을 드러내는 평가 연구다.
+
+## 문제의식
+
+VLM이 로봇의 상위 계획을 만드는 것과 관측에서 직접 수치 명령을 구성하는 것은 다르다. 또 명령을 생성했다고 해서 그 모델이 grasp, 안정성, 전신 coordination을 모두 제공한 것도 아니다. 이 논문은 Astra가 무엇을 결정하고, interface·IK·PD·학습 policy·whole-body controller가 무엇을 대신하는지를 나눠 평가한다.
+
+질문은 세 가지다. 첫째, 별도 학습 action policy 없이 관측과 feedback으로 명령을 만들 수 있는가? 둘째, 학습 policy의 proposal을 검토하고 필요한 부분만 보정하는 협력이 유용한가? 셋째, 실패 후 written guidance를 바꾸면 성공이 반복되고 다른 상태로 이전되는가? inference latency와 token 예산도 capability의 조건으로 다룬다.
+
+이 연구는 새로운 end-to-end VLA를 학습하는 논문이 아니다. Astra의 weight는 고정하고, 도메인별 robot interface와 frozen policy/controller를 조합한다. prompt·tools·controller calibration이 바뀐 development trial은 고정 평가와 구분해야 한다.
+
+## 시스템 설정과 평가 범위
+
+<PaperFigure src="/astra-policy/figure-01.png" alt="Figure 1: Direct와 Hybrid의 명령 및 저수준 제어 경로" caption="Figure 1, p.2. Direct에도 analytic execution mechanism이 있으며 Hybrid는 학습 policy 또는 whole-body controller를 추가한다." />
+
+| 영역 | 관측과 Astra 출력 | motion을 실제로 공급하는 구성요소 | 평가 규모 |
+| --- | --- | --- | --- |
+| Gripper | RGB·state·EEF·instruction·history → EEF target 또는 proposal 승인/보정 | IK·joint/operational-space control; Hybrid는 π0.5 | 각 benchmark 10 task × 5 |
+| Dexterous | 손·wrist 관측 → wrist/finger target, 또는 action prefix 선택 | task-finetuned π0.5, joint control; in-hand 비교는 task-specific RL | multitask 50, in-hand 20 paired states |
+| Mobile manipulation | RGB·robot state·task → arm/base action 또는 subgoal rewrite | RoboCasa analytic execution, optional π0.5 | 15 task × 5, 75/method |
+| Navigation | front RGB·instruction/category·step feedback → forward/turn/STOP | Habitat discrete primitive | 4 dataset × 50 |
+| Locomotion | 상태·terrain·route → dense motion reference | frozen G1 ScaleTrack; 별도 compact-interface 진단은 Astra 미사용 | 단일 course 순차 5 attempt; analytic 12/interface |
+| Humanoid loco-manipulation | RGB·proprioception·task geometry 등 → velocity 또는 sparse body target | frozen Humanoid-GPT / ScaleBFM | 30 task × 2 seeds / L2 60 |
+
+각 평가의 정확한 표본 수와 정보 조건은 아래 Table 1과 해당 절에 기록한다. 위 표의 관측은 영역마다 다르며, navigation의 RGB-only 조건을 privileged-state humanoid 평가에 적용해서 해석하면 안 된다.
+
+<PaperFigure src="/astra-policy/table-01.png" alt="Table 1: 여섯 영역의 표본 수와 비교 조건" caption="Table 1, p.3. 같은 초기 상태와 같은 관측·controller·추론 budget은 서로 다른 조건이다." />
+
+## Dataset과 sample schema
+
+학습 데이터는 주로 사용한 policy의 데이터이며, Astra 자체의 pretraining 데이터는 이 평가로 확인할 수 없다. benchmark subset 선택, development feedback, policy finetuning data를 분리한다.
+
+| 데이터/평가 | 수집·선택 방식 | 범위와 주의 |
+| --- | --- | --- |
+| RoboDojo | 공개 π0.5 성공률 구간을 기준으로 10 task 선택; task당 5 case | 낮은 성공률 구간에서 6 task, 다음 구간 2, 높은 두 구간 각 1. 전체 benchmark 대표 무작위 표본으로 해석하지 않는다. Direct/Hybrid는 paired starts |
+| RoboLab | semantic pick/place·stacking·mug reorientation 10 task × 5 기록 | test task training data 없음. policy는 DROID-trained zero-shot. Astra repeat attempts 허용 |
+| Dexterous multitask | task당 100 demonstration, 10 task 총 1,000 trajectory | 5 fixed unseen case/task, 총 50. Appendix G의 일부 task subset은 demonstration scene structure를 유지하므로 광범위 OOD를 뜻하지 않는다 |
+| In-hand | 4 task × 5 saved physical states | cylinder는 held-out grasp bank, cuboid는 4/5 start가 RL initialization bank와 겹침 |
+| RoboCasa | atomic seen / composite seen / composite unseen 각 5 task, task당 5 동일 start | 총 75/method. task sampler는 frozen 후보를 정렬해 선택; policy-only 75 state fingerprint 대조 |
+| Navigation | R2R, RxR English guide, MP3D v1, HM3D v2 각각 50 | sampling seed 0, scene/category balance. 각각 fixed subset이며 full benchmark 결과와 범위가 다름 |
+| Locomotion | 단일 obstacle course에서 순차 5 attempt | 하나의 adaptation trajectory. 5개의 독립 평가 episode로 합쳐 성공률 추정하지 않는다 |
+| HumanoidBench / SIMPLE | 30 task × seeds 1,2 / 6 L2 task × 10 scene | HumanoidBench는 Highbar 두 variant 제외. SIMPLE 개발·retention 기록은 60 평가에 합치지 않는다 |
+
+| sample field | 내용 | 이용 주체 |
+| --- | --- | --- |
+| RGB views | head/wrist 또는 front view; 도메인별 해상도·view 수 상이 | Astra / policy, 서로 다른 preprocessing 가능 |
+| state, FK, measured EEF | robot joint, wrist pose, hand state | manipulation decision과 action conversion |
+| instruction / current subgoal | 원 task와 선택적 rewritten instruction | 정책 conditioning과 task progression |
+| proposal | 예: RoboDojo `50 × 14`, dexterous `50 × 62` | Hybrid만 접근; Direct는 policy query 없음 |
+| execution record | action prefix, applied correction, remaining budget, 새 관측 | 다음 decision |
+| task scoring, hidden geometry | native evaluator의 성공·progress 또는 도메인별 privileged 정보 | navigation에서는 goal distance/map을 model에 숨김. 다른 도메인의 허용 정보는 별도 명시 |
+| outcome / source identity | case·seed·checkpoint·initial-state fingerprint·trace | 감사·paired 비교·재현 |
+
+## Method: 생성, 실행, 피드백의 분담
+
+### Direct와 Hybrid
+
+Direct는 현재 관측과 history에서 numerical command를 만든다. 하지만 raw torque를 언제나 직접 출력하는 것은 아니다. EEF target은 IK로 joint command가 되고, navigation의 forward는 simulator primitive가 실행한다. 따라서 Direct는 **학습 action policy가 없는 조건**으로 읽어야 한다.
+
+Manipulation Hybrid는 다음 순서다.
+
+1. 학습 policy가 action chunk를 제안한다.
+2. Astra가 현재 이미지·state·instruction과 proposal을 검토한다.
+3. proposal prefix를 승인하거나 bounded EEF/finger correction으로 교체한다.
+4. 선택한 명령을 실행하고 새 관측을 얻는다.
+5. task evaluator는 물리적 결과를 별도로 판정한다.
+
+RoboDojo에서 승인과 correction은 같은 segment의 상호 배타적인 branch다. π0.5는 50-step proposal을 만들지만 승인 시 1–15 step만 실행하며, correction은 1–5 step이다. Direct도 1–5 step을 실행한다. model이 한 번에 긴 trajectory 전체를 실현하는 것으로 해석하면 안 된다.
+
+RoboCasa는 proposal 검토에 더해 language subgoal rewriting을 허용한다. Humanoid Hybrid는 proposal gate와 다른 형태다. Astra가 velocity·sparse body target·dense reference를 지정하고 frozen controller가 전신 coordination을 제공한다.
+
+### 경계와 시간 구조
+
+RoboDojo는 25Hz, Direct target의 한 번 이동량은 5cm·회전량은 0.35rad safeguards다. humanoid의 whole-body controller는 50Hz이고 physics/joint control은 500Hz다. 이 숫자는 Astra inference frequency가 아니다. 여러 조건에서 physics를 추론 중 멈추므로 simulation time과 wall time을 반드시 나눠 본다.
+
+<PaperFigure src="/astra-policy/figure-15.png" alt="Figure 15: episode 내부 action loop와 연구자 개발 loop" caption="Figure 15, p.25. within-episode feedback과 configuration 사이의 개발 loop를 구분한다. weight 업데이트나 autonomous recursive optimization을 입증하는 도식이 아니다." />
+
+### Experience adaptation
+
+SIMPLE의 Skill 문서는 task instruction, Memory 문서는 cross-episode note를 담는다. trial 후 관측과 action을 근거로 이를 수정하지만 Astra와 ScaleBFM weight는 고정된다. 성공 episode를 분석해 얻은 procedure도 repeat failure가 있어, 설명·진단·실행 개선·성공 유지가 같은 능력이 아님을 보여준다.
+
+## Model Architecture와 Training Recipe
+
+Astra의 내부 backbone, parameter count, pretraining loss, optimizer, training data composition은 이 논문에서 재구성할 수 없다. 모델 자체 구조를 추정하는 대신 외부 interface와 learned component의 역할을 정리한다.
+
+| 구성요소 | 입력 → 출력 / 역할 | 학습·공개 범위 |
+| --- | --- | --- |
+| Astra | multimodal observation·history·tools → numerical target·승인·보정·guidance | 대다수 평가 xhigh reasoning; weight frozen. 일부 개발 기록 high |
+| Gripper π0.5 | image·state·instruction → joint action chunk | RoboDojo task-finetuned; RoboLab DROID-trained zero-shot |
+| Dexterous π0.5 | head+2 wrist RGB, 62D state → `50 × 62` | 1,000 demonstrations로 multitask full-parameter finetuning |
+| ScaleTrack / ScaleBFM / Humanoid-GPT | reference 또는 velocity → coordinated body motion | frozen. command 성능과 pretrained controller 성능이 함께 반영됨 |
+| In-hand RL | privileged state 또는 tactile/history → 22/16D joint action | task-specific frozen baseline. Astra와 관측·action rate 다름 |
+
+Dexterous 62D action은 양손 wrist 각각 position 3 + rotation 6, finger 각각 22로 `2×(3+6)+2×22=62`다. 이미지는 640×360에서 aspect-ratio preserving padding을 거쳐 224×224로 바뀐다. wrist increment는 execution 전에 absolute pose로 복원한다.
+
+| π0.5 multitask 학습 설정 | 원문 값 |
+| --- | --- |
+| 초기화·학습 | π0.5 base, full parameter, 50,000 optimization steps |
+| Global batch | 256 |
+| AdamW | β=(0.9, 0.95), ε=1e−8, weight decay=1e−10 |
+| Gradient clipping | norm 1.0 |
+| Learning rate | peak 2.5e−5, cosine decay to 2.5e−6 |
+| Baseline 실행 | 30Hz, 50-step prediction의 첫 16 step 실행 후 재계획 |
+| Hybrid 실행 | 1–16 policy step 또는 1–5 correction step; review/token exhaustion 시 π0.5-only fallback |
+
+In-hand rotation RL actor/critic은 ELU MLP (512,256,128), 별도 running normalization이며 20Hz 22D action을 사용한다. PPO는 γ=.99, λ=.95, clip=.2, 5 epochs, 초기 adaptive LR 5e−4, target KL .01, value coefficient 2, entropy 0, gradient norm 1이다. cylinder는 4×8192 환경, H=16, 1,000 update; cuboid는 cylinder actor/normalizer 초기화 후 8192 환경, 4,000 update다. 각각 약 5.24e8 transition이다.
+
+Rotation의 objective는 moving orientation target의 error를 줄이고 contact novelty와 action smoothness를 반영한다. 각속도는 별도 속도 reward보다 움직이는 target을 추종하면서 유도된다. `e(t)=2 arccos(|〈q(t),q*(t)〉|)`가 0.1rad 미만인 step 비율이 At-goal이다. 회전 목표가 한 바퀴 돌아 같은 orientation으로 돌아오면 정지한 object도 순간적으로 error가 작아질 수 있으므로 axial-speed MAE를 함께 봐야 한다.
+
+Allegro translation baseline은 released tactile student checkpoint를 그대로 사용한다. 30-step joint history와 signed 3-axis tactile에서 8D latent를 추론하는 temporal Transformer와 (512,256,128) MLP가 16 joint action을 만든다. privileged PPO teacher의 action imitation으로 학습한 student이며 reward 직접 최적화와 구분한다. Translation+rotation은 released oracle에서 초기화한 privileged PPO teacher, 4096 환경, H=16, 20,000 update, 약 1.31e9 transition이다. 이는 범용 Astra와 training budget까지 맞춘 비교가 아니다.
+
+## Experiments and Results
+
+### 1. Gripper: task에 맞는 motion prior가 있을 때 협력이 유리하다
+
+<PaperFigure src="/astra-policy/figure-02.png" alt="Figure 2: RoboDojo와 RoboLab 결과 및 policy action 비율" caption="Figure 2, p.4. RoboDojo는 Hybrid 우세, RoboLab은 Direct 우세. public reference와 paired rerun을 구분한다." />
+
+| 평가 | Direct | Hybrid | π0.5 기준 |
+| --- | --- | --- | --- |
+| RoboDojo 최종 성공 | 13/50 = 26% | 24/50 = 48% | 재가중 공개 reference 15.67% |
+| RoboDojo native Score | 37.81, valid 48 episode | 62.60, 50 episode | 재가중 reference 24.43 |
+| RoboLab 최종 성공 | 49/50 = 98% | 46/50 = 92% | 18/50 = 36%, zero-shot |
+
+RoboDojo Hybrid는 imitation sorting 53 대 0, tower 64 대 12, clothes folding 100 대 40, bottle disposal 100 대 36으로 Direct보다 높은 Score다. 반면 language classification은 Direct 60 대 Hybrid 38, object classification은 100 대 71이다. score와 binary success도 다르다. Organize Table은 Hybrid Score 60이지만 최종 success 0이다.
+
+Hybrid executed step 42,750개 중 36,576개(85.6%)가 policy 그대로이고 6,174개(14.4%)가 Astra 생성·보정이다. **보정 step이 적다는 사실은 model request가 적다는 뜻이 아니다.** 모든 proposal을 검토하는 비용이 남는다.
+
+RoboLab은 single-arm semantic pick/place 비중이 크고 zero-shot policy가 잘 맞지 않는 조건이다. Direct 98%라는 결과를 deformable/bimanual/contact-heavy task의 일반 성능으로 확대하면 안 된다. Appendix B는 Astra repeat attempts 허용, Blocks-in-Bin Direct 두 attempt의 decision budget 500(표준 180)을 명시한다. baseline은 정렬된 첫 5 run을 쓰므로 엄격한 동일 추론 budget 비교가 아니다.
+
+<PaperFigure src="/astra-policy/table-02.png" alt="Table 2: RoboDojo task별 native Score와 public reference" caption="Table 2, p.5. published baseline은 task·scene mixture 재가중이며 same-seed rerun이 아니다." />
+<PaperFigure src="/astra-policy/table-14.png" alt="Table 14: RoboDojo task별 Score와 success" caption="Table 14, p.26. partial progress와 최종 success를 분리한 전체 결과." />
+<PaperFigure src="/astra-policy/table-15.png" alt="Table 15: RoboLab 열 task의 전체 성공 횟수" caption="Table 15, p.27. Cosmos와 DreamZero는 각각 18/50, 17/50." />
+<PaperFigure src="/astra-policy/figure-16.png" alt="Figure 16: RoboDojo 열 task 초기 환경" caption="Figure 16, p.28. task 환경 예시이며 평가 outcome 이미지와 구분한다." />
+
+### 2. Dexterous: local correction은 가능하지만 contact 재구성이 어렵다
+
+Custom multitask benchmark의 Score는 π0.5 44.2, Direct 16.6, Hybrid 61.6이다. Hybrid는 Direct보다 10 task 모두 높고, policy보다 8 task 높으며 2 task는 같다. Mahjong storage는 +40점, upright egg +32점, bottle/can sorting +28점이다. Bread-slot insertion 28점과 nesting-doll 24점은 개선 뒤에도 낮다.
+
+<PaperFigure src="/astra-policy/table-03.png" alt="Table 3: dexterous 열 task의 전체 Score" caption="Table 3, p.6. 0–100 partial-credit score이며 task success rate가 아니다." />
+<PaperFigure src="/astra-policy/figure-03.png" alt="Figure 3: dexterous correction 원인과 실행 비율" caption="Figure 3, p.7. missed grasp/dropped object 33.33%, failed placement 20.90%가 주요 보정 원인. 88.02% step은 policy 그대로, 11.98%가 correction." />
+
+이 평가의 internal score는 완전한 verification 성공 1, 종료 시 subgoal은 모두 만족하지만 verification 부족이면 .8, 일부 subgoal 만족이면 `.8k/K`, subgoal 없이 5cm lift만 있었다면 .1, 유효 progress가 없으면 0이다. task별 5 case 평균을 100배 한 뒤 10 task를 동일 가중 평균한다. 따라서 80점도 완전 success를 보장하지 않는다. placement는 hand contact 없는 release와 2초 stability, pot hold는 10cm lift와 3초 hold가 필요하다.
+
+DexJoCo Hanoi stacking은 10개의 experience-guided trial 중 5 성공이다. dual Panda/Allegro, 50Hz, 최대 1,500 control step, segment당 최대 30 step이다. 5 pair 사이에 guidance가 수정되어 독립 zero-shot 10회가 아니다. published baselines는 rand-obj 50 episode를 세 set 평균하므로 sample size와 adaptation 조건을 맞춘 순위로 읽지 않는다. 11,320 step 중 policy 73.6%, correction 26.4%, 전체 기록 token 63.60M이다.
+
+<PaperFigure src="/astra-policy/figure-04.png" alt="Figure 4: DexJoCo 결과와 서로 다른 평가 규모" caption="Figure 4, p.7. Hybrid 5/10과 published baseline 3×50은 평가 조건이 다르다." />
+<PaperFigure src="/astra-policy/figure-05.png" alt="Figure 5: disk support 확인 후 release 성공과 seating 실패" caption="Figure 5, p.8. release 전에 실제 support가 만들어졌는지 확인하는 사례와 반복 correction에도 실패하는 사례." />
+
+In-hand는 grasp가 이미 있는 상태에서 joint를 움직인다. cylinder 목표 속도 1rad/s, 20초; cuboid .2rad/s, 10초; translation 15초; translation+rotation은 −40°와 position target을 함께 만족해야 한다. Astra는 1–5개의 20Hz step을 선택하지만 RL은 매 step action을 낸다.
+
+| In-hand 평가 | Astra | RL |
+| --- | --- | --- |
+| Cylinder At-goal | 0.51% | 76.90% |
+| Cuboid At-goal | 4.40% | 63.50% |
+| Translation, 15s | 1/5; mean position error 59.05mm | 4/5; 17.29mm |
+| Translation+rotation, Astra 종료와 matched steps | 0/5; 47.35mm, 32.72° | 4/5; 16.22mm, 8.31° |
+| Translation+rotation, RL 15s | Astra는 120 decisions 후 6.00–7.65s에 종료 | 5/5; 16.08mm, 3.49° |
+
+두 controller가 cuboid를 모두 놓치지 않고도 Astra가 충분히 회전시키지 못한다. 이는 grasp retention과 manipulation progress가 다름을 보여준다. Translation+rotation도 RL matched endpoint에서 우세하므로 단순히 Astra의 episode가 짧다는 이유만으로 차이를 설명할 수 없다. 단, RL의 privileged 관측·task-specific 학습과 cuboid start overlap을 함께 명시해야 한다.
+
+<PaperFigure src="/astra-policy/figure-06.png" alt="Figure 6: rotation error, axial speed, At-goal와 reward" caption="Figure 6, p.9. orientation error만 보면 stationary object와 실제 rotation을 혼동할 수 있다." />
+<PaperFigure src="/astra-policy/table-04.png" alt="Table 4: rotation 전체 지표" caption="Table 4, p.9. 조기 종료 trajectory를 horizon까지 padding하지 않는다." />
+<PaperFigure src="/astra-policy/table-05.png" alt="Table 5: translation과 reorientation의 endpoint 결과" caption="Table 5, p.10. joint success는 position 22.4mm 미만과 rotation 10° 미만을 동시에 요구한다." />
+<PaperFigure src="/astra-policy/figure-07.png" alt="Figure 7: paired case별 translation 및 rotation error" caption="Figure 7, p.10. matched RL과 full-horizon RL을 함께 표시한다." />
+
+### 3. Mobile manipulation: policy 도움은 기존 성공도 잃을 수 있다
+
+<PaperFigure src="/astra-policy/figure-08.png" alt="Figure 8: RoboCasa task group별 성공과 action source" caption="Figure 8, p.11. Hybrid 55.2% step이 accepted policy, 44.8%가 Astra-authored. 66/75 episode에서 language subgoal 사용." />
+
+| Task group, 각 25 episode | π0.5 alone | Direct | Hybrid |
+| --- | --- | --- | --- |
+| Atomic seen | 13/25, 52% | 7/25, 28% | 13/25, 52% |
+| Composite seen | 3/25, 12% | 4/25, 16% | 7/25, 28% |
+| Composite unseen | 1/25, 4% | 14/25, 56% | 9/25, 36% |
+| 전체 | 17/75, 22.7% | 25/75, 33.3% | 29/75, 38.7% |
+
+같은 initial state, 같은 20-step feedback cadence를 사용하지만 Direct/Hybrid의 context management와 feedback guards는 같지 않다. Hybrid는 66/75 episode에서 rewritten instruction을 사용하고 proposal 72.6%가 이를 conditioning으로 받는다. 따라서 aggregate 차이를 policy access만의 순수 효과로 단정하기 어렵다.
+
+Hybrid와 Direct의 paired comparison은 공동 성공 16, Hybrid만 13, Direct만 9, 공동 실패 37이다. exact McNemar p=.5235이므로 이 표본에서 둘의 차이를 확정적으로 주장할 근거는 약하다. Hybrid/π0.5 p=.0227도 exploratory unadjusted 값이고 within-task dependence와 harness 차이를 반영하지 않는다.
+
+CoffeeSetupMug는 standalone policy 3/5인데 두 Astra 조건은 0/5, WashLettuce는 2/5인데 두 Astra 조건 0/5다. 오류를 인식해도 grasp·base-arm coordination·물체 상태 검증에 실패하면 원래 policy의 성공을 잃는다.
+
+<PaperFigure src="/astra-policy/table-06.png" alt="Table 6: RoboCasa group별 결과" caption="Table 6, p.11. Table 34에 모든 task별 결과가 있다." />
+<PaperFigure src="/astra-policy/figure-09.png" alt="Figure 9: 같은 RoboCasa start에서 성공과 실패가 바뀌는 사례" caption="Figure 9, p.12. coffee case는 standalone policy만 성공한다." />
+
+### 4. Navigation: 높은 subset 성공률과 탐색 우회는 공존한다
+
+RGB-only 조건은 front 512×384 image, instruction/category, step count, action feedback만 받는다. GPS·compass·depth·semantic label·goal coordinate·reference route·평가 distance는 숨긴다. 0.25m forward, 30° turn, STOP, 500 primitive budget이며 VLN은 sliding on, ObjectNav는 off다. VLN success는 goal 3m 이내 STOP, ObjectNav는 annotated goal-viewpoint set에서 엄격히 1m 미만 STOP이다. 물체 표면까지의 거리나 final-image visibility 기준이 아니다.
+
+| Fixed subset, 각 50 | SR | SPL | nDTW | sDTW |
+| --- | --- | --- | --- | --- |
+| R2R Val-Unseen | 78% | 65.27% | 72.20% | 59.35% |
+| RxR English-guide Val-Unseen | 92% | 77.25% | 84.73% | 80.42% |
+| MP3D ObjectNav v1 | 56% | 22.43% | 해당 없음 | 해당 없음 |
+| HM3D ObjectNav v2 | 82% | 43.69% | 해당 없음 | 해당 없음 |
+
+SPL은 성공하더라도 불필요한 이동을 할인한다. MP3D SR 56 대 SPL 22.43, HM3D 82 대 43.69의 차이는 search detour가 크다는 뜻이다. MP3D 10, HM3D 5 episode가 budget 소진이며 VLN은 모두 STOP으로 끝난다.
+
+Local comparison은 동일 200 episode와 action budget으로 released policies를 평가한다. Astra는 보고된 SR/SPL에서 가장 높지만 LightNav-0의 R2R nDTW 72.77이 Astra 72.20보다 조금 높다. OmniNav Flow 등 3-view methods는 다른 observation regime이며, 특히 OmniNav Flow는 full slow exploration planner 없이 released Flow만 실행한다. 공개 checkpoint를 실행 adapter에 연결한 조건과 원 논문 전체 system 성능을 구분한다.
+
+<PaperFigure src="/astra-policy/table-07.png" alt="Table 7: navigation 전체 metric" caption="Table 7, p.13. fixed subset별 native metric." />
+<PaperFigure src="/astra-policy/figure-10.png" alt="Figure 10: SR, SPL, STOP과 budget termination" caption="Figure 10, p.13. 도달 성공과 효율을 함께 본다." />
+<PaperFigure src="/astra-policy/table-08.png" alt="Table 8: 같은 episode에서 released navigation policy 비교" caption="Table 8, p.14. view 수와 action adapter가 다르므로 조건을 보존한다." />
+<PaperFigure src="/astra-policy/figure-11.png" alt="Figure 11: 성공 두 case와 budget failure trajectory" caption="Figure 11, p.14. navmesh는 evaluator 전용으로 Astra에게 주어진 map이 아니다." />
+
+### 5. Locomotion: dense reference의 수치 일관성과 실제 시간 제약
+
+PASSAGE의 scene-aligned representation과 frozen G1 ScaleTrack은 유지하고 learned motion generator만 Astra로 교체한다. 0.5초 reference는 50Hz 25 frame × 65 value = 1,625 value다. root height·projected gravity·planar velocity·yaw rate·29 joint position/velocity가 서로 일관되어야 한다.
+
+한 course에서 PASSAGE는 13.18초에 goal 도달, final error .495m이다. Astra 다섯 순차 시도는 모두 goal 미도달이다. 첫 시도는 9.80초 후 fall, 중간 세 시도는 no-progress, 마지막은 30초 upright이지만 final error 6.519m, goal-distance reduction 2.598m이다. 마지막 travel 3.833m와 progress 2.598m도 같은 지표가 아니다. 다섯 번째에는 다른 course의 retargeted walking clip이 추가된다.
+
+각 call 평균 latency 39.86초, 마지막 episode 250 synchronous calls, physics paused다. **30초 robot motion은 실시간 30초 실행 결과가 아니다.** joint limit 안에 있는 reference라도 root/limb evolution이 물리적으로 일관되지 않으면 제자리걸음·contact·fall이 생긴다.
+
+Astra 없이 수행한 compact-interface 진단은 Five-point와 WholeBody-14 각각 6 course × 2 physics backend = 12 rollout이다. strict success는 upright, .2m endpoint, 5초 hold, tracked points within course, obstacle force 5N 이하를 요구한다. 둘 다 strict success 0; goal+stop만은 4/12와 3/12, fall 1/12와 4/12다. generator도 달라 dimensionality만의 causal ablation이 아니며 서로 다른 simulator의 force도 calibrated measurement로 직접 비교하지 않는다.
+
+<PaperFigure src="/astra-policy/table-09.png" alt="Table 9: PASSAGE와 다섯 순차 Astra locomotion attempt" caption="Table 9, p.15. 하나의 adaptation trajectory이며 independent five-trial success rate가 아니다." />
+<PaperFigure src="/astra-policy/table-10.png" alt="Table 10: Astra 없는 compact reference 진단" caption="Table 10, p.15. trackable motion과 strict safe success가 다름을 보여준다." />
+
+### 6. Humanoid: pretrained coordination 위의 decision과 stage transition
+
+HumanoidBench 30 task, 각 seeds 1,2. Astra는 RGB에 더해 privileged state·task geometry·guidance를 받고 frozen Humanoid-GPT controller에 velocity 또는 sparse pelvis/wrist references를 준다. Run/Crawl/Stair는 calibrated gait generator가 phase·posture·limb coordination을 공급한다.
+
+Maze mean return 1358.8은 threshold 1200을 넘지만 Reach 11430.2는 threshold 12000 미만이다. Run 642.1은 넘어지지 않아도 threshold 700 미만, Stair 272.5는 limited progress/retreat, Door 142.4는 usable passage를 만들지 못한다. Astra task mean 6개(Stand, Walk, Maze, Crawl, Push, Sit Simple)가 native threshold에 도달한다.
+
+30 task native return을 동일 가중 평균하면 Astra 581.9, TD-MPC2 338.2, SAC 42.7, DreamerV3 −41.9다. 하지만 task별 reward scale이 다르므로 이 숫자를 통합 success rate로 읽지 않는다. 세 published reference 중 최고보다 높은 task는 13/30, Kitchen은 0 tie다. published baseline은 다른 training·controller 조건이며 Astra는 task당 두 seed만 사용한다.
+
+Scripted Walk cadence 1.2→1.8Hz calibration은 eight paired seeds mean return 705.72→746.60으로 바꾼다. 따라서 높은 return은 model reasoning만 아니라 controller calibration도 반영한다. Push는 entry와 contact reference를 같이 바꾸면 4.97cm에 도달하지만 둘 중 하나만 바꾸면 36.81/23.11cm error다. body configuration과 contact geometry가 함께 맞아야 한다.
+
+<PaperFigure src="/astra-policy/table-11.png" alt="Table 11: HumanoidBench 여덟 대표 task와 native threshold" caption="Table 11, p.16. return 우위, threshold 충족, observed physical success를 구분한다." />
+<PaperFigure src="/astra-policy/figure-12.png" alt="Figure 12: HumanoidBench 30 task 전체 result" caption="Figure 12, p.17. 전체 task mean과 sample SD. Appendix E와 Table 18에 자세한 조건이 있다." />
+<PaperFigure src="/astra-policy/figure-13.png" alt="Figure 13: Maze trajectory, Walk calibration, Push development" caption="Figure 13, p.18. 서로 다른 세 실험이며 suite 결과에 focused run을 대체하지 않는다." />
+
+SIMPLE L2는 G1/Dex3, MuJoCo physics와 Isaac Sim rendering, frozen ScaleBFM, RGB·joint encoder·FK·base estimate를 사용한다. model의 행동·reflection에는 object truth·simulator contact diagnostics·scoring을 주지 않는다. 일부 depth-assisted 개발 variant는 RGB inferred relative depth를 추가한다.
+
+| SIMPLE L2, 각 10 scene | 성공 |
+| --- | --- |
+| Handover | 8/10 |
+| Mobile pick/place | 7/10 |
+| Tabletop | 9/10 |
+| XMove bend pick | 9/10 |
+| XMove pick | 9/10 |
+| Bend | 8/10 |
+| 전체 | 50/60 = 83.3% |
+
+별도 handover development에서는 grasp stabilization 2/5, depth+guidance 3/5, fallen-carton recovery 0/1·0/2, trajectory-informed 성공 1/1 뒤 reflection 후 0/1, fixed retention 2/3이다. 이 기록을 L2 83.3%에 합치면 안 된다. 안정적인 grasp를 만들었는지 확인한 뒤 lifting과 support transfer로 넘어가야 하며, 성공 후 쓴 설명이 다음 성공을 보장하지 않는다.
+
+<PaperFigure src="/astra-policy/table-12.png" alt="Table 12: SIMPLE L2 전체 성공" caption="Table 12, p.18. development와 retention은 이 total에서 제외." />
+
+Egocentric-video 확장 실험은 perception·reconstruction·retargeting 도구를 조합해 interactive scene과 reference를 만든다. 한 recording의 object Chamfer-L1은 35.93→24.73mm, CAD dimension 추가 후 12.14mm다. 그러나 몇 cm object placement 변화도 grasp failure를 만든다. apple-transfer 세 case 중 complete-video reference 기반 complete interaction은 한 case다. geometry가 그럴듯해도 support·container interior·mechanism·grasp/release 순서가 보존되어야 한다. development·evaluation·documentation을 포함한 217M token은 다른 연구의 online-only token과 scope가 다르다.
+
+<PaperFigure src="/astra-policy/figure-14.png" alt="Figure 14: egocentric 영상의 scene reconstruction" caption="Figure 14, p.19. geometry reconstruction과 complete physical interaction을 구분한다." />
+
+## Inference 비용과 재현성
+
+<PaperFigure src="/astra-policy/table-13.png" alt="Table 13: 연구별 inference 자원 비용" caption="Table 13, p.20. token, model request, simulator step의 recording 범위를 구분한다." />
+<PaperFigure src="/astra-policy/table-17.png" alt="Table 17: RoboDojo 정확한 token 및 action count" caption="Table 17, p.28. cached input 포함; 이전 discarded attempt는 제외." />
+
+| RoboDojo, 50 slot/조건 | Hybrid | Direct |
+| --- | --- | --- |
+| Executed control steps | 42,750 | 38,221 |
+| Action segments | 3,776 | 7,729 |
+| Mean simulated duration/slot | 34.20s | 30.58s |
+| Total tokens, cached 포함 | 624,762,828 | 1,132,343,772 |
+| Cached input | 607,555,840 | 1,107,349,760 |
+| Uncached input | 15,901,963 | 22,907,448 |
+| Output | 1,305,025 | 2,086,564 |
+
+Cached input이 대부분이므로 total token을 그대로 새 생성 token이나 금액으로 바꾸면 안 된다. RoboCasa retained-chain request는 Direct 7,910, Hybrid 8,941, median/episode 85·108이다. 이는 모든 upstream inference call의 총수가 아니며 recovery history를 포함한다. policy motion을 많이 사용해도 proposal review가 비용을 남긴다.
+
+### Code-Level Check
+
+PDF에 연결된 공식 공개 코드 commit을 확인하고 아래 모듈의 구현을 읽었다. 이 저장소는 RoboDojo/RoboLab integration과 report 중심이다. 이를 여섯 영역 전체의 완전한 공개 재현 패키지로 소개하지 않는다.
+
+| 확인 경로 | 코드에서 확인한 것 | 한계 |
+| --- | --- | --- |
+| `hybrid_rollout/robodojo/robodojo_server/session.py` | `RoboDojoSession`, 14D state/action·50 horizon contract, episode/step identity, native action 적용·trace·summary | simulator/assets 설치 없이 runtime 재현은 미실행 |
+| `.../robodojo_server/kinematics.py` | `ArmFK`, `DualKinematics`, FK preview와 bounded target 변환 | IK가 physical success를 보장하지 않음 |
+| `.../robodojo_server/validation.py` | request ID stale check, student/edit/eef/stop mode, student cap 15·correction cap 5, EEF 5cm·.35rad bound | validation과 task-success evaluator는 다른 기능 |
+| `.../pi05_server/server.py` | OpenPI `create_trained_policy`, websocket serving, checkpoint/source hash 확인, inference counter | π0.5 학습 자체는 외부 OpenPI 소스·checkpoint에 의존 |
+| `hybrid_rollout/robodojo/prompt_context.py` | proposal/history/context 구성과 축약 관련 helpers | 공개 snapshot과 논문 전체 execution archive는 동일 범위가 아님 |
+| `hybrid_rollout/robodojo/SOURCE.json` | benchmark revision `ee67a1468510da7624a089164402359f2afc72c8`, OpenPI `432f82b1758c5b1202e42a3dfe014546dbc50871`, config/checkpoint identity | gateway와 경로는 배포 예시; 공개 model weight·simulator asset 포함 아님 |
+
+공개 policy server는 pretrained checkpoint를 로드하며 이 연구의 새로운 trainable loss를 구현하는 곳이 아니다. Astra 학습 loader/optimizer는 공개 범위에서 확인할 수 없고, dexterous PPO 및 humanoid 전체 구현은 여기서 검증했다고 주장하지 않는다. source manifest에 특정 integration의 검증 상태와 fresh load 요구가 남아 있어 commit 존재만으로 reproducible execution 완료를 뜻하지 않는다.
+
+## Appendix Notes와 전체 Figure/Table Inventory
+
+아래 inventory는 PDF v1의 **Figure 1–22, Table 1–37 전체**다. 본문의 핵심 그림·표는 해당 분석 위치에 배치했고, 나머지는 아래 설명과 원문 crop으로 연결한다. asset manifest는 원문 checksum과 page/crop/asset SHA-256을 기록한다. 원문 caption은 이미지 안에 보존했다.
+
+### Appendix A–F: interface, focused record, 전체 humanoid와 repeatability
+
+Appendix A는 허용 관측, command bound, analytic/frozen execution을 명시한다. Appendix B는 task별 결과와 RoboLab repeat budget을 보강한다. C의 focused Push/Walk 및 별도 Reach 성공은 suite outcome에 대체하지 않는다. C의 audit는 90 online humanoid episode의 270 hash와 추가 10 run을 확인한 범위다. replay가 dynamics/reward를 검증해도 실제 realtime deployability를 입증하지 않는다.
+
+Appendix D의 21 behavioral case는 goal alignment 1–4, contact preparation 5–8, terminal-state checking 9–12, Hybrid failure 13–16, Direct/local recovery 17–21이다. E는 전체 humanoid와 handover retention, F는 prompt/controller/interface 변경과 반복 실패를 기록한다. Push의 contact-conditioned prompt 129→90 lines가 known seed 성공을 개선해도 별도 seed5는 실패했다. saved diagnosis 뒤 성공한 procedure도 다음 repeat에서 실패한다. Door에 finger closure를 추가해도 passage를 만들지 못한다.
+
+<PaperFigure src="/astra-policy/table-16.png" alt="Table 16: focused Push와 Walk 개발·transfer seed" caption="Table 16, p.27. suite와 분리된 frozen configuration이며 demonstration reproduction seed도 표시한다." />
+<PaperFigure src="/astra-policy/table-18.png" alt="Table 18: 30 HumanoidBench task의 threshold와 mean SD" caption="Table 18, p.29. task당 두 seed 전체 결과. reward가 낮거나 음수인 과제도 포함한다." />
+<PaperFigure src="/astra-policy/table-19.png" alt="Table 19: handover 개발, recovery와 retention" caption="Table 19, p.30. guidance 개선과 성공 유지의 차이." />
+
+### Appendix G–H: demonstration, verification, in-hand training와 per-case 결과
+
+G는 1,000 demonstrations, 62D observation/action, AdamW recipe와 task별 verification을 정리한다. task horizon은 20–60s이며 task당 5 outcome만 있어 한 case가 20 percentage point를 바꾼다. safety termination에는 hand-table 200N, wrist 60N 등 task configuration과 workspace/joint limit가 있다. full credit은 단순 model의 성공 선언이 아니라 native geometry·release·hold 기준이다.
+
+<PaperFigure src="/astra-policy/figure-17.png" alt="Figure 17: dexterous benchmark 초기 상태" caption="Figure 17, p.31. representative initial states." />
+<PaperFigure src="/astra-policy/table-20.png" alt="Table 20: task instruction, subgoal 수, horizon, verification" caption="Table 20, p.32. K, simulated horizon과 continuous verification window." />
+<PaperFigure src="/astra-policy/table-21.png" alt="Table 21: dexterous 전체 implementation recipe" caption="Table 21, p.33. 학습·관측·action·예산 소진 fallback." />
+<PaperFigure src="/astra-policy/table-22.png" alt="Table 22: task별 completion predicates" caption="Table 22, p.34. object root·release·stable hold의 geometric 조건." />
+
+H는 paired initial states와 RL training provenance, rotation·translation metrics를 상세히 남긴다. cylinder의 held-out과 cuboid의 overlap을 분리하고, translation은 drop 없이도 실패한다. terminated run을 padding하지 않으며 reward는 task 내부에서만 비교한다.
+
+<PaperFigure src="/astra-policy/table-23.png" alt="Table 23: in-hand 네 task의 platform, endpoint, metric" caption="Table 23, p.35. 목표와 endpoint 정의." />
+<PaperFigure src="/astra-policy/figure-18.png" alt="Figure 18: in-hand 네 task 정의" caption="Figure 18, p.35. task definition이며 success example이 아니다." />
+<PaperFigure src="/astra-policy/table-24.png" alt="Table 24: PPO baseline provenance와 training transition" caption="Table 24, p.36. learned baseline의 task-specific data·budget." />
+<PaperFigure src="/astra-policy/table-25.png" alt="Table 25: cylinder rotation case별 전체 결과" caption="Table 25, p.38. held-out case별 decision limit·drop·error·speed." />
+<PaperFigure src="/astra-policy/table-26.png" alt="Table 26: cuboid overlap과 held-out case 결과" caption="Table 26, p.39. 000–003 overlap, 004 held-out." />
+<PaperFigure src="/astra-policy/figure-19.png" alt="Figure 19: rotation case별 metric" caption="Figure 19, p.39. mean orientation error와 speed MAE를 함께 대조한다." />
+<PaperFigure src="/astra-policy/figure-20.png" alt="Figure 20: cylinder drop과 cuboid contact reconfiguration" caption="Figure 20, p.40. Astra grasp 보존과 RL 지속 회전의 차이." />
+<PaperFigure src="/astra-policy/table-27.png" alt="Table 27: translation case별 endpoint error" caption="Table 27, p.40. no-drop에도 target miss가 발생한다." />
+<PaperFigure src="/astra-policy/table-28.png" alt="Table 28: translation rotation matched 및 full endpoint" caption="Table 28, p.41. 모든 Astra endpoint는 120 decision 이후." />
+<PaperFigure src="/astra-policy/figure-21.png" alt="Figure 21: Allegro translation와 rotation rollout" caption="Figure 21, p.41. early-ending Astra의 terminal frame을 그대로 표시한 부분을 continuous motion으로 오해하지 않는다." />
+
+### Appendix I: navigation adapters와 RoboCasa 전체 task·harness
+
+I는 dataset별 termination, source/checkpoint commit, observation adapter, published full-benchmark reference를 따로 제시한다. LightNav-0 residual-VQ trajectory는 representable forward/yaw를 primitive로 변환하고 lateral component는 직접 실행하지 않는다. Uni-NaVid는 네 action을 요청해 첫 두 개를 실행하며 checkpoint의 omitted ObjectNav component를 보존한다. OmniNav Flow는 첫 waypoint와 yaw를 quantize하며 다섯 arrival score 모두 .5 초과일 때 STOP이다. subset 결과를 full benchmark의 우위로 단정하지 않는다.
+
+RoboCasa harness는 xhigh, 20-step prefix다. conservative version은 96,000 token context compaction, proposal summary/prefetch; guarded version은 rendering 확인과 response당 한 action, intervening feedback을 강제한다. Direct 73/75와 Hybrid 48/75가 guarded configuration으로 끝나며 resumed trajectory가 여러 configuration을 거칠 수 있다. request와 action segment도 일치하지 않는다.
+
+<PaperFigure src="/astra-policy/table-29.png" alt="Table 29: navigation termination과 travel" caption="Table 29, p.42. primitive step과 model request를 구분한다." />
+<PaperFigure src="/astra-policy/table-30.png" alt="Table 30: released navigation source checkpoint commit" caption="Table 30, p.42. locally finetune하지 않은 release identity." />
+<PaperFigure src="/astra-policy/table-31.png" alt="Table 31: policy별 route agreement와 termination" caption="Table 31, p.43. 모든 row는 50 episode 합계." />
+<PaperFigure src="/astra-policy/figure-22.png" alt="Figure 22: navigation의 observation과 execution adapter" caption="Figure 22, p.43. 관측 조건과 local output conversion." />
+<PaperFigure src="/astra-policy/table-32.png" alt="Table 32: VLN subset와 published full benchmark 참고" caption="Table 32, p.44. coverage와 source protocol을 유지한 참고표." />
+<PaperFigure src="/astra-policy/table-33.png" alt="Table 33: ObjectNav subset와 full benchmark 참고" caption="Table 33, p.44. HM3D v1/OVON을 HM3D v2와 섞지 않는다." />
+<PaperFigure src="/astra-policy/table-34.png" alt="Table 34: RoboCasa 15 task와 전체 outcome" caption="Table 34, p.45. horizon은 20Hz simulator step이며 task당 5 start." />
+<PaperFigure src="/astra-policy/table-35.png" alt="Table 35: paired RoboCasa outcomes와 exploratory exact tests" caption="Table 35, p.45. p-value는 multiple comparisons와 task dependence를 조정하지 않는다." />
+<PaperFigure src="/astra-policy/table-36.png" alt="Table 36: Direct Hybrid harness configuration coverage" caption="Table 36, p.45. policy access 외 조건 차이의 근거." />
+<PaperFigure src="/astra-policy/table-37.png" alt="Table 37: RoboCasa action와 retained request count" caption="Table 37, p.46. saved-chain logs이며 모든 inference call 총계가 아니다." />
+
+### Inventory 대조표
+
+| 원문 항목 | 페이지 | 본문 반영 위치·읽을 지점 |
+| --- | --- | --- |
+| Figure 1 | 2 | 시스템 설정: Direct/Hybrid와 analytic/frozen execution |
+| Figure 2 | 4 | Gripper: score·success·action source |
+| Figure 3 | 7 | Dexterous: correction 원인과 비율 |
+| Figure 4–5 | 7–8 | DexJoCo: 다른 sample size, support/release 성공·실패 |
+| Figure 6–7 | 9–10 | In-hand: speed와 periodic error, matched endpoint |
+| Figure 8–9 | 11–12 | Mobile: task group, policy success loss |
+| Figure 10–11 | 13–14 | Navigation: SR/SPL와 failure trajectory |
+| Figure 12–13 | 17–18 | Humanoid: 30 task, controller calibration·focused record |
+| Figure 14 | 19 | Egocentric: scene reconstruction과 physical interaction |
+| Figure 15 | 25 | Method: action과 development loop |
+| Figure 16–17 | 28,31 | Task initial-state inventory |
+| Figure 18 | 35 | In-hand task 정의 |
+| Figure 19–21 | 39–41 | Appendix H: per-case metric과 qualitative traces |
+| Figure 22 | 43 | Appendix I: observation/action adapters |
+| Table 1 | 3 | 표본 수·관측·비교 범위 |
+| Table 2–3 | 5–6 | Gripper/dexterous task별 score |
+| Table 4–5 | 9–10 | In-hand 전체 지표와 endpoint |
+| Table 6–8 | 11,13–14 | Mobile grouping·navigation metric·local comparisons |
+| Table 9–10 | 15 | Locomotion 순차 시도와 Astra 없는 interface study |
+| Table 11–12 | 16,18 | Humanoid 대표 task·SIMPLE L2 |
+| Table 13 | 20 | 자원 비용과 recording scope |
+| Table 14–15 | 26–27 | Gripper 모든 task score/success |
+| Table 16–17 | 27–28 | Focused trials·정확한 token count |
+| Table 18–19 | 29–30 | 전체 humanoid·handover development/retention |
+| Table 20–22 | 32–34 | Task instruction·training/execution·success predicates |
+| Table 23–24 | 35–36 | In-hand setup와 RL training provenance |
+| Table 25–28 | 38–41 | In-hand 모든 paired case와 endpoints |
+| Table 29–31 | 42–43 | Navigation termination·release identity·route agreement |
+| Table 32–33 | 44 | Full-benchmark references와 subset 범위 차이 |
+| Table 34–37 | 45–46 | 모든 RoboCasa task·paired test·harness·request accounting |
+
+## 한계와 주의
+
+- 평가의 많은 부분이 simulation과 paused physics다. native success와 real-world real-time deployability는 구분한다.
+- task당 5 case, humanoid 두 seed, single-course sequential attempt 등 표본이 작거나 범위가 좁다. subset 성능을 전체 task distribution으로 확대하지 않는다.
+- learned policy는 domain-specific training을 갖고, humanoid는 pretrained controller와 calibrated motion generator에 의존한다. model capability와 complete-system capability를 분리한다.
+- same start라도 관측·history·action rate·harness·repeat allowance가 다를 수 있다. policy access만의 causal gain으로 읽지 않는다.
+- 예측·오류 인식·수정·verification·success retention은 각각 평가해야 한다. intervention이 standalone success를 손상시키는 사례도 반드시 포함한다.
+- 전체 control log와 simulator/checkpoint가 공개 코드에 모두 포함되지 않으므로 완전 재현 가능성을 단정하지 않는다. 공개 코드의 benchmark scope와 PDF scope도 다르다.
+- paper project 링크는 이번 확인에서 접근하지 못했다. PDF와 접근 가능한 공개 code/report를 근거로 썼으며 접근 불가 페이지의 내용을 추정하지 않았다.
+
+## Citation Trail과 후속 질문
+
+[π0.5](../pi/pi05-open-world-generalization/)는 협력의 action prior, [ACT](../act-action-chunking-transformer/)와 [Diffusion Policy](../diffusion-policy-visuomotor-policy-learning/)는 action chunking과 temporal control의 비교 기준이다. [T-Rex](../t-rex-tactile-reactive-dexterous-manipulation/)는 빠른 contact feedback을 architecture 안에 두는 접근으로, 외부 reasoning correction의 지연 문제와 연결된다. [ECoT 계열](../ecot/)과 [Molmo 계열](../molmo/)은 reasoning representation을 학습 policy에 결합하는 흐름이다. [HOVER](../hover-humanoid-versatile-controller/)와 [OmniH2O](../omnih2o-humanoid-teleoperation/)는 humanoid controller가 어떤 motion prior를 공급하는지 읽는 배경이다.
+
+후속 실험 제안은 논문 결과와 구분한다. 첫째, 동일 observation/harness/decision budget에서 no-policy·always-policy·selective-intervention을 비교하고 기존 success loss를 별도 metric으로 둔다. 둘째, paused와 unpaused execution을 나눠 feedback staleness·contact failure·wall-clock budget을 측정한다. 셋째, grasp 유지와 object motion progress, native success와 hold verification을 동시에 평가한다. 넷째, reflection 뒤 알려진 scene 반복·held-out state·held-out task에서 success retention을 별도로 측정한다.
+
+## 검증 메모
+
+| Pass | 확인 범위 |
+| --- | --- |
+| 1. 구조 | PDF v1 46쪽, main text 및 Appendix A–I에서 problem/interface/data/method/training/result/limitations 확인 |
+| 2. 수치·그림·표 | Figure 1–22, Table 1–37 inventory와 local crop 59개 대조. 주요 success·score·endpoint·token을 PDF text와 rendered table에서 재대조 |
+| 3. 코드 | 공개 commit의 session·FK/IK·action validation·policy server·context와 SOURCE identity 읽음. 모델/physics 실행·paid API 호출은 하지 않음 |
+| 4. 해석 | paired와 public reference, partial score와 success, development와 frozen evaluation, simulated time과 inference time을 분리 |
+| 5. 문서 | 배포 base path에서 내부 링크·59 local asset·content schema·Astro check/build 확인. 목록 필터·주제·계열 페이지와 실제 논문 route, 세 해상도 세미나 route를 브라우저 회귀 검사 |
+
+그림·표 출처는 모두 저자 PDF v1이다. [asset manifest](/astra-policy/manifest.json)에 원문 SHA-256, 페이지와 crop 좌표, 각 이미지 checksum을 기록했다. 모델 평가 재현은 미실행이다.

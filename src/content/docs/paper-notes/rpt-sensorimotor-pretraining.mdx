@@ -1,0 +1,286 @@
+---
+research: {"kind": "paper", "topics": ["vla", "data"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2306.10007"}
+title: RPT
+description: image·proprioception·past action을 함께 mask/reconstruct하는 Robot Learning with Sensorimotor Pre-training의 구조와 real-robot transfer 증거를 분석한 Survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/rpt-sensorimotor-pretraining" />
+
+# RPT
+
+<SectionFeedback page="RPT" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Robot Learning with Sensorimotor Pre-training |
+| 저자 | Ilija Radosavovic, Baifeng Shi, Letian Fu, Ken Goldberg, Trevor Darrell, Jitendra Malik |
+| 공개 | arXiv:2306.10007v2, 2023-12-14; CoRL 2023 |
+| 링크 | [arXiv](https://arxiv.org/abs/2306.10007) · [PDF](https://arxiv.org/pdf/2306.10007) · [Project](https://robotic-pretrained-transformer.github.io/) · [PMLR](https://proceedings.mlr.press/v229/radosavovic23a.html) |
+| 공개 범위 | paper와 project page는 공개. 공식 code/checkpoint 링크는 제공되지 않는다. |
+| 태그 | sensorimotor pretraining, proprioception, masked prediction, action history, real robot |
+
+## 한 줄 요약
+
+RPT는 세 camera의 frozen visual latent, 8D proprioception, 8D past action을 timestep마다 다섯 token으로 만들고, 그중 70–90%를 무작위로 가린 뒤 원래 값을 복원한다. 이 **cross-modal·cross-time masked prediction**으로 pretrain한 작은 Transformer는 scratch보다 real-robot data efficiency와 task/robot transfer가 좋지만, proprioception만의 기여를 분리한 ablation은 없다.
+
+![image, proprioception, action을 interleave하고 mask하는 RPT](/rpt/figure-2-masked-sensorimotor.png)
+
+*Figure 2. `M`은 modality별 learned mask token이다. self-attention은 bidirectional이고, random token masking을 통해 image↔state↔action 및 시간축의 상호 예측을 학습한다.*
+
+## 문제의식
+
+Image-only pretraining은 visual representation은 잘 만들지만 robot trajectory가 가진 “어떤 state에서 어떤 action을 했고 결과가 어떻게 변했는가”를 직접 학습하지 않는다. RPT는 semantic label이나 language 없이도 trajectory의 일부 sensorimotor content를 맞히게 하면 physical-world representation을 얻을 수 있다고 가정한다.
+
+Trajectory를 다음처럼 둔다.
+
+```text
+T = (i₁, s₁, a₁, ..., i_T, s_T, a_T)
+```
+
+여기서 (i_t)는 세 camera image의 latent, (s_t)는 proprioceptive state, (a_t)는 action이다. 일부 token index (M\subset[1,L])을 가리고, 관측된 나머지로 masked target (T_M)의 MSE를 최소화한다.
+
+핵심은 state와 action이 단지 policy fine-tuning 입력으로만 쓰이는 것이 아니라 **pretraining prediction target이기도 하다**는 점이다.
+
+## Dataset
+
+![Franka setup, task 예시, trajectory 수](/rpt/figure-9-dataset.png)
+
+*Figure 9. 단일 Franka, 단일 lab에서 9개월 동안 약 20K trajectory를 수집한다.*
+
+| task | trajectories | 수집 방식 / 길이 |
+| --- | ---: | --- |
+| Pick | 7,530 | scripted motion; 평균 약 300 steps |
+| Bin Pick | 6,931 | overhead depth 기반 model-based grasp |
+| Stack | 3,228 | scripted pick-and-place; 평균 약 600 steps |
+| Destack | 3,217 | scripted pick-and-place; 평균 약 300 steps |
+
+Hardware는 7-DoF Franka arm과 1-DoF parallel-jaw gripper다. Logitech Brio RGB camera 세 대를 hand, left, right view로 둔다. camera와 robot stream을 60 Hz로 동기화하고 30 Hz로 저장한다. downstream controller는 joint-position control을 10 Hz로 실행한다.
+
+Appendix는 raw proprio data에 **joint position과 velocity**가 기록된다고 쓴다. 그러나 policy setup의 proprio input은 joint position 7개와 gripper state 1개인 **8D**다. raw velocity가 pretraining token에 포함되는지는 명시된 8D dimension과 맞지 않으므로, 이 Survey에서는 “dataset에는 기록되지만 model input에는 사용 확인 불가”로 구분한다.
+
+## Method
+
+### 1. 한 timestep을 다섯 token으로 만든다
+
+| token | 원래 차원 | encoder / target |
+| --- | ---: | --- |
+| hand camera latent | ViT output, 기본 768 | frozen ViT feature → linear 192; latent reconstruction |
+| left camera latent | 동일 | 동일 |
+| right camera latent | 동일 | 동일 |
+| proprioception | 8 | linear 192; original state-space reconstruction |
+| action | 8 | linear 192; original action-space reconstruction |
+
+세 camera는 같은 frozen ViT를 공유하고 output token을 mean-pool한다. vision encoder는 MVP의 MAE-pretrained model로, Ego4D, EPIC-KITCHENS, Something-Something, 100 Days of Hands, ImageNet을 합친 4.5M image에 사전학습됐다.
+
+각 modality encoder가 별도 weight를 가지므로 modality embedding은 추가하지 않는다. 같은 timestep의 다섯 token에는 같은 learned positional embedding을 더한다. 이 positional embedding은 timestep을 나타내며 token type은 modality-specific projection 자체가 구분한다.
+
+### 2. Proprioception의 역할
+
+RPT에서 proprioception은 세 역할을 동시에 한다.
+
+1. **Context:** image나 action token이 가려졌을 때 현재 joint configuration으로 missing content를 추론한다.
+2. **Prediction target:** state token 자체가 가려지면 image와 past/future state-action context로 8D state를 복원한다.
+3. **Policy input:** fine-tuning과 rollout에서 현재 achieved state를 넣어 next action chunk를 예측한다.
+
+예를 들어 `s_t`가 mask되면 주변 timestep의 image, action, 관측된 다른 state로 `s_t`를 reconstruct한다. 반대로 `a_t`가 mask되면 visual goal progress와 `s_t`가 action query의 context가 된다. 이렇게 state-action transition을 직접 학습한다는 점이 단순히 proprio vector를 BC policy에 concat하는 것과 다르다.
+
+다만 state는 8개 scalar를 하나씩 token화하지 않고 **8D vector 전체를 한 token**으로 linear projection한다. 따라서 joint별 fine-grained attention보다 timestep-level state summary에 가깝다.
+
+### 3. Random masked sensorimotor prediction
+
+매 sample마다 masking probability (p\sim U[0.7,0.9])를 먼저 뽑고, 모든 image/proprio/action token을 modality·time과 무관하게 독립적으로 같은 확률로 mask한다. masked input은 modality별 learned mask token으로 바꾼다.
+
+```text
+L = Σ_m λ_m · mean_{j ∈ masked(m)} ||ŷ_j - y_j||²
+```
+
+Loss는 masked position에만 적용하고 observed token prediction은 loss에 넣지 않는다. visual token은 latent feature 공간, proprio/action은 원래 8D 공간으로 linear decode한다. modality loss weight는 모두 uniform이다.
+
+높은 masking ratio에서는 16 timestep context 기준 80개 token 중 평균 56–72개가 사라진다. 한 modality나 한 timestep의 local copy만으로 풀기 어렵게 만들어, camera 간·modality 간·시간 간 redundancy를 이용하게 하는 설계다.
+
+### 4. Transformer와 downstream action query
+
+Sensorimotor backbone은 encoder-only Transformer 약 1M parameters다.
+
+| 항목 | 값 |
+| --- | ---: |
+| hidden dimension | 192 |
+| blocks / heads | 4 / 4 |
+| MLP ratio | 2 |
+| default context | 실험에서는 1, 4, 8, 16 timesteps 비교; timestep당 5 tokens |
+
+Fine-tuning에서는 pretraining과 같은 길이의 history를 넣되 마지막 timestep의 action token을 `[MASK_action]`으로 바꾼다. 그 위치의 output representation만 꺼내 linear layer로 **다음 16 actions**를 한 번에 예측한다. 나머지 output은 버린다.
+
+```text
+(i_{t-k:t}, s_{t-k:t}, a_{t-k:t-1}, [MASK_action]_t)
+  → Transformer
+  → h([MASK_action]_t)
+  → a_{t:t+15}
+```
+
+이 query 위치는 “항상 마지막 timestep의 action slot”으로 고정된다. pretraining 때 action mask를 복원한 형식과 fine-tuning의 action query가 일치한다는 장점이 있다.
+
+Inference는 16-action chunk를 예측해 10 Hz controller로 실행한다. 매 action 후 새 image, achieved state, 실제 실행 action을 history에 다시 넣는 autoregressive loop다. 저자는 한 action마다 재계산하는 방식과 chunk 전체 실행 사이에 유의미한 차이를 관찰하지 못했다고 쓴다.
+
+## Training Recipe
+
+| 단계 | 설정 |
+| --- | --- |
+| pretraining | 300 epochs, batch 4,096, warmup 50 epochs |
+| optimizer | AdamW, learning rate 4e-4, weight decay 0.01 |
+| masking | sample별 (p\sim U[0.7,0.9]), token-wise independent |
+| fine-tuning | Stack 900 epochs, 나머지 300 epochs |
+| downstream head | last action-mask representation → next 16 joint-position actions |
+| vision | frozen pretrained ViT; ViT-S/B/L scaling 비교 |
+| evaluation | 조건별 16 real-world trials, object position/orientation 변화 |
+
+Scratch baseline은 MVP의 single-step MLP를 같은 multi-step Transformer로 교체한 강화 baseline이다. vision encoder는 RPT와 동일하게 pretrained/frozen이고, sensorimotor Transformer만 scratch에서 학습한다. 저자는 learning rate, batch size, epoch를 model별로 optimize했다고 설명하지만 그 search space와 seed variance는 공개하지 않는다.
+
+## Experiments and Results
+
+### Sample complexity
+
+![Pick, Destack, Stack의 fine-tuning data 수별 결과](/rpt/figures-4-5-results.png)
+
+*Figure 4. 같은 pretrained/frozen vision encoder를 쓴 상태에서 sensorimotor Transformer의 pretraining 유무를 비교한다.*
+
+Figure 4의 16-trial success rate를 읽으면 다음과 같다.
+
+| task / trajectories | scratch | RPT pretrained |
+| --- | ---: | ---: |
+| Pick / 60 | 50.0 | 62.5 |
+| Pick / 120 | 75.0 | 87.5 |
+| Pick / 240 | 87.5 | 93.8 |
+| Destack / 120 | 18.8 | 56.3 |
+| Destack / 240 | 81.3 | 93.8 |
+| Stack / 120 | 12.5 | 25.0 |
+| Stack / 240 | 18.8 | 31.3 |
+| Stack / 480 | 25.0 | 56.3 |
+
+모든 point에서 RPT가 높고 어려운 Stack의 최대-data setting은 25.0→56.3으로 약 2.25배다. 다만 pretraining과 fine-tuning이 같은 task의 서로 다른 subset인 setting이므로 “새로운 task zero-shot” 결과는 아니다.
+
+### Cross-task transfer와 data quality
+
+Stack downstream에서 Stack, Pick, successful Bin Pick으로 pretrain하면 각각 약 56.3%, 62.5%, 56.3%로 비슷하다. failure가 섞인 전체 Bin Pick으로 pretrain하면 25.0%로 떨어진다. 이는 task identity보다 successful motor pattern이 전이될 수 있음을 보이는 동시에, self-supervised objective도 낮은-quality behavior를 자동으로 무시하지 못한다는 증거다.
+
+### Scaling
+
+![vision encoder, context length, pretraining data scaling](/rpt/figure-6-scaling.png)
+
+*Figure 6. Stack에서 ViT 크기, sensorimotor token context, pretraining trajectory 수를 늘릴수록 success가 단조 증가한다.*
+
+| scale axis | smallest → largest | success |
+| --- | --- | --- |
+| vision encoder | ViT-S → ViT-B → ViT-L(307M) | 6.3 → 25.0 → 56.3 |
+| context | 1 → 4 → 8 → 16 timesteps, 즉 5→20→40→80 tokens | 6.3 → 18.8 → 37.5 → 56.3 |
+| pretraining data | 480 → 960 → 1,920 trajectories | 25.0 → 31.3 → 56.3 |
+
+ViT-L까지 써도 latent를 timestep당 한 번 계산하는 구조 덕분에 RTX 2080 Ti에서 system-level 10 Hz가 가능했다고 보고한다. 그러나 vision encoder scaling과 sensorimotor pretraining 효과가 interaction하며, image-only/sensorimotor-only scaling을 분리하지는 않는다.
+
+### Cross-lab·cross-robot transfer
+
+| pretrain | fine-tune | success |
+| --- | --- | ---: |
+| none | Franka B | 25.0 |
+| Franka A | Franka B | 68.8 |
+| none | Franka | 25.0 |
+| xArm | Franka | 50.0 |
+| Franka | Franka | 56.3 |
+
+xArm pretraining은 8 tasks, 640 teleoperated trajectories이고 robot, camera, placement, background, lighting, frequency, collection strategy가 모두 다르다. 그럼에도 scratch의 25.0보다 50.0으로 높다. 다만 xArm의 proprio/action dimension을 Franka 8D schema에 어떻게 맞췄는지 논문이 구체적으로 설명하지 않아, cross-robot sensorimotor token alignment의 재현 recipe는 불완전하다.
+
+### Masking과 fine-tuning ablation
+
+![partial fine-tuning, masking type, masking ratio ablation](/rpt/figure-7-ablations.png)
+
+*Figure 7. token-wise high-ratio masking이 핵심이며, frozen representation만 읽는 것보다 backbone 대부분을 fine-tune해야 최고 성능이 나온다.*
+
+- linear probe는 43.75%, full fine-tuning은 93.8%다.
+- fine-tuned block 수 0/1/2/3/4에서 약 43.8/43.8/56.3/87.5/93.8%다.
+- timestep 전체 masking 12.5%, modality 전체 masking 6.3%, independent token masking 56.3%다.
+- ratio range low `[0.1,0.9]`, medium `[0.4,0.9]`, high `[0.7,0.9]`는 약 12.5/12.5/56.3%다.
+
+따라서 pretraining checkpoint를 그대로 feature extractor로 쓰는 것보다 downstream adaptation이 중요하다. “좋은 universal representation이 이미 완성됐다”기보다는 좋은 initialization을 제공한다는 해석이 더 안전하다.
+
+### Random vs causal masking
+
+RPT의 기본 self-attention은 bidirectional이다. causal variant도 causal attention으로 바꾸지 않고, sampled mask position을 시간순 suffix처럼 정렬해 prediction problem만 causal하게 만든다. Pick→Pick은 random 93.8 대 causal 100.0이지만, Pick→Stack은 62.5 대 37.5로 causal이 낮다. future context까지 infill하는 random objective가 task transfer에는 더 일반적인 representation을 만든다는 결과다.
+
+### Emergent self-correction
+
+grasp를 놓치면 뒤로 물러나 다시 grasp하는 rollout이 관찰됐다고 보고한다. train trajectory는 successful-only였고 일부 failure state는 data에 없었다는 점에서 흥미롭다. 그러나 정량 metric, 발생 빈도, scratch baseline 비교가 없으므로 **qualitative observation** 이상으로 해석하면 안 된다.
+
+## Proprioception 관점의 핵심 해석
+
+RPT는 proprioception을 단순한 현재-state conditioning보다 강하게 쓴다. state를 mask하고 재구성함으로써 image-action-state 간 상호 예측 가능성을 pretraining signal로 만든다. 특히 action query가 고정된 마지막 action-mask slot이라는 점은 ThinkProprio의 state query와 다른 형태의 명시적 query interface다.
+
+그러나 다음 인과는 분리되지 않았다.
+
+- image + action만 mask-pretrain한 모델과 비교하지 않아 **proprio target의 추가 이득**은 모른다.
+- image + proprio만 쓰고 action history를 뺀 ablation이 없어 **past action의 기여**도 모른다.
+- state reconstruction loss를 끄고 state는 context로만 쓰는 조건이 없다.
+- joint position과 velocity, gripper state의 구성 ablation이 없다.
+
+따라서 정확한 결론은 “proprio를 포함한 joint sensorimotor masked pretraining이 scratch보다 좋다”이며, “proprio pretraining 단독으로 몇 %를 올린다”는 아니다.
+
+## Code-Level Check
+
+Project page의 `Code` 표시는 link가 아니라 plain text이며, paper·PMLR·저자 project page에서도 공식 repository나 checkpoint를 확인하지 못했다. 따라서 다음은 검증할 수 없다.
+
+- 정확한 dataset tensor schema와 xArm→Franka state/action remapping
+- normalization 통계와 modality별 MSE scale 처리
+- context sampling stride 및 30 Hz 저장 data를 10 Hz policy input으로 만드는 downsampling
+- optimizer search, random seed, checkpoint selection
+- action chunk 16개를 실제로 전부 실행할 때의 temporal ensembling 여부
+
+논문은 uniform modality loss weight라고 쓰지만 image latent 768D와 state/action 8D의 MSE가 각 modality 내부에서 어떻게 reduce되는지 code가 없어 세부 scale을 재현하기 어렵다.
+
+## 한계와 주의
+
+1. **단일 lab·단일 주 robot이다.** 20K 규모지만 대부분 같은 Franka와 workspace다.
+2. **task가 pick-and-place 계열이다.** dexterous contact나 long-horizon semantic task 증거가 없다.
+3. **MSE는 multimodal future를 평균낼 수 있다.** 저자도 generative model 필요성을 언급한다.
+4. **real evaluation이 조건당 16 trials다.** 1회 성공이 6.25%p라 작은 차이의 uncertainty가 크다.
+5. **proprio-only contribution이 없다.** sensorimotor bundle 전체의 효과다.
+6. **cross-robot mapping이 불명확하다.** morphology가 다른 proprio/action을 어떻게 맞췄는지 부족하다.
+7. **공식 code가 없다.** exact reproduction과 normalization 검증이 제한된다.
+8. **self-correction은 정성 사례다.** emergent capability의 빈도나 causal source는 확인되지 않았다.
+
+## 다른 proprioception 논문과의 연결
+
+| 연구 | RPT와의 차이 |
+| --- | --- |
+| [HPT](../hpt-heterogeneous-pretrained-transformers/) | HPT는 서로 다른 robot morphology를 stem/head로 분리하고 훨씬 heterogeneous한 pretraining을 목표로 한다. RPT는 한 lab의 sensorimotor sequence infilling이 중심이다. |
+| [CrossFormer](../crossformer-cross-embodiment-policy/) | CrossFormer는 heterogeneous online policy co-training이며 action reconstruction pretraining을 하지 않는다. |
+| [ThinkProprio](../thinkproprio-state-grounded-token-selection/) | ThinkProprio는 현재 proprio를 visual token 선택 query와 guidance에 쓴다. RPT는 state 자체를 mask/reconstruct해 temporal dynamics를 학습한다. |
+| [State-free Policy](../state-free-vision-language-action-policy/) | State-free는 narrow demonstration에서 state shortcut을 경고한다. RPT는 반대로 state를 적극 사용하지만 spatial OOD shortcut은 평가하지 않는다. |
+
+## Figure / Table Inventory
+
+| 원문 | 내용 | Survey 반영 |
+| --- | --- | --- |
+| Figure 1 | data–pretraining–transfer overview | 한 줄 요약·문제의식 |
+| Figure 2 | interleaved masked sensorimotor Transformer | Method 핵심 figure |
+| Figure 3 | fine-tune vs linear probe | downstream query 설명 |
+| Figure 4 | Pick/Destack/Stack sample complexity | 결과 수치 table |
+| Figure 5 | Stack cross-task transfer | data quality 해석 |
+| Figure 6 | vision/context/data scaling | Scaling |
+| Figure 7 | partial FT, mask type, mask ratio | Ablation |
+| Figure 8 | random vs causal masking | Causal masking |
+| Figure 9 | hardware, tasks, trajectory counts | Dataset |
+| Table 1 | cross-lab·cross-robot transfer | Transfer 결과 |
+
+## 검증 메모
+
+- arXiv v2 PDF 11쪽의 main text와 Appendix A를 직접 확인했다.
+- Figures 1–9와 Table 1을 전수 inventory하고 핵심 figure를 로컬 asset으로 추출해 시각 검수했다.
+- arXiv, PMLR, 공식 project page의 metadata와 공개 범위를 대조했다.
+- paper의 raw proprio 기록과 실제 8D model input 표현을 구분했고, code 부재로 확인 불가능한 사항을 별도 표시했다.
+
+<SectionFeedback page="RPT" section="전체 Survey" />

@@ -1,0 +1,483 @@
+---
+research: {"kind": "paper", "topics": ["vla", "data"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2409.20537"}
+title: HPT
+description: heterogeneous robot·simulation·human data를 embodiment별 stem/head와 shared Transformer trunk로 학습하는 HPT의 구조, scaling, transfer, 공개 코드를 정리한 상세 Survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/hpt-heterogeneous-pretrained-transformers" />
+
+# HPT
+
+<SectionFeedback page="HPT" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Scaling Proprioceptive-Visual Learning with Heterogeneous Pre-trained Transformers |
+| 저자 | Lirui Wang, Xinlei Chen, Jialiang Zhao, Kaiming He |
+| 공개 | arXiv:2409.20537v1, 2024-09-30; NeurIPS 2024 Spotlight |
+| 링크 | [arXiv](https://arxiv.org/abs/2409.20537) · [PDF](https://arxiv.org/pdf/2409.20537) · [Project page](https://liruiw.github.io/hpt/) · [Official code](https://github.com/liruiw/HPT) · [LeRobot implementation](https://github.com/liruiw/lerobot) · [Weights](https://huggingface.co/liruiw/hpt-xlarge) |
+| 기준 버전 | 24쪽 arXiv v1 PDF와 2026-07-15 기준 공개 코드 |
+| 태그 | robot foundation model, heterogeneous data, cross-embodiment, proprioception, vision, Transformer, scaling |
+
+## 한 줄 요약
+
+HPT는 서로 차원과 의미가 다른 observation/action을 억지로 하나의 vocabulary로 합치지 않고, **dataset·embodiment별 stem/head와 하나의 shared Transformer trunk** 사이에 고정 개수 latent token 인터페이스를 둔다. 52개 dataset, 약 27만 trajectory, 최대 1.1B trunk로 이를 확장하고, 새 embodiment에서는 stem/head만 새로 학습해 shared representation을 이전한다.
+
+![HPT의 embodiment별 stem, shared trunk, task별 head 구조](/hpt/figure-2-architecture.png)
+
+*Figure 2. 한 batch가 어느 domain에서 왔는지 이미 알고 있으므로 그 domain의 stem/head만 켜는 정적 routing이다. trunk만 모든 domain이 공동으로 업데이트한다.*
+
+## 문제 설정: 무엇이 heterogeneous한가
+
+로봇 데이터는 image format만 다른 것이 아니다.
+
+- robot마다 joint 수와 state 의미가 다르다.
+- action이 joint position, end-effector delta pose, velocity, mobile-base command 등으로 다르다.
+- camera 수와 위치, control frequency, trajectory 길이가 다르다.
+- simulation state, human hand pose, egocentric video처럼 robot proprioception이 아닌 입력도 섞인다.
+
+Open X-Embodiment의 RT-X 계열처럼 action representation을 어느 정도 표준화할 수도 있지만, 모든 데이터를 단일 입출력 schema로 바꾸려면 정보 손실과 대규모 수작업이 생긴다. HPT의 선택은 다음과 같다.
+
+```text
+domain k의 원래 observation
+        │
+        ▼
+domain-specific stem S_k
+        │  modality마다 고정 개수 latent tokens
+        ▼
+shared Transformer trunk T
+        │
+        ▼
+domain-specific head H_k
+        │
+        ▼
+domain k의 원래 action space
+```
+
+여기서 `domain`은 논문에서 dataset, task, embodiment와 다소 느슨하게 혼용된다. 구현은 문자열 domain key마다 stem/head를 하나씩 등록한다. 따라서 “52 datasets = 52개의 완전히 다른 robot embodiment”라고 읽으면 안 된다. 같은 robot의 여러 task가 별도 domain일 수도 있다.
+
+### MoE와 비슷하지만 learned router는 아니다
+
+HPT는 각 입력에 하나의 stem/head pair만 활성화하므로 구조적으로 sparse expert와 비슷하다. 그러나 token 내용으로 expert를 고르는 learned router는 없다. dataset identity가 이미 알려져 있고, 그 key로 모듈을 결정한다. 새로운 미지의 observation을 보고 자동으로 알맞은 embodiment expert를 발견하는 모델은 아니다.
+
+## Architecture
+
+### 1. Stem: variable schema를 fixed token interface로 바꾸기
+
+![proprioception과 vision을 16개 token으로 만드는 HPT stem](/hpt/figure-3-stem.png)
+
+*Figure 3. learnable query 16개가 modality feature를 cross-attention으로 읽는다. 입력 길이가 달라도 trunk가 받는 token 수는 일정하다.*
+
+#### Proprioception tokenizer
+
+domain `k`의 state dimension을 `d_k^p`라 하면, 먼저 domain-specific MLP가 각 state를 common feature width로 projection한다. observation history에는 sinusoidal temporal position을 더한다. 그 뒤 16개의 learnable query가 state feature sequence를 key/value로 삼아 cross-attention한다.
+
+```text
+p_k ∈ R^(L_p × d_k^p)
+  -> domain-specific MLP
+  -> state features ∈ R^(L_p × d)
+
+Q_p ∈ R^(16 × d)                         # learnable queries
+Z_p = CrossAttention(Q_p, K=state features, V=state features)
+Z_p ∈ R^(16 × d)
+```
+
+16개 query는 16개 관절을 뜻하지 않는다. robot의 DoF와 무관한 latent slots다. 각 query는 학습을 통해 state history에서 서로 다른 정보를 모을 수 있지만, slot별 의미를 논문이 감독하거나 해석하지는 않는다.
+
+#### Vision tokenizer
+
+image는 frozen pretrained ResNet-18을 기본으로 사용한다. `224×224` image가 `7×7=49` spatial features로 바뀌고, vision용 learnable query 16개가 이를 cross-attention으로 압축한다. multi-view에서는 더 많은 visual feature를 stem에 넣을 수 있지만 trunk에 보내는 interface는 고정할 수 있다.
+
+```text
+RGB -> frozen ResNet-18 -> 49 spatial features
+    -> 16 learnable queries로 cross-attention
+    -> 16 vision tokens
+```
+
+이 방식은 Perceiver와 Q-Former의 resampler와 유사하다. 중요한 점은 zero-padding으로 state dimension을 맞추는 것이 아니라, **서로 다른 입력을 learned latent bottleneck을 통해 같은 shape으로 번역한다**는 것이다.
+
+#### Language는 optional
+
+HPT는 기본적으로 proprioceptive-visual policy이며 VLA가 아니다. language를 쓰는 ablation에서는 frozen T5 embedding을 8개 token으로 넣는다. 기본 pretraining과 핵심 transfer 결과가 language-conditioned task generalization을 평가하는 것은 아니다.
+
+### 2. Shared Transformer trunk
+
+stem이 만든 state 16개와 vision 16개 token을 concatenate하고 positional encoding을 더한 뒤 shared Transformer에 넣는다.
+
+```text
+[16 state tokens; 16 vision tokens; optional 8 language tokens]
+  -> shared Transformer
+  -> token pooling (default: mean)
+  -> shared representation
+```
+
+논문 설명에는 positional embedding과 modality embedding을 모두 더한다고 적혀 있다. 다만 공개 HPT 및 LeRobot 코드의 `preprocess_tokens()`는 확인한 버전에서 sinusoidal position만 실제로 더하며, 생성된 modality embedding parameter를 사용하지 않는다. 뒤의 구현 대조에서 다시 다룬다.
+
+### 3. Domain-specific action head
+
+기본 head는 shared representation에서 normalized action chunk를 예측하는 MLP다. Appendix에서는 다음 head도 실험한다.
+
+- discrete action classification head
+- learnable action token을 query로 쓰는 Transformer head
+- diffusion policy head
+- Conv1D/sequence head
+
+즉 HPT의 핵심은 특정 action generator가 아니라 **shared trunk 앞뒤의 modular interface**다. 논문 기본 실험은 Huber behavior-cloning objective를 사용한다.
+
+## 학습 objective와 routing
+
+domain `k`의 dataset을 `D_k`, stem/trunk/head를 `S_k`, `T`, `H_k`라고 하면 다음 형태다.
+
+```text
+L = Σ_k E_(o,a ~ D_k) [ Huber(H_k(T(S_k(o))), a) ]
+```
+
+한 training step에서 domain `k` batch를 뽑으면:
+
+1. `S_k`만 observation을 token으로 만든다.
+2. shared `T`가 token을 처리한다.
+3. `H_k`만 해당 action space의 target을 예측한다.
+4. gradient는 `S_k`, `T`, `H_k`에 흐른다. 다른 domain stem/head는 건드리지 않는다.
+
+dataset sampling probability는 dataset size의 제곱근에 비례한다. size 자체에 비례시키는 것보다 큰 dataset의 독점을 줄이면서, 모든 dataset을 균등 sampling하는 것보다는 큰 dataset에 더 많은 weight를 준다.
+
+actions는 dataset별 statistics로 `[-1, 1]`에 normalize한다. 기본 pretraining은 observation horizon 4, action horizon 8이며 random temporal masking으로 사용 가능한 observation history 길이를 바꾼다.
+
+## Model scale
+
+![HPT의 데이터 구성, model size, trajectory 규모](/hpt/figure-4-tables-1-2-scale.png)
+
+*Figure 4와 Tables 1–2. 작은 기본 실험과 52-dataset scaling 설정은 batch와 data 규모가 크게 다르다.*
+
+| model | layers | width | heads | trunk parameters |
+| --- | ---: | ---: | ---: | ---: |
+| HPT-Small | 16 | 128 | 8 | 3.1M |
+| HPT-Base | 16 | 256 | 8 | 12.6M |
+| HPT-Large | 16 | 512 | 8 | 50.5M |
+| HPT-XLarge | 32 | 768 | 16 | 226.8M |
+| HPT-Huge | 80 | 1024 | 16 | 1.1B |
+
+이 parameter count는 주로 shared trunk를 센 값이다. Table 5에서 Octo, RT-1-X, RT-2-X와 모델 크기를 비교할 때 다른 모델의 total parameter와 accounting 기준이 정확히 같다고 보장되지 않으므로 단순 효율 비교에는 주의가 필요하다.
+
+## Pretraining data
+
+![52개 dataset을 robot, simulation, human video, deployed robot으로 묶은 구성](/hpt/figure-13-dataset-mixture.png)
+
+*Figure 13. 41 Open X-Embodiment dataset 외에 simulation 7개, human video 3개, deployed mobile robot 1개를 더한다.*
+
+### 두 규모의 설정
+
+| 설정 | datasets | trajectories | samples | batch | 비고 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| default | 27 | 약 16K | 약 5M | 256 | dataset당 최대 1,000 trajectories, 80K iterations |
+| scaled | 52 | 약 270K | 약 155M | 2,048 | 논문 abstract는 `200K+`로 표현 |
+
+Table 4의 breakdown은 다음처럼 구성된다.
+
+- Open X-Embodiment 41개: 다양한 manipulation robot과 action schema
+- simulation 7개: Drake, MuJoCo, Isaac, PyBullet, SAPIEN, Flex 등
+- human video 3개: EPIC 계열 2D hand/object signal과 PoCo 3D hand pose
+- deployed robot 1개: FrodoBot의 주행 image, IMU, linear/angular velocity
+
+![52개 dataset의 세부 trajectory와 sample 수](/hpt/table-4-detailed-dataset-mixture.png)
+
+*Table 4. dataset별 trajectory와 sample 수를 따로 공개한다. trajectory가 많은 dataset과 긴 trajectory로 sample이 많은 dataset은 일치하지 않는다.*
+
+### Human video를 어떻게 proprioception/action으로 바꾸는가
+
+HPT는 raw internet video를 그대로 robot action learning에 넣지 않는다. pseudo-state와 pseudo-action을 먼저 정의한다.
+
+- EPIC: detection box center 같은 normalized 2D signal을 proprioception으로 쓰고, 다음 frame과의 차이를 action으로 둔다.
+- PoCo: 3D hand position과 ICP 기반 6-DoF pose를 state/action signal로 쓴다.
+
+따라서 human data가 robot action semantics로 완전히 정렬된 것은 아니다. shared trunk가 visual-proprioceptive temporal regularity를 배울 수 있다는 weak alignment 가정이다.
+
+### Data pipeline과 compute
+
+vision 및 language feature를 offline으로 미리 계산해 저장한다. 저자들은 전체 mixture에 약 10TB disk가 필요하지만 data loader RAM은 50GB 미만이라고 보고한다. training은 8–128 V100 GPU에서 반나절부터 약 한 달까지 걸렸다.
+
+기본 optimizer는 AdamW, weight decay `0.05`, base learning rate `2e-4`, warmup과 cosine decay다. batch가 커지면 learning rate도 scale한다. Appendix의 Huber `δ=0.1`과 공개 코드의 Smooth L1 `beta=0.05`는 일치하지 않는다.
+
+## Scaling 결과를 읽는 법
+
+![trajectory, dataset 수, batch와 samples seen에 따른 validation loss](/hpt/figures-5-6-data-epoch-scaling.png)
+
+*Figures 5–6. 데이터 양뿐 아니라 model 크기, batch, 학습 token 수가 함께 바뀌는 실험이 있으므로 순수한 한 축 scaling law로 읽어서는 안 된다.*
+
+### Dataset size와 diversity
+
+- HPT-Small은 dataset당 약 1K trajectory를 넘으면 validation loss 개선이 거의 멈춘다.
+- 더 큰 HPT-Large를 4배 많은 token으로 학습하면 10K–100K 구간에서도 개선이 이어진다.
+- dataset 수를 10개에서 52개로 늘리면 처음 10개 dataset의 고정 validation subset에서도 loss가 낮아진다.
+
+마지막 결과는 diverse embodiment가 shared trunk를 regularize한다는 주장에 부합한다. 다만 dataset 수가 늘면서 총 sample과 training dynamics도 달라지므로 diversity만의 인과 효과를 완전히 분리한 실험은 아니다.
+
+### Batch와 samples seen
+
+큰 batch일수록 같은 batch step 수에서 더 낮은 loss를 보이며, x축을 총 samples seen으로 바꾸어도 전반적 개선이 이어진다. 저자들은 heterogeneous dataset에서 한 batch가 더 많은 domain을 포함하면 gradient variance가 줄어든다고 해석한다.
+
+![model parameter scale와 simulation/human data 추가 효과](/hpt/figures-7-8-model-domain-scaling.png)
+
+*Figures 7–8. 1B까지의 개선은 large-data/large-compute 조건에서 나타난다. simulation·human 추가에 따른 평균 validation loss 차이는 작다.*
+
+### Model size
+
+16K-trajectory 조건은 약 50M parameter 부근에서 plateau하지만, 약 170K trajectory와 더 큰 compute를 쓴 조건에서는 1.1B까지 loss가 개선된다. 이 그림은 “parameter만 늘리면 좋아진다”기보다 **model, data, compute를 함께 키워야 한다**는 결과다.
+
+### Simulation과 human data
+
+Figure 8의 평균 validation loss는 `×0.001` scale로 다음과 같다.
+
+| 추가 data | validation loss |
+| --- | ---: |
+| baseline | 6.73 |
+| simulation | 6.70 |
+| human | 6.72 |
+| simulation + human | 6.67 |
+
+방향은 긍정적이지만 차이는 작고, closed-loop transfer improvement를 직접 분해한 결과가 아니다.
+
+## Transfer: 새 embodiment에서는 무엇을 학습하는가
+
+새 robot/domain `u`에는 기존 trunk를 재사용하고 새로운 `S_u`, `H_u`를 초기화한다.
+
+```text
+new observations -> new stem S_u -> pretrained trunk T -> new head H_u -> new actions
+```
+
+논문의 기본 transfer protocol은 trunk를 freeze하고 stem/head만 학습하는 것이다. 비교 실험에는 trunk fine-tuning variant도 있다. “HPT transfer”가 항상 full fine-tuning이라고도, 항상 frozen이라고도 일반화하면 안 된다.
+
+이 설계의 장점은 새 action dimension이 기존과 달라도 head만 바꾸면 된다는 것이다. 반대로 새 domain stem/head를 학습할 demonstrations는 여전히 필요하다. zero-shot embodiment transfer가 아니다.
+
+## Simulation 결과
+
+![simulation task와 pretrained/frozen/fine-tuned HPT 결과](/hpt/figures-9-10-simulation-results.png)
+
+*Figures 9–10. MetaWorld, Robomimic, Fleet-Tools에서는 pretraining과 model scale의 이득이 보이지만, Simpler에서 HPT가 RT-X baselines를 일관되게 이기지는 않는다.*
+
+각 task는 10–100 demonstrations, 20K iterations, batch 512로 학습하고 50 episodes를 평가한다. 5개의 독립 training run 평균을 사용한다.
+
+### In-domain style benchmarks
+
+No Trunk, From Scratch, Pretrained Frozen, Pretrained Finetuned, 더 큰 pretrained HPT를 비교하면 대체로 다음 경향이다.
+
+- shared trunk를 scratch로 학습하는 것보다 pretrained trunk가 낫다.
+- task에 따라 frozen trunk도 scratch보다 높다.
+- HPT-XL처럼 trunk를 키우면 Hammer와 MetaWorld에서 추가 이득이 크다.
+- Robomimic Square처럼 전체 성공률이 낮고 scale 이득이 작은 task도 있다.
+
+### Simpler의 중요한 반례
+
+| task | RT-1-X | RT-2-X | Octo | HPT-XL |
+| --- | ---: | ---: | ---: | ---: |
+| Close Drawer | **89** | 34 | 44 | 56 |
+| Pick Coke Can | 56 | **79** | 17 | 60 |
+| Move Near | 32 | **78** | 4 | 24 |
+
+HPT-XL은 Octo보다 높지만 RT-1-X/RT-2-X 중 최고값에는 세 task 모두 못 미친다. HPT가 heterogeneous pretraining의 유효성을 보여주지만 당시 범용 policy를 전면적으로 지배한 결과는 아니다. language conditioning과 large VLM prior가 없는 구조적 차이도 비교에 영향을 준다.
+
+## Real-world experiments
+
+![두 Franka setup의 네 contact-rich task와 실제 성공률](/hpt/figures-11-12-table-3-real-world.png)
+
+*Figures 11–12와 Table 3. Sweep Leftover, Fill Water, Scoop Food, Switch Insertion을 서로 sensor/action space가 다른 두 Franka setup에서 평가한다.*
+
+| 항목 | 설정 |
+| --- | --- |
+| robot | 두 Franka Panda setup; sensor 위치와 action space가 달라 논문 정의상 서로 다른 embodiment |
+| tasks | Sweep Leftover, Fill Water, Scoop Food, Switch Insertion |
+| demonstrations | task당 약 100 |
+| control | 10 Hz, episode당 50–150 steps |
+| transfer | observation history 2, batch 256, 20K iterations, single RTX 2080 Ti 약 4시간 |
+| evaluation | task당 15 trials, human safety supervision |
+
+### Success는 일부 task에서 partial-credit score다
+
+- Sweep: 모든 pile을 plate에 밀면 1, 일부면 0.5
+- Scoop: 떠서 모두 bowl에 넣으면 1, 일부만 뜨면 0.5
+- Fill: bowl에 물이 일부 들어가면 1
+- Switch: PCB의 세 pin에 정확히 삽입하면 1
+
+따라서 graph의 “success rate”가 모든 task에서 binary episode success의 비율은 아니다.
+
+Sweep Leftover의 Table 3은 가장 정확히 읽을 수 있는 비교다.
+
+| method | score (%) |
+| --- | ---: |
+| From Scratch, no proprioception | 26.7 ± 3.3 |
+| From Scratch | 43.3 ± 3.8 |
+| R3M | 50.0 ± 3.0 |
+| Voltron | 46.7 ± 3.8 |
+| VC-1 | 53.3 ± 2.6 |
+| HPT, no proprioception, finetuned | 63.3 ± 2.6 |
+| HPT-Base | 70.0 ± 3.0 |
+| HPT-XLarge | **76.7 ± 3.3** |
+
+이 결과는 ImageNet/ego-video vision feature만 이전하는 것보다 proprioception까지 포함해 policy-level trunk를 사전학습하는 것이 유리하다는 근거다. 또한 no-proprio HPT가 scratch보다 좋은 점은 visual representation transfer도 상당 부분 기여함을 보여준다.
+
+## Appendix ablations
+
+### Architecture input
+
+![previous action, multiview, language 및 head 구조 ablation](/hpt/figure-15-architecture-ablation.png)
+
+*Figure 15. baseline validation loss 6.73에서 previous action 6.22, multiview 6.46, language 6.56으로 개선된다.*
+
+previous action의 이득이 가장 크다. 이는 heterogeneous policy pretraining에서도 현재 state/image만으로는 동작 phase와 control history가 충분히 식별되지 않을 수 있음을 시사한다.
+
+### Stem modality와 vision encoder
+
+![state/vision 제거와 vision backbone 비교, real-world failure cases](/hpt/figures-18-19-stem-failures.png)
+
+*Figures 18–19. state와 vision 모두 validation loss에 중요하며, 실패는 주로 spatial precision과 action timing에서 나타난다.*
+
+| ablation | validation loss |
+| --- | ---: |
+| full baseline | 6.73 |
+| without proprioception | 8.61 |
+| without vision | 8.21 |
+
+| frozen vision encoder | validation loss |
+| --- | ---: |
+| ResNet-18 | 6.73 |
+| DINO | 6.84 |
+| CLIP | 6.80 |
+| ViT | **6.68** |
+
+backbone 간 차이는 작다. 이 실험만으로 특정 visual foundation model이 HPT에서 본질적으로 우월하다고 말하기 어렵다.
+
+### LeRobot transfer
+
+![PushT, ALOHA transfer와 demonstration 수에 따른 HPT transfer](/hpt/figures-16-17-transfer-lerobot.png)
+
+*Figures 16–17. pretrained HPT-XL은 PushT와 ALOHA transfer에서 scratch trunk보다 높고, demonstration이 적을수록 상대 이득이 커진다.*
+
+| benchmark | task baseline | HPT-XL scratch | pretrained HPT-XL |
+| --- | ---: | ---: | ---: |
+| PushT | Diffusion Policy 78 | 76 | **84** |
+| ALOHA Transfer | ACT 62 | 62 | **68** |
+
+HPT-Base의 sample-efficiency 결과는 `100%: 60→62`, `70%: 34→38`, `50%: 16→28`, `20%: 6→14`다. absolute score는 적은 data에서 낮지만 pretraining gap은 커진다.
+
+![head별 scaling과 transfer training curve](/hpt/figure-14-table-5-heads-comparison.png)
+
+*Figure 14와 Table 5. pooled MLP, diffusion, Transformer head를 바꿔 끼울 수 있으며, 비교표의 HPT model size는 trunk만 센 값이다.*
+
+## 공개 코드로 확인한 구현
+
+공식 구현은 논문의 stem–trunk–head 분리를 그대로 드러낸다.
+
+```text
+Policy
+  stems: ModuleDict[domain + modality]
+  trunk: ModuleDict["trunk"]
+  heads: ModuleDict[domain]
+  normalizers: domain별 statistics
+```
+
+### Stem
+
+`PolicyStem.compute_latent()`는 modality feature를 reshape한 뒤 learnable query 16개와 cross-attention해 `[B, 16, D]`를 만든다. state는 normalize 후 singleton item dimension을 붙이고, temporal history에는 sinusoidal position을 더한다.
+
+### Action chunk
+
+dataset loader는 observation horizon까지의 history와, 마지막 observation 시점에서 시작하는 future action slice를 반환한다. inference policy는 observation history queue를 유지하고 action chunk를 한 번 생성한 뒤 필요한 step을 순서대로 실행한다.
+
+### Transfer entry point
+
+`run.py`는 checkpoint의 trunk를 불러온 뒤 새 domain stem/head를 생성한다. `freeze_trunk: true`이면 trunk 전체의 gradient를 끈다. `freeze_trunk(num_layers=0)` 구현은 Python slice의 `-0 == 0` 성질을 이용해 전체 child를 freeze하므로 동작하지만 읽기에는 다소 비직관적이다.
+
+### Flexible heads
+
+공개 repository에는 MLP, Conv1D, Transformer decoder, GMM, diffusion head가 있다. diffusion config는 100 train diffusion steps, epsilon prediction과 UNet을 기본으로 한다. 논문의 핵심 pretrained artifact는 trunk이며 downstream head는 task에 맞게 교체 가능하다.
+
+### LeRobot port
+
+LeRobot port의 default config는 HPT-XLarge trunk, 16 state queries, 16 image queries, observation horizon 2, action chunk 8, diffusion head다. 별도 ALOHA config는 token pooling을 끄고 Transformer/ACT-style head와 action chunk 100을 사용한다. 즉 LeRobot 예제의 결과가 논문 기본 MLP-head recipe와 완전히 동일한 것은 아니다.
+
+## 논문과 코드, 본문과 부록의 불일치
+
+재현 시 특히 주의할 항목이다.
+
+| 항목 | 논문/본문 | 다른 근거 |
+| --- | --- | --- |
+| modality embedding | position과 modality embedding을 token에 더한다고 서술 | 확인한 공식 HPT와 LeRobot `preprocess_tokens()`는 position만 더함 |
+| Huber parameter | Appendix `δ=0.1` | 공개 code `smooth_l1_loss(beta=0.05)` |
+| real transfer LR | main text `5e-6` | Appendix `2e-5`, 공개 기본 transfer config `1e-5` |
+| inference speed | main: RTX 3070에서 Base 47 Hz, XL 19 Hz | Appendix: Base 39 Hz, XL 33 Hz |
+| EPIC/PoCo 규모 | main: human data 총 300 trajectories | Appendix: EPIC clips만 2,000이라고 설명 |
+| FrodoBot 규모 | 본문: 150 trajectories | Table 4: 60 trajectories, 12,891 samples |
+| real trial 집계 | 4 tasks × task당 15 trials로 읽힘 | Figure 12 caption은 approach당 45 trials로 표기 |
+
+이는 아이디어 자체를 무효화하지 않지만 exact reproduction에는 결정적이다. released config와 checkpoint가 어떤 recipe로 생성되었는지 확인해야 한다.
+
+## 실패 사례와 한계
+
+논문이 보여주는 실패는 주로 다음과 같다.
+
+- target보다 지나치게 밀거나 덜 미는 overshoot/undershoot
+- cup이나 bowl의 위치를 충분히 맞추기 전에 붓기 시작함
+- food를 bowl 앞에 쏟는 spatial precision 실패
+- 대부분의 real task에서 90% 미만의 성공
+
+구조적 한계도 분명하다.
+
+1. **zero-shot은 아니다.** 새 embodiment마다 새 stem/head와 demonstration이 필요하다.
+2. **고정 domain identity가 필요하다.** learned routing이나 unseen hardware 자동 식별이 없다.
+3. **long-horizon reasoning을 직접 다루지 않는다.** 평가 episode는 비교적 짧고 language plan이 기본 구성에 없다.
+4. **validation loss가 핵심 scaling metric이다.** heterogeneous action dimension의 normalized loss 평균이 실제 closed-loop 능력을 완전히 대변하지 않는다.
+5. **data/compute/model 축이 일부 실험에서 함께 변한다.** 엄밀한 power-law scaling coefficient를 제시한 연구는 아니다.
+6. **stem bottleneck이 정보를 잃을 수 있다.** 모든 modality를 16 slots로 압축하며 최적 token 수를 task별로 깊게 검증하지 않는다.
+7. **human/simulation 효과는 작게 측정된다.** real transfer에 대한 source별 causal contribution이 분리되지 않았다.
+
+## Figure/Table inventory
+
+PDF 전체를 기준으로 확인한 항목이다.
+
+| 항목 | 내용 | 이 노트의 위치 |
+| --- | --- | --- |
+| Figure 1 | heterogeneous robot data와 HPT 개념 | 문제 설정에 반영 |
+| Figure 2 | stem–trunk–head architecture | Architecture |
+| Figure 3 | state/vision cross-attention stem | Stem |
+| Figure 4 | pretraining data 예시 | Model scale/data |
+| Table 1 | five trunk sizes | Model scale |
+| Table 2 | default/scaled data configuration | Pretraining data |
+| Figures 5–6 | data, dataset, batch, epoch scaling | Scaling 결과 |
+| Figures 7–8 | model scale, simulation/human addition | Scaling 결과 |
+| Figures 9–10 | simulation tasks와 결과 | Simulation 결과 |
+| Figures 11–12 | real setup, tasks, aggregate results | Real-world experiments |
+| Table 3 | Sweep Leftover representation comparison | Real-world experiments |
+| Figure 13 | 52-dataset mixture | Pretraining data |
+| Table 4 | detailed dataset statistics | Pretraining data |
+| Figure 14 | pooled MLP, diffusion, Transformer head interfaces | Flexible heads |
+| Table 5 | generalist policy architecture comparison | Model scale 주의점 |
+| Figure 15 | previous action, multiview, language, head ablation | Appendix ablations |
+| Figure 16 | simulation transfer loss curves | LeRobot transfer |
+| Figure 17 | PushT, ALOHA, sample efficiency | LeRobot transfer |
+| Figure 18 | modality와 vision encoder ablation | Stem modality |
+| Figure 19 | real-world failures | 실패 사례 |
+
+## 이 논문의 의미
+
+HPT의 가장 오래 남는 아이디어는 “모든 robot을 같은 action vocabulary로 번역하자”가 아니라, **공유할 계산과 공유하지 말아야 할 interface를 분리하자**는 것이다.
+
+- state/action의 물리적 의미와 dimension은 local stem/head에 남긴다.
+- perception–state–motion 사이의 중간 computation만 trunk에 모은다.
+- fixed latent token contract 덕분에 trunk scale을 dataset schema와 분리한다.
+
+이는 이후의 cross-embodiment policy를 볼 때 좋은 기준을 준다. 어떤 모델이 “heterogeneous data를 통합했다”고 할 때, raw schema를 표준화했는지, token interface만 통일했는지, action expert를 분기했는지, learned routing을 쓰는지를 구분해서 봐야 한다.
+
+## Related reading
+
+- [Open X-Embodiment / RT-X](../open-x-embodiment-rt-x/): 대규모 cross-embodiment dataset과 action standardization의 대표 흐름
+- [VLA Survey Map](../vla-survey-map/): HPT를 generalist VLA 및 robot data scaling 계열과 비교하기 위한 지도
+- [PI Model Family](../pi/): VLM backbone과 별도 action expert를 결합하는 이후의 범용 policy 흐름
+- [GR00T Model Family](../groot/): heterogeneous embodiment data와 action interface를 다루는 다른 foundation-model 계열
+
+<SectionFeedback page="HPT" section="전체 Survey" />

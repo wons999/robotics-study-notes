@@ -1,0 +1,207 @@
+---
+research: {"kind": "paper", "topics": ["vla", "sensing", "data", "humanoid"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2203.11931"}
+title: MetaMorph
+description: module별 proprioception과 명시적 morphology parameter를 결합해 다양한 UNIMAL locomotion controller를 학습하는 MetaMorph Survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/metamorph-universal-controllers" />
+
+# MetaMorph
+
+<SectionFeedback page="MetaMorph" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | MetaMorph: Learning Universal Controllers with Transformers |
+| 저자 | Agrim Gupta, Linxi Fan, Surya Ganguli, Li Fei-Fei |
+| 공개 | ICLR 2022; arXiv:2203.11931v1, 2022-03-22 |
+| 링크 | [arXiv](https://arxiv.org/abs/2203.11931) · [PDF](https://arxiv.org/pdf/2203.11931) · [Project](https://metamorph-iclr.github.io/site/) · [Code](https://github.com/agrimgupta92/metamorph) |
+| 태그 | universal controller, morphology conditioning, proprioception, locomotion, Transformer, UNIMAL |
+
+## 한 줄 요약
+
+MetaMorph는 kinematic tree를 DFS로 펼쳐 **각 module의 instantaneous proprioception과 URDF/MuJoCo에서 얻은 명시적 morphology parameter를 한 token에 결합**하고, Transformer가 모든 module을 통합해 joint별 torque mean을 출력한다. 100개 simulated UNIMAL의 joint PPO pretraining은 새 kinematics/dynamics와 locomotion task fine-tuning을 빠르게 하지만, real robot이나 manipulation policy를 검증한 결과는 아니다.
+
+![MetaMorph의 module token과 per-joint decoder](/metamorph/figure-2-architecture.png)
+
+*Figure 2. local module token에는 state와 morphology가 함께 들어가고, terrain heightmap 같은 global exteroception은 별도 MLP로 encode한 뒤 decoder에서 합친다.*
+
+## 문제 설정
+
+UNIMAL design space는 sphere torso와 cylindrical limb를 motor-actuated hinge joint로 연결한 kinematic tree다. limb length/radius/density, joint axis/range, gear ratio 조합이 달라 약 10^18개 morphology가 가능하므로 robot마다 policy를 새로 학습하는 것은 비현실적이다.
+
+MetaMorph는 K개 robot의 평균 discounted return을 하나의 PPO policy로 최대화한다. 여기서 morphology는 policy가 추론해야 할 숨은 변수가 아니라 **명시적으로 주어지는 task identifier 성격의 observation**이다.
+
+```text
+observation = local morphology + local proprioception + global terrain sensor
+```
+
+따라서 이름은 universal controller지만 “어떤 robot인지 모르는 policy”가 아니다. robot description을 조건으로 받는 morphology-aware policy다.
+
+## Observation과 proprioception
+
+Appendix A.1이 module별 입력을 가장 구체적으로 설명한다.
+
+| 구분 | module token의 구성 |
+| --- | --- |
+| module morphology | shape: radius/height, density, parent 기준 local position·orientation |
+| joint morphology | type, range, axis, actuator type, gear ratio |
+| module proprioception | 3D Cartesian position, 4D quaternion, 3D linear velocity, 3D angular velocity |
+| joint proprioception | generalized joint position과 velocity |
+| global exteroception | root 기준 1m 뒤–4m 앞, 좌우 4m의 non-uniform terrain heightmap |
+
+Joint parameter와 joint state는 해당 joint의 child module token에 붙인다. parent–child 사이 hinge가 최대 두 개라 부족한 joint slot은 zero-pad한다. 즉 token sequence length는 limb 수이고, 한 token 안에서 다음 두 정보가 만난다.
+
+```text
+현재 어떻게 움직이는가: position, orientation, velocity, joint q/qdot
+무엇으로 만들어졌는가: geometry, density, joint limit/axis, motor gear
+```
+
+이 결합이 중요하다. 같은 joint angle과 velocity라도 limb length, mass, gear가 다르면 필요한 torque가 다르므로 proprioception만으로는 즉시 올바른 action을 정하기 어렵다. 반대로 morphology만으로는 현재 phase와 contact state를 모른다.
+
+### 공개 code의 실제 schema
+
+공식 config의 `PROPRIOCEPTIVE_OBS_TYPES`는 `body_xpos`, linear/angular velocity, quaternion, qpos/qvel뿐 아니라 `body_mass`, `body_shape`, `joint_range`, `joint_axis`, `gear`도 포함한다. code는 이 전체를 `proprioceptive` key로 합친다. 따라서 code key 이름만 보고 “모두 proprioception”이라고 해석하면 안 된다. 논문 개념상 hardware description은 morphology다.
+
+공개 default config에는 paper A.1에 언급된 density가 `body_mass`로, local geometry가 body/geom field로 구현된다. 반면 armature/damping은 observation 후보를 생성하지만 default input list에는 없고 zero-shot dynamics test에서 숨은 변화로 남는다.
+
+## Method
+
+### 1. Kinematic tree를 sequence로 바꾼다
+
+Root torso부터 depth-first traversal하여 N개 module token을 만든다. batch에서 최대 limb 수까지 zero-pad하고 padding mask를 attention에 전달한다. 각 local vector를 shared linear layer로 128D에 투영한 뒤 learned 1D position embedding을 더한다.
+
+DFS는 graph connectivity를 직접 attention mask로 강제하지 않는다. 그러나 ordering을 만들 때 kinematic tree를 이미 사용한다. Appendix B.3에서 sibling visitation order를 반대로 바꾸면 zero-shot 성능이 약 75% 떨어졌다. 같은 depth의 visitation order를 randomize하는 augmentation을 넣으면 robustness를 회복했다. 즉 “graph-free”라기보다 **graph를 sequence ordering으로 약하게 encode**한다.
+
+### 2. Morphology-aware Transformer
+
+Pre-LN residual Transformer encoder가 module token끼리 global self-attention한다. 최종 module feature마다 global terrain MLP feature를 concatenate하고 shared decoder MLP로 해당 child joint의 action mean을 출력한다. joint가 두 개면 module당 두 output slot을 사용한다.
+
+Policy는 fixed diagonal covariance의 Gaussian이고, critic도 Transformer로 module별 value를 만든 뒤 평균한다. policy와 critic을 포함해 baseline별 약 3.3M parameters로 맞춘다.
+
+### 3. Dynamic replay-buffer balancing
+
+불안정 morphology는 초기에 빨리 넘어져 짧은 episode만 만들고, 안정적인 morphology가 더 많은 PPO data를 차지하는 “rich gets richer” 문제가 생긴다. MetaMorph는 EMA episode length가 짧은 robot을 더 자주 sample한다. paper setting은 EMA alpha 0.1, prioritization beta 1.0이다.
+
+Figure 5에서 balancing을 빼면 세 environment에서 robot의 10–15%가 per-robot MLP 성능의 75%에도 도달하지 못한다. 이는 architecture뿐 아니라 **data allocation**이 universal policy 학습의 핵심임을 뜻한다.
+
+## Training Recipe
+
+| 항목 | paper 설정 |
+| --- | --- |
+| simulator / algorithm | MuJoCo / PPO |
+| training morphologies | UNIMAL 100개; 별도 test 100개 |
+| episode | 1,000 timesteps, fall early termination |
+| total timesteps | 1e8 |
+| workers / envs | 16 / 32 |
+| batch / policy epochs | 5,120 / 8 |
+| optimizer | Adam, initial LR 3e-4, linear warmup + cosine decay |
+| Transformer | 5 layers, 1 head, width 128, FFN 1,024, dropout 0.1 |
+| PPO | gamma 0.99, GAE 0.95, clip 0.2, entropy 0.01 |
+
+세 environment 모두 forward progress와 작은 torque penalty를 쓰는 morphology-independent reward다. Flat/Obstacle은 torso height가 initial의 50%, Variable Terrain은 30% 아래면 terminate한다. baseline/ablation은 3 seeds, zero-shot Figure 6은 single pretrained seed에서 10 trials, transfer는 3 seeds다.
+
+## Experiments and Results
+
+### Joint pretraining
+
+![100 morphology joint pretraining과 balancing 결과](/metamorph/figures-4-5-pretraining.png)
+
+*Figures 4–5. MetaMorph는 Flat/Obstacle에서 per-morphology MLP 평균에 도달하고 Variable Terrain에서는 약간 낮다. morphology를 제거한 MetaMorph-NM은 크게 실패한다.*
+
+Training task는 Flat Terrain, 매 episode hills/steps/rubble가 새로 생기는 Variable Terrain, cuboid Obstacles다. MetaMorph는 GNN/NerveNet variant보다 평균 reward가 약 2–3배 높고, robot별 MLP 100개를 각각 학습하는 것보다 저자 계산상 약 5배 sample-efficient하다.
+
+주요 ablation은 다음과 같다.
+
+- `MetaMorph-NM`: morphology parameter를 빼고 proprioception+heightmap만 사용하면 다양한 robot의 joint control을 학습하지 못한다.
+- `MetaMorph-NPE`: learned position embedding을 빼면 세 task 모두 하락한다.
+- unique limb ID를 넣은 hand-designed position encoding도 learned position embedding보다 낮다.
+- binary morphology ID만 추가한 NMT도 explicit continuous morphology parameter를 대체하지 못한다.
+
+이 결과는 **proprioception과 morphology가 대체 관계가 아니라 보완 관계**임을 보여 준다. 다만 morphology-only ablation은 없어 proprioception의 독립 기여량은 제시되지 않는다.
+
+### Zero-shot dynamics와 kinematics
+
+![dynamics와 kinematics variation zero-shot 결과](/metamorph/figure-6-zero-shot.png)
+
+*Figure 6. 각 training robot에서 property별 네 variant, 총 400 robots를 만들고 10 trials 평균을 낸다.*
+
+Dynamics는 armature, density, damping, gear를 바꾸고, kinematics는 limb radius/length와 joint range를 바꾼다. MetaMorph는 모든 variation과 environment에서 NPE, NM, GNN보다 높다. armature/damping은 train 중 randomize하지 않았는데도 일반화하며, joint-range 변화가 가장 큰 성능 저하를 만든다.
+
+주의할 점은 이것이 완전히 새로운 topology zero-shot이 아니라 **training morphology 각각의 parameter variant**라는 것이다. 새 topology 100개는 다음 fine-tuning 실험에서 다룬다.
+
+### 새 morphology와 새 task fine-tuning
+
+![새 morphology 및 새 locomotion task transfer](/metamorph/figures-7-8-transfer.png)
+
+*Figures 7–8. 같은 task의 새 morphology와 Escape/원통 obstacle이라는 새 task 모두 scratch보다 목표 reward 도달이 2–3배 빠르다.*
+
+새 topology 100개에서 pretraining checkpoint는 처음부터 non-zero reward를 내고 같은 task fine-tuning이 scratch 대비 2–3배 빠르다. Variable Terrain→Escape, cuboid Obstacles→cylinder Obstacles에서도 같은 속도 이득을 보고한다.
+
+하지만 새 task도 모두 simulated forward locomotion 계열이다. object manipulation, grasping, contact-rich skill, real hardware transfer의 증거는 없다. 논문 Appendix limitation도 task suite가 locomotion 중심이라고 명시한다.
+
+### Emergent motor synergy
+
+두 agent의 attention matrix stable rank가 낮고 두 상태 사이를 oscillate하며, 여러 limb column이 함께 활성화되는 모습을 motor synergy로 해석한다. 이는 흥미로운 mechanistic observation이지만 두 사례의 attention visualization이고 intervention/behavioral ablation은 아니다.
+
+## Code-Level Check
+
+공식 repository commit `d498264`를 직접 확인했다. MuJoCo environment, UNIMAL XML, PPO, Transformer, Docker recipe는 공개되어 있다.
+
+다만 paper와 공개 default config가 일치하지 않는다.
+
+| 항목 | paper Table 1 | public config |
+| --- | ---: | ---: |
+| attention heads | 1 | 2 |
+| Transformer dropout | 0.1 | 0.0 |
+
+layers 5, width 128, FFN 1,024는 일치한다. config YAML이 위 두 값을 override하지 않으므로 재현자는 paper와 code 중 어느 recipe를 쓸지 결정해야 한다. 또한 repository는 2022-03-22의 5 commits 상태로, pretrained checkpoint나 exact result logs는 제공하지 않는다.
+
+## 한계와 주의
+
+1. **simulation-only locomotion이다.** manipulation transfer로 일반화해 말할 수 없다.
+2. **명시적 robot model이 필요하다.** geometry, mass, joint range/axis, gear를 policy input으로 요구한다.
+3. **topology zero-shot은 약하다.** Figure 6은 parameter variant이고 완전한 새 topology는 fine-tuning한다.
+4. **DFS ordering shortcut이 있다.** 반대 sibling order에서 약 75% 하락한다.
+5. **train robot pool이 미리 필요하다.** morphology evolution 후 controller pretraining이라는 2-stage pipeline이다.
+6. **paper-code hyperparameter mismatch가 있다.** head와 dropout이 다르다.
+7. **평균이 약한 robot을 숨길 수 있다.** balancing을 빼면 10–15% morphology가 실패한다.
+8. **proprio-only causal effect는 없다.** morphology 제거 ablation은 있지만 state 제거 ablation은 없다.
+
+## 다른 proprioception 논문과의 연결
+
+| 연구 | 차이 |
+| --- | --- |
+| [AnyMorph](../anymorph-universal-robot-control/) | AnyMorph는 explicit continuous robot parameter 대신 sensor/actuator identity embedding을 RL로 학습한다. MetaMorph는 정확한 hardware description을 직접 준다. |
+| [HPT](../hpt-heterogeneous-pretrained-transformers/) | HPT는 embodiment별 stem/head와 shared trunk로 heterogeneous robot dataset transfer를 다룬다. MetaMorph는 same design grammar의 simulation locomotion이다. |
+| [CrossFormer](../crossformer-cross-embodiment-policy/) | CrossFormer는 disjoint image/proprio/action family를 mask+head로 처리한다. MetaMorph는 module-to-joint correspondence를 유지한다. |
+| [RPT](../rpt-sensorimotor-pretraining/) | RPT는 state/action을 mask-reconstruct한다. MetaMorph는 PPO reward로 end-to-end하며 auxiliary reconstruction은 없다. |
+
+## Figure / Table Inventory
+
+| 원문 | 내용 | Survey 반영 |
+| --- | --- | --- |
+| Figure 1 | universal-controller overview | 문제 설정 |
+| Figure 2 | module token architecture | Method 핵심 figure |
+| Figure 3 | three train environments | Experiments 설명 |
+| Figures 4–5 | joint training, balancing | Main results |
+| Figure 6 | zero-shot parameter variants | Zero-shot |
+| Figures 7–8 | new morphology/task fine-tuning | Transfer |
+| Figure 9 | attention stable rank/synergy | mechanistic note |
+| Figure 10 | extra baselines/ablations | morphology·position 해석 |
+| Figure 11 | position embedding similarity | Appendix note |
+| Tables 1–2 | hyperparameters, variation ranges | Recipe·zero-shot |
+
+## 검증 메모
+
+- ICLR/arXiv PDF 18쪽의 본문과 Appendix A–C를 직접 확인했다.
+- Figures 1–11, Tables 1–2, Algorithm 1을 전수 inventory하고 핵심 figure를 local asset으로 추출해 검수했다.
+- 공식 project와 GitHub code의 observation schema, padding, model config를 paper와 대조했다.
+
+<SectionFeedback page="MetaMorph" section="전체 Survey" />

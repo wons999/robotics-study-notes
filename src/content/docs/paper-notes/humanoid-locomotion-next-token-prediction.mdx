@@ -1,0 +1,249 @@
+---
+research: {"kind": "paper", "topics": ["humanoid", "action"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2402.19469"}
+title: Humanoid Locomotion as Next Token Prediction
+description: Humanoid sensorimotor trajectory를 continuous next-token prediction으로 학습하고 action-free human trajectory까지 섞는 방법을 분석한다.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/humanoid-locomotion-next-token-prediction" />
+
+# Humanoid Locomotion as Next Token Prediction
+
+<SectionFeedback page="Humanoid Locomotion as Next Token Prediction" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Humanoid Locomotion as Next Token Prediction |
+| 저자/그룹 | Ilija Radosavovic, Bike Zhang, Baifeng Shi, Jathushan Rajasegaran, Sarthak Kamat, Trevor Darrell, Koushil Sreenath, Jitendra Malik · UC Berkeley |
+| 공개 | arXiv:2402.19469, NeurIPS 2024 Spotlight |
+| 링크 | [paper](https://arxiv.org/abs/2402.19469) · [project/videos](https://humanoid-next-token-prediction.github.io/) · [NeurIPS](https://proceedings.neurips.cc/paper_files/paper/2024/hash/90afd20dc776bc8849c31d61a0763a0b-Abstract-Conference.html) |
+| code | 공식 공개 구현 미확인 |
+| 태그 | humanoid locomotion, autoregressive policy, sensorimotor modeling, missing modality, proprioception |
+
+## 한 줄 요약
+
+state history에서 action만 회귀하는 BC 대신 **state와 action의 다음 값을 함께 예측**하는 작은 causal Transformer를 학습해, action이 없는 controller·MoCap·video trajectory도 state-prediction supervision으로 이용한다.
+
+여기서 “token”은 vocabulary ID가 아니다. state/action continuous vector를 linear projection한 latent이며 loss도 cross-entropy가 아니라 Gaussian 가정의 MSE regression이다.
+
+## 문제의식
+
+Humanoid control용 action label은 비싸지만 다음 state를 관찰할 수 있는 trajectory는 더 많다. 논문은 sensorimotor trajectory를 문장처럼 보고 다음 세 가지 데이터 차이를 하나의 objective로 흡수한다.
+
+- robot policy trajectory: state와 action 모두 있음
+- model-based controller: morphology와 state는 맞지만 action interface가 다름
+- human MoCap/video: action이 없고 morphology도 다름
+
+핵심은 action-free data에 존재하지 않는 action을 모방하지 않고, retargeted state dynamics만 예측하도록 loss를 mask하는 것이다.
+
+## 시스템 설정
+
+| 항목 | 내용 |
+| --- | --- |
+| robot | Agility Robotics Digit, 1.6 m, 45 kg, 30 DoF 중 20 actuated |
+| observation | joint encoder·IMU를 포함한 proprioceptive observation과 velocity command; 정확한 vector schema/dimension은 논문 미기재 |
+| action | learned RL source와 일치하는 joint-position command space; model-based torque는 label로 사용하지 않음 |
+| context | 기본 과거 16 timestep, scaling에서 32/48 |
+| deployment | 실제 관측을 매 step 다시 넣는 closed-loop autoregressive control |
+| simulation evaluation | MuJoCo, 10초 trajectory, command tracking |
+
+## Dataset
+
+![Figure 4: RL, model-based, MoCap, Internet-video trajectory source](/humanoid-ntp/figure-4-dataset.png)
+
+| source | 규모/command | state | usable action | 처리 |
+| --- | --- | --- | --- | --- |
+| neural RL policy | 10k × 10 s, 약 27.8 h | exact simulator observation | 있음 | flat ground, no domain randomization |
+| Agility model-based controller | 2 sets × 10k × 10 s | same robot state | 없음 | 한 set은 default, 다른 set은 leg length/clearance/floor bounce randomization |
+| KIT/AMASS MoCap | 약 4k 중 standing/walking/running 약 1k | human keypoints | 없음 | trajectory optimization으로 Digit에 retarget |
+| YouTube human video | 정확한 clip 수 미기재 | PHALP가 복원한 noisy 3D human pose | 없음 | 같은 IK retarget 후 low-cost trajectory filtering |
+
+RL source command 범위는 forward `[0,1]` m/s, lateral `[-0.5,0.5]` m/s, yaw `[-0.5,0.5]` rad/s다. model-based source는 세 command 모두 더 넓은 `[-1,1]` 범위를 쓴다.
+
+MoCap/video retargeting은 generalized coordinate `q`, velocity `q̇`를 최적화한다. trapezoidal Euler integration, joint position/velocity admissible set, keypoint tracking cost, velocity/smoothness regularization을 사용한다. 이것은 human motion을 dynamic-feasible robot action으로 바꾸는 것이 아니라 approximate robot-state trajectory로 바꾸는 과정이다.
+
+## Method
+
+![Figure 2: heterogeneous trajectory 수집, next-token training, real deployment](/humanoid-ntp/figure-2-overview.png)
+
+### Continuous autoregressive objective
+
+trajectory `T=(o_1,a_1,...,o_T,a_T)`를 token sequence로 보고 `p(t)=∏_k p(t_k|t_<k)`를 모델링한다. 각 conditional을 constant-variance Gaussian으로 두므로 학습 loss는 predicted continuous token과 target token의 MSE다.
+
+논문은 각 dimension의 binning이나 vector quantization도 가능하다고 언급하지만 실제 실험은 regression만 사용한다.
+
+### Complete data
+
+기본 구현에서는 timestep `i`의 observation/action을 concatenate한다.
+
+- `t_i = concat(o_i,a_i)`
+- `h_i^0 = W t_i`
+- causal Transformer가 history를 처리한다.
+- output projection이 `o_(i+1)`과 `a_(i+1)`을 함께 낸다.
+
+따라서 이 모델은 conditional policy `p(a|o)`만이 아니라 joint sensorimotor dynamics를 근사한다.
+
+### Missing action
+
+![Figure 3: complete trajectory와 missing-action trajectory의 통합 학습](/humanoid-ntp/figure-3-missing-modalities.png)
+
+action이 없는 trajectory에는 learned continuous mask vector `[M]∈R^n`을 action slot에 넣고, masked action에 대응하는 prediction loss는 계산하지 않는다. observation prediction loss는 유지된다. 같은 원리는 다른 missing modality에도 적용 가능하지만 논문 실험은 주로 missing action이다.
+
+### Modality-aligned prediction
+
+state와 action을 separate token으로 만드는 variant에서는 observation token에서 다음 observation을, action token에서 다음 action을 예측한다. non-aligned variant처럼 `a_i→o_(i+1)→a_(i+1)` 순서로 생성하면 inference에서 predicted state error가 action에 연쇄된다. aligned slot은 실제 observation을 다시 받는 closed-loop와 학습 조건을 더 잘 맞춘다.
+
+### Runtime loop
+
+1. 최근 observation/action pair history를 넣는다.
+2. 다음 observation/action을 예측한다.
+3. predicted action만 robot에 실행한다.
+4. predicted observation은 버린다.
+5. 실제 robot observation과 직전 predicted action을 새 history token으로 넣는다.
+
+즉 미래 state head는 runtime world-model rollout에 직접 쓰이지 않고 auxiliary learning signal과 validation metric 역할을 한다.
+
+## Model Architecture
+
+| 항목 | 기본 모델 |
+| --- | --- |
+| Transformer blocks | 4 |
+| hidden dimension | 192 |
+| attention heads | 4 |
+| context | 16 steps |
+| normalization | input BatchNorm, attention 전 LayerNorm |
+| MLP activation | ReLU |
+| temporal encoding | positional embedding |
+| input/output | modality별 linear projection, time-shared |
+
+논문 수식 (6)–(8)은 pre-norm residual 구조를 서술한다. self-attention은 causal mask를 사용한다. 정확한 observation/action dimension, positional encoding 종류, dropout, parameter count는 기본 모델 표로 따로 보고되지 않는다.
+
+## Training Recipe
+
+complete/incomplete data를 처음부터 joint training하거나 state prediction pretraining 후 action-labeled data로 fine-tuning할 수 있다. 대부분 실험은 단순한 joint training을 쓴다.
+
+그러나 optimizer, learning rate, batch size, sampling ratio, state/action loss의 dimension별 weighting, normalization 통계, control frequency, training step 수와 hardware는 논문에 보고되지 않는다. 공개 코드도 없어 완전 재현성은 제한적이다.
+
+## Experiments and Results
+
+### Real-world deployment
+
+San Francisco 여러 위치에서 한 주 동안 walkway, concrete, asphalt, tiled plaza, dirt road 등을 zero-shot으로 걸었다. Figure 1과 project page video가 qualitative evidence다. 정량 성공 횟수, 총 거리, 낙상률, intervention count는 보고하지 않는다.
+
+따라서 “urban surface에서 동작했다”는 주장은 지지되지만 강건성을 수치로 비교할 수는 없다.
+
+### RL teacher와 command tracking
+
+![Figures 5–6: RL teacher 대비 trajectory tracking과 action-free data 효과](/humanoid-ntp/figures-5-6-results.png)
+
+평가 command는 forward `[0.35,0.70]` m/s, yaw `[-0.4,0.4]` rad/s, lateral 0이며 10초간 ideal base trajectory와 실제 base position의 평균 L2 error를 잰다. RL teacher와의 정량 비교는 `N=245` command rollout이다.
+
+논문의 autoregressive student는 자신에게 label을 만든 RL policy보다 yaw range 전반에서 position tracking error가 낮다. action-free trajectory를 섞은 모델도 labeled-only보다 일관되게 낮은 error를 보인다. Figure 6은 curve 결과이고 aggregate mean±CI 표는 없다.
+
+### Prediction error와 control performance
+
+![Figures 7–9: prediction/control correlation, gait phase portrait, unseen backward command](/humanoid-ntp/figures-7-9-analysis.png)
+
+서로 다른 architecture, recipe, data size/type으로 학습한 14개 모델에서 validation prediction error와 position tracking error의 Pearson correlation은 `r=0.87`이다. 이는 model selection signal로 유용하지만 correlation이 auxiliary state prediction의 인과 효과를 증명하지는 않는다.
+
+left-knee phase portrait는 RL policy보다 더 매끈하고 주기적인 gait를 보인다. backward command는 action-labeled training 범위 밖이지만 `−0.5 m/s`까지 넘어지지 않고 수행한 qualitative 사례다. 몇 회 평가했는지는 미기재다.
+
+### Scaling
+
+![Figure 10: data, context, model-size scaling](/humanoid-ntp/figure-10-scaling.png)
+
+- action-labeled training trajectory `1k→3k→10k`에서 tracking error가 단조 감소한다.
+- context `16→32→48`에서 감소한다.
+- model `1M→2M→8M`에서 감소한다.
+
+모델 scaling은 dimension `(144,192,384)`, head `(3,4,12)`, block `(4,4,6)`를 동시에 바꾼다. 따라서 순수 parameter-count law가 아니라 세 architecture 변화가 결합된 결과다. context 개선을 “in-context adaptation”으로 해석하는 문장은 저자의 가설이다.
+
+### Ablations
+
+![Table 1: token layout, modality alignment, training schedule, state prediction ablation](/humanoid-ntp/table-1-ablations.png)
+
+| 비교 | tracking error | prediction error | 해석 |
+| --- | ---: | ---: | --- |
+| concat | 0.310 | 0.88 | 짧은 sequence, prediction error 우세 |
+| separate | 0.299 | 0.98 | tracking은 근소하게 우세 |
+| aligned | **0.299** | **0.98** | 같은 modality slot에서 next value 예측 |
+| non-aligned | 0.338 | 1.05 | predicted-state exposure mismatch |
+| joint training | 0.310 | 0.88 | 기본 |
+| staged | 0.311 | 미보고 | 사실상 동률 |
+| state+action prediction | **0.305** | 0.97 | auxiliary state target 포함 |
+| action-only | 0.335 | 미보고 | vanilla BC에 가까움 |
+
+state+action prediction의 개선은 `0.335→0.305`, 약 9% relative다. 단일 ablation cell이고 seed variance/CI가 없으므로 다른 task나 대형 model로 일반화하기 전에 재검증이 필요하다. 오히려 aligned/non-aligned 차이 `0.039`가 state-loss 유무 차이 `0.030`보다 크므로 **어느 slot에서 무엇을 예측하는가**가 중요하다.
+
+## Appendix Notes
+
+arXiv PDF는 12쪽이며 별도 appendix section이 없다. NeurIPS 공개본도 main paper에 dataset retargeting, metrics, scaling, Table 1 ablation을 포함한다. 다음 재현 정보는 공개 PDF에서 확인되지 않는다.
+
+- exact proprioception schema와 normalization
+- action dimension과 joint-position convention
+- dataset mixture sampling/weighting
+- YouTube clip 수와 filtering threshold
+- optimizer·scheduler·batch·frequency
+- real-world safety layer와 low-level controller
+
+## Code-Level Check
+
+공식 project page에는 paper와 video가 있지만 code 링크가 없다. 저자 project, Papers with Code, 공개 검색에서 공식 repository를 확인하지 못했다. 따라서 third-party summary나 유사 locomotion repository를 본 논문의 구현처럼 취급하지 않았다.
+
+## Proprioception 관점에서 읽을 점
+
+1. proprioception을 language-like discrete ID로 바꾼 것이 아니라 continuous state/action trajectory로 모델링한다.
+2. state는 condition일 뿐 아니라 **예측 target**이다.
+3. 긴 state history가 성능을 높였지만 locomotion의 주기 dynamics와 causal Transformer라는 조건이 있다.
+4. predicted state는 제어 시 버리고 실제 state로 교정한다.
+5. missing-action human data의 이득은 state-dynamics representation을 통해 간접적으로 action policy에 전달된다.
+
+## 한계와 주의
+
+1. single robot, flat-ground 중심 locomotion이며 manipulation evidence가 없다.
+2. real-world result는 qualitative deployment이고 formal success statistics가 없다.
+3. model-based/MoCap/video source별 독립 ablation이 없어 어느 source가 얼마나 기여했는지 모른다.
+4. 3D human pose retargeting error와 filtering bias가 남는다.
+5. state/action MSE의 scale balancing이 미보고다.
+6. prediction loss correlation은 causality가 아니다.
+7. 1–8M parameter의 작은 model 결과를 대형 VLA scaling으로 직접 확장할 수 없다.
+8. backward walking은 action-labeled set에는 없지만 model-based/human state trajectory에 유사 motion이 있었는지는 분리되지 않는다.
+
+## Figure/Table Inventory
+
+| 원문 | 내용 | 반영 |
+| --- | --- | --- |
+| Figure 1 | San Francisco deployment montage | real-world section |
+| Figure 2 | data→training→deployment overview | Method 이미지 |
+| Figure 3 | complete/missing modality training | Missing action 이미지 |
+| Figure 4 | four data sources | Dataset 이미지 |
+| Figure 5 | RL 대비 trajectory adherence | result 이미지 |
+| Figure 6 | RL comparison, unlabeled-data effect | result 이미지 |
+| Figure 7 | prediction/tracking correlation | analysis 이미지 |
+| Figure 8 | knee phase portrait | gait analysis |
+| Figure 9 | backward command | generalization |
+| Figure 10 | data/context/model scaling | scaling 이미지 |
+| Table 1 | four ablation groups | ablation 이미지/표 |
+
+## Citation Trail
+
+- **Real-World Humanoid Locomotion with RL**: complete action-labeled trajectory를 생성한 teacher이자 직접 baseline.
+- **RPT**: sensorimotor representation을 prediction objective로 학습하는 선행 연구.
+- **AMASS/KIT/SMPL/PHALP**: human motion source와 video-to-3D processing.
+- **Isaac Gym/MuJoCo**: source policy training과 systematic evaluation simulator.
+- **RT-1/PaLM-E/Perceiver-Actor**: Transformer robot policy의 broader context이며 직접 architecture baseline은 아니다.
+
+## 검증 메모
+
+- 12쪽 arXiv PDF와 NeurIPS 공식 공개본, project page를 확인했다.
+- Figure 1–10, Table 1을 모두 inventory하고 method/result에 반영했다.
+- Table 1 수치를 본문 설명과 두 번 대조했다.
+- 공식 code 미공개 범위를 명시하고 미기재 hyperparameter를 추정하지 않았다.
+- 공개용 문서에 비공개 robot/project 세부를 넣지 않았다.
+
+<SectionFeedback page="Humanoid Locomotion as Next Token Prediction" section="문서 전체" />

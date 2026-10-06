@@ -1,0 +1,132 @@
+---
+research: {"kind": "paper", "topics": ["humanoid", "action"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2410.21229"}
+title: HOVER
+description: privileged full-body oracle의 motor skill을 25-step deployable proprioception과 masked multi-mode command를 받는 unified humanoid controller로 distill하는 HOVER survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/hover-humanoid-versatile-controller" />
+
+# HOVER
+
+<SectionFeedback page="HOVER" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | HOVER: Versatile Neural Whole-Body Controller for Humanoid Robots |
+| 저자 | Tairan He, Wenli Xiao, Toru Lin, Zhengyi Luo 외 |
+| 공개 | arXiv:2410.21229v2, 2025-03-06 |
+| 링크 | [arXiv](https://arxiv.org/abs/2410.21229) · [PDF](https://arxiv.org/pdf/2410.21229) · [Project](https://hover-versatile-humanoid.github.io/) · [Official code](https://github.com/NVlabs/HOVER) |
+| 기준 | 8쪽 PDF 전체, official repository commit `8088f6c` 확인 |
+
+## 한 줄 요약
+
+HOVER는 full-body kinematics를 privileged state로 추적하는 oracle을 먼저 RL로 학습하고, joint·IMU·action의 25-step history와 arbitrary masked command만 받는 student에 DAgger로 distill한다. 하나의 19-DoF Unitree H1 policy가 root, joint, body-keypoint 명령을 임의 조합하며 specialist와 multi-mode RL보다 tracking이 좋다.
+
+![HOVER teacher-student distillation](/hover/figure-2-distillation.png)
+
+*Figure 2. teacher는 simulator의 privileged full-body state를 보지만 student는 sim-to-real proprioception과 masked goal만 본다.*
+
+## Unified command space
+
+기존 controller의 세 interface를 atomic dimensions로 합친다.
+
+- body keypoint의 3D kinematic position
+- 각 motor의 local joint angle
+- root velocity, height, roll/pitch/yaw
+
+upper/lower body에 mode mask를 독립 적용하고, 활성 mode 내부에서도 Bernoulli(0.5) sparsity mask로 임의 command element를 제거한다. mask는 episode 시작에 sampling되어 종료까지 고정된다. 따라서 ExBody, HumanPlus, H2O, OmniH2O뿐 아니라 left-hand/head-only처럼 학습 때 명시적으로 별도 policy를 만들지 않은 interface를 같은 network가 표현한다.
+
+## Oracle과 deployable proprioception
+
+### privileged oracle
+
+oracle proprioception은 모든 rigid body의 position `p`, orientation `θ`, linear/angular velocity와 previous action이다. goal도 모든 rigid body reference pose와 current-reference one-step difference를 포함한다. 이는 mocap/simulator ground truth가 필요한 privileged full-body state다. 3-layer MLP `[512,256,128]`와 PPO로 AMASS-retargeted feasible motion을 imitate한다.
+
+### student
+
+student proprioception은 다음 25-step stack이다.
+
+```text
+[joint position q, joint velocity qdot,
+ base angular velocity ω_base, projected gravity g]_(t-25:t)
+ + previous actions a_(t-25:t-1)
+```
+
+root linear velocity나 global body position은 없다. encoder나 recurrence가 아니라 flattened history를 MLP에 제공해 hidden velocity/contact/dynamics를 추론하게 한다. 논문의 `t-25:t` 표기상 state는 26 samples, action은 25개지만 본문은 이를 “last 25 steps”라고 부른다. 정확한 inclusive convention은 공식 code의 history buffer configuration을 확인해야 한다.
+
+공식 repository는 `student_observations`, `StudentHistory`, teacher/student observation unit tests를 분리하고, mask implementation은 mode로 활성 element를 만든 뒤 `torch.bernoulli(mask * 0.5)`로 sparsity dropout한다. 공개 code는 paper 이후 유지보수 commit이므로 paper artifact와 완전히 동일한 snapshot이라고 단정하지 않는다.
+
+## Training
+
+1. human/humanoid keypoint 대응으로 AMASS를 H1에 retarget하고 sim-to-data filtering으로 infeasible motions를 제거한다.
+2. oracle PPO reward는 joint/body/root tracking과 torque/limit/contact/slip/action-rate regularization을 합친다.
+3. student를 rollout하여 student observation distribution을 수집한다.
+4. 같은 simulator state에서 oracle privileged observation을 만들고 oracle target action을 query한다.
+5. student action과 oracle action의 squared L2 loss로 DAgger supervised update한다.
+
+student는 oracle trajectory가 아니라 자신의 state distribution에서 label을 받으므로 compounding error를 줄인다. 비교 multi-mode RL은 동일 mask sampling으로 scratch PPO를 학습해, mask 자체와 oracle distillation 효과를 분리한다.
+
+## 실험과 metric
+
+IsaacGym과 51.5kg, 1.8m, 19-DoF Unitree H1에서 평가한다. simulation은 retargeted AMASS 전체 `Q-hat`, real은 20 standing motions다. 5 random seeds에서 survival, global MPJPE, root-relative MPJPE, upper/lower joint error, root velocity/height/RPY error, joint acceleration/velocity를 보고한다.
+
+![simulation specialist comparison](/hover/table-3-simulation.png)
+
+*Table III. HOVER는 각 mode specialist보다 활성 tracking metric 대부분에서 낮은 error를 보이며 survival은 대체로 98.9–99.1%다.*
+
+대표 결과:
+
+| mode | metric | specialist | HOVER |
+| --- | --- | ---: | ---: |
+| ExBody | global MPJPE | 275 mm | **185 mm** |
+| HumanPlus | global MPJPE | 266 mm | **182 mm** |
+| H2O | root-relative MPJPE | 66.3 mm | **60.6 mm** |
+| OmniH2O | root-relative MPJPE | 76.4 mm | **62.5 mm** |
+
+Oracle은 global/root-relative MPJPE 119/59.4 mm로 student보다 여전히 좋다. 즉 privileged information gap은 완전히 닫히지 않는다.
+
+![sparse modes와 multi-mode RL comparison](/hover/table-4-figure-4.png)
+
+*Table IV, Figure 4. hand/head-only specialist 비교와 8 modes×4 metrics의 multi-mode RL 비교다. HOVER가 32/32 조합에서 낮은 tracking error를 기록한다.*
+
+real 20-motion 결과에서 ExBody global MPJPE는 51.3→48.9 mm, HumanPlus 51.0→47.4, OmniH2O 51.2→47.5다. 12 metrics 중 11개에서 specialist보다 좋다고 보고한다. Vision Pro teleoperation에서 head/hand 일부가 사라지는 mask 전환, locomotion 중 ExBody→H2O와 HumanPlus→OmniH2O 전환을 qualitative하게 보인다.
+
+## Proprioception 관점의 해석
+
+- privileged teacher는 global/full-body state로 motor prior를 학습하고, student는 hardware-available joint+IMU history로 그 행동을 근사한다.
+- 25-step history는 linear velocity를 직접 주지 않는 대신 temporal finite difference와 dynamics cue를 제공한다.
+- command mask는 proprioception mask가 아니다. 현재 robot state는 항상 제공하고 **어떤 target을 추적할지**만 sparse하게 만든다.
+- specialist도 relevant goal만 받지만 observation/reward recipe가 prior work별로 달라 완전히 architecture-controlled 비교인지는 제한적이다.
+- history-length, DAgger 제거, privileged feature 제거 ablation은 HOVER paper에는 없다. 이 질문의 직접 증거는 OmniH2O에 더 강하다.
+
+## 한계
+
+- standing motion만 real quantitative 평가하고 walking/mode switching은 qualitative다.
+- external disturbance, terrain robustness 수치가 없다.
+- command가 사람이 주어진다는 전제이며 automatic mode selector는 future work다.
+- teacher/student model size, DAgger iteration/data budget과 control frequency가 PDF에 충분히 기재되지 않는다.
+- real metric의 ground-truth acquisition/calibration 설명이 짧다.
+- full-body kinematic oracle 자체가 AMASS retarget/filter 품질에 의존한다.
+
+## Figure/Table Inventory
+
+| 항목 | 내용 | 반영 |
+| --- | --- | --- |
+| Fig. 1 | device와 unified multi-mode command | command 설명 |
+| Fig. 2 | oracle→student DAgger, masks | architecture 이미지 |
+| Fig. 3 | four prior modes specialist comparison | 결과 |
+| Fig. 4 | 8 modes, multi-mode RL radar | 결과 이미지 |
+| Figs. 5–6 | real tracking과 mode switching | real 평가 |
+| Table I | prior command spaces | 범위 |
+| Table II | oracle rewards | training |
+| Tables III–IV | simulation specialist/mode results | 정확한 수치 |
+| Table V | 20 real standing motions | real 수치 |
+
+별도 appendix는 없다.
+

@@ -1,0 +1,306 @@
+---
+research: {"kind": "paper", "topics": ["vla", "data"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2405.12213"}
+title: 'Octo: An Open-Source Generalist Robot Policy'
+description: Open X-Embodiment 800k trajectory로 학습한 Octo의 block-wise Transformer, diffusion action head, modular fine-tuning과 proprioception 결과를 분석한다.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/octo-generalist-robot-policy" />
+
+# Octo: An Open-Source Generalist Robot Policy
+
+<SectionFeedback page="Octo" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Octo: An Open-Source Generalist Robot Policy |
+| 저자 | Octo Model Team: Dibya Ghosh, Homer Walke, Karl Pertsch, Kevin Black, Oier Mees 외 |
+| 공개 | arXiv:2405.12213 · Robotics: Science and Systems 2024 |
+| 링크 | [paper](https://arxiv.org/abs/2405.12213) · [project](https://octo-models.github.io/) · [code](https://github.com/octo-models/octo) |
+| checkpoints | Octo-Small 27M, Octo-Base 93M |
+| 태그 | generalist robot policy, Open X-Embodiment, diffusion, fine-tuning, proprioception |
+
+## 한 줄 요약
+
+Octo는 25개 Open X-Embodiment dataset의 80만 trajectory를 image·task·readout token으로 통합한 block-wise Transformer policy다. pretrained backbone을 유지한 채 새 sensor tokenizer나 action head를 붙일 수 있어 약 100개 demo로 새 robot·관측·action space에 적응한다.
+
+proprioception에 대한 결론은 양면적이다. **released pretraining recipe는 proprio를 쓰지 않고**, 부록의 preliminary experiment에서는 proprio를 추가한 policy가 전반적으로 더 나빴다. 반면 fine-tuning에서는 force/torque나 joint state 같은 새 low-dimensional input을 tokenizer로 추가해 70%, 60% 성공률을 얻었다. “pretraining에서 도움 없음”과 “downstream에서 새 sensor를 수용할 수 있음”은 다른 주장이다.
+
+## 문제의식
+
+task마다 policy를 처음부터 학습하면 data collection 비용이 크고 좁은 domain에 과적합한다. vision-language model처럼 다양한 robot data로 policy를 먼저 학습하면 새 task에서 적은 data로 적응할 수 있지만 다음 불일치가 있다.
+
+- robot embodiment와 camera configuration이 다르다.
+- action dimension과 control convention이 다르다.
+- language가 있는 dataset과 goal image만 있는 dataset이 섞인다.
+- downstream에는 pretraining에 없던 force/torque·proprio sensor가 필요할 수 있다.
+
+Octo의 핵심 목표는 하나의 고정 input schema를 강요하는 것이 아니라 tokenizer와 output head를 모듈화해 이런 차이를 수용하는 것이다.
+
+## Dataset
+
+![Figure 1: task·observation·action space가 다른 robot data를 하나의 policy로 통합](/octo/overview.jpg)
+
+Open X-Embodiment의 약 150만 episode 중 25개 dataset, 80만 trajectory를 선별한다. RT-X가 사용한 subset은 약 35만 episode다.
+
+### Curation 원칙
+
+- image observation과 7D delta end-effector control로 표준화 가능한 source를 우선한다.
+- 반복적이거나 저해상도이고 지나치게 특수한 dataset은 제외한다.
+- 작은 diverse dataset은 sampling weight를 2배로 하고, 큰 repetitive dataset 일부는 낮춘다.
+- missing wrist camera는 zero image로 padding한다.
+- gripper는 `+1=open`, `0=closed` absolute convention으로 맞춘다.
+- language가 없는 dataset은 미래 frame을 uniform sampling한 hindsight goal image로 학습한다.
+- language/goal 중 하나를 random zero-out해 한 model이 두 conditioning mode를 모두 처리하게 한다.
+
+pretraining mixture에서 language annotation이 있는 data는 56%, wrist camera가 있는 data는 27%뿐이다. 논문은 각각의 sparse coverage가 language grounding과 wrist-camera 활용 한계로 이어졌다고 본다.
+
+## Architecture
+
+![Figure 2: task, observation, readout token과 modular fine-tuning](/octo/architecture.jpg)
+
+### Input tokenizers
+
+| modality | tokenizer | output |
+| --- | --- | --- |
+| language task | frozen T5-base 111M | 16 language embedding token |
+| goal image | image tokenizer | goal visual token |
+| third-person image | shallow CNN + 16×16 patches | 256 token at 256×256 |
+| wrist image | shallow CNN + 16×16 patches | 64 token at 128×128 |
+| optional low-dimensional observation | LowdimObsTokenizer + linear projection | dimension/tokenizer 설정에 따른 observation token |
+
+vision parameter를 큰 ResNet에 집중시키지 않고 shallow CNN 뒤의 Transformer에 대부분의 capacity를 둔 “transformer-first” 구조다.
+
+### Block-wise causal attention
+
+sequence는 단순히 모든 token을 한 줄로 이어 붙인 causal language sequence가 아니다. task prefix, timestep별 observation group, readout group마다 attention rule을 지정한다.
+
+- task token: 다른 task token을 볼 수 있지만 observation/readout은 보지 않는다.
+- observation token at `t`: task와 `≤t` observation을 보며 readout은 보지 않는다.
+- action readout at `t`: task, `≤t` observation, 자기 readout group을 본다.
+- 다른 readout이 추가되더라도 action/value readout 사이 정보 누출을 막을 수 있다.
+
+readout은 sensor 값이 아니라 learned positional embedding으로 초기화되는 **query token**이다. action head가 이 hidden state를 condition으로 사용한다. 그래서 새 sensor를 붙여도 기존 observation과 task token 흐름을 유지하면서 action query가 새 modality를 읽게 할 수 있다.
+
+### Modular fine-tuning
+
+pretrained transformer를 바꾸지 않고 다음 module만 새로 초기화할 수 있다.
+
+- 새 observation type용 tokenizer와 positional embedding
+- 새 action dimension용 diffusion head
+- 새 task modality용 tokenizer
+
+실제 fine-tuning은 backbone도 함께 update하지만, architecture 수준에서는 pretrained parameter의 shape를 바꾸지 않는다. Figure 2의 점선 block은 이 modular expansion을 뜻한다.
+
+### Diffusion action head
+
+Transformer는 action prediction마다 한 번만 실행한다. action readout embedding을 얻은 뒤 작은 diffusion MLP가 20-step denoising을 반복한다.
+
+| 항목 | 설정 |
+| --- | --- |
+| action horizon | pretraining 4 |
+| head | 3-layer residual MLP, hidden 256, LayerNorm |
+| objective | DDPM noise-prediction MSE |
+| noise schedule | cosine |
+| diffusion steps | 20 |
+| action representation | continuous, normalized delta EEF + absolute gripper |
+
+즉 denoising 때마다 93M Transformer를 다시 돌리는 것이 아니라 고정된 readout embedding을 condition으로 작은 head만 반복한다.
+
+## Proprioception 처리
+
+### Pretraining에서는 기본적으로 제외
+
+공식 pretraining config의 observation tokenizer는 `image_primary`와 `image_wrist`뿐이다. OXE data loader도 `load_proprio=False`가 default다. 서로 다른 embodiment의 state schema와 강한 state-action correlation을 그대로 섞지 않은 선택이다.
+
+논문 Appendix E는 proprioceptive observation을 추가한 policy가 “generally worse”였다고 보고한다. 저자 가설은 current state와 future action의 강한 상관 때문에 policy가 visual/task cause 대신 쉬운 state shortcut을 학습하는 **causal confusion**이다.
+
+여기에는 수치 표, task별 성공률, input state schema, seed가 없다. 따라서 이 결과는 “Octo에서 proprio가 항상 해롭다”는 정량 결론이 아니라 design exploration에서 관찰한 음성 결과다.
+
+![Appendix E: proprioceptive input이 악화했다는 정성 보고](/octo/proprio-finding.jpg)
+
+### Fine-tuning에서 새 low-dimensional input 추가
+
+공식 코드의 `LowdimObsTokenizer`는 선택한 observation key를 concatenate한다. 두 방식이 가능하다.
+
+1. continuous: 마지막에 singleton feature axis를 두고 각 scalar를 token처럼 취급한 뒤 Dense projection
+2. discretized: dimension별 bin ID를 one-hot으로 바꾼 뒤 projection
+
+paper recipe의 pretraining에는 이 tokenizer가 없지만, downstream config에서 `proprio`, end-effector twist, force/torque 같은 key를 observation group으로 추가할 수 있다. timestep pad mask와 causal attention rule은 image token과 동일하게 적용된다.
+
+### 두 proprio-relevant downstream task
+
+| setup | 새 input/action | demo/trial | Octo SR |
+| --- | --- | ---: | ---: |
+| Berkeley Peg Insertion | side image + EEF twist + EEF force/torque; EEF twist command at 5 Hz | 100/20 | 70% |
+| Berkeley Pick-Up | wrist image + robot proprioception; joint-position action | 100/20 | 60% |
+
+Insertion에서 force/torque는 contact-rich 1.5 mm tolerance search에 필수다. 다만 Table I은 sensor 제거 ablation이 아니라 fine-tuned Octo와 scratch/VC-1 비교다. 70%가 proprio의 독립 기여를 뜻하지 않는다. Pick-Up도 joint-state 제거 비교가 없다.
+
+## Training Recipe
+
+| 항목 | Octo-Base pretraining |
+| --- | --- |
+| backbone | 12 layer, hidden 768, MLP 3072, 12 heads, 93M |
+| history | current + previous frame, window 2 |
+| action horizon | 4 |
+| optimizer | AdamW, LR `3e-4`, inverse square-root decay |
+| regularization | warmup 2k, weight decay 0.1, gradient clip 1.0 |
+| reported batch | 2048 |
+| steps/compute | 300k, TPU v4-128, 14 h |
+
+Octo-Small은 12 layer, hidden 384, MLP 1536, 6 heads, 27M이다. fine-tuning은 약 100 trajectory로 50k step, cosine LR decay와 linear warmup을 공통 적용하며 A5000 24GB 한 장에서 약 5시간 걸린다.
+
+논문은 과거 frame 하나가 zero-shot을 개선했지만 더 긴 history는 평가한 task에서 이득이 작았다고 보고한다. action chunk는 movement coherence를 높였고 temporal ensemble은 receding-horizon control보다 추가 이득이 없었다.
+
+## Experiments
+
+![Figure 4: 3개 zero-shot setup과 6개 fine-tuning setup](/octo/evaluation-setups.jpg)
+
+### Zero-shot multi-robot control
+
+WidowX, UR5, RT-1 Robot에서 pretraining dataset에 존재하는 language task를 robot별 2개, task당 10 trial 평가한다. object position·lighting·background·distractor는 달라진다.
+
+![Figure 5: RT-1-X, Octo, RT-2-X zero-shot 비교](/octo/zero-shot-results.jpg)
+
+Octo는 세 embodiment 평균에서 RT-1-X보다 29%p 높고, 공개되지 않은 RT-2-X의 WidowX/RT-1 결과와 유사하다. Figure 5 막대는 대략 WidowX 50%, UR5 70%, RT-1 80%이며 exact raw count 표는 없다. WidowX의 RT-2-X 수치는 prior work에서 가져온 dashed bar이고 동일 checkpoint를 직접 실행한 결과가 아니다.
+
+goal-image conditioning은 같은 WidowX task에서 language conditioning보다 25%p 높았다. goal image가 desired configuration을 더 직접 제공한다는 해석이지만, 두 conditioning의 정보량이 다르므로 language encoder 품질만의 비교는 아니다.
+
+### Data-efficient fine-tuning
+
+![Tables I–II: fine-tuning과 architecture/data/objective ablation](/octo/finetuning-and-ablation.jpg)
+
+| setup | Scratch | VC-1 | Octo |
+| --- | ---: | ---: | ---: |
+| Berkeley Insertion | 10 | 5 | **70** |
+| Stanford Coffee | 45 | 0 | **75** |
+| CMU Baking | 25 | 30 | **50** |
+| Berkeley Pick-Up | 0 | 0 | **60** |
+| Berkeley Coke | 20 | 10 | **100** |
+| Berkeley Bimanual | 20 | 50 | **80** |
+| average | 20 | 15 | **72** |
+
+각 setup은 약 100 demo, 20 trial이며 Octo가 차선 baseline보다 평균 52%p 높다. 새 force/torque observation, joint-position action, 14D bimanual action head, unseen ViperX embodiment를 같은 recipe로 수용한 점이 핵심이다.
+
+### Architecture, data, objective ablation
+
+WidowX의 language task 2개 + goal task 2개, 총 40 trial에서 Octo-Small은 83%다.
+
+| variant | aggregate SR |
+| --- | ---: |
+| Octo-Small full mix + ViT + diffusion | **83** |
+| RT-X 11-dataset mix | 60 |
+| Bridge only | 43 |
+| discrete 256-bin cross-entropy | 18 |
+| continuous MSE | 35 |
+| ResNet-50 + Transformer | 70 |
+
+diffusion 대비 MSE는 느리게 평균내는 hedging behavior, discrete head는 정밀도 부족과 grasp miss가 관찰됐다. dataset diversity와 transformer-first architecture도 각각 큰 영향을 준다. 각 ablation은 seed/CI 없이 40 trial이므로 작은 차이는 보수적으로 해석해야 한다.
+
+### Scaling
+
+Octo-Tiny→Small→Base로 parameter를 늘리면 WidowX와 UR5의 한 language task에서 zero-shot success가 증가한다. task당 10 trial이며 model size 외 hidden width가 함께 변하므로 엄밀한 scaling law라기보다 방향성 evidence다.
+
+### Generalization breakdown
+
+![Tables VI–VII: task별 ablation과 zero-shot generalization](/octo/generalization.jpg)
+
+| type | tasks | average SR |
+| --- | --- | ---: |
+| in-distribution | carrot→plate 80, eggplant→pot 90 | 85 |
+| novel objects | bread→plate 70, spoon→glove 90 | 80 |
+| novel environment | mushroom→pot 20, spoon→cloth 60 | 40 |
+| novel skill | flip cup 10, block→slot 0 | 5 |
+
+object identity 변화에는 강하지만 scene shift와 unseen behavior에는 급격히 약해진다. “generalist”는 여러 robot을 다룰 수 있다는 뜻이지 open-world skill generalization이 해결됐다는 뜻은 아니다.
+
+## Appendix: Things That Worked / Did Not Work
+
+### Worked
+
+- observation history를 0→1 previous frame으로 늘림
+- action chunking과 receding-horizon execution
+- image patch 32×32→16×16, 특히 fine-grained grasp 개선
+- shuffle buffer 20k→500k; trajectory당 최대 100 step subsampling
+
+### Did not work yet
+
+- MSE head: slow hedging behavior
+- discrete 256-bin head: decisive하지만 precision 부족
+- ResNet encoder: small-data scratch에서는 유리하나 large diverse data scaling에서 불리
+- ImageNet pretrained encoder: zero-shot 이득 없음
+- relative gripper action: 실패 후 retry 감소
+- proprioceptive input: 전반적 악화, causal confusion 가설
+- T5 size 확대/마지막 두 layer fine-tuning: frozen T5-base보다 개선 없음
+
+이 목록은 동일 수준의 controlled ablation 표가 아니다. Table II에 숫자가 있는 항목과 연구 중 정성 관찰만 있는 항목을 구분해야 한다.
+
+## Code-Level Check
+
+공식 repository를 확인한 결과:
+
+- `octo_pretrain_config.py`는 primary/wrist image tokenizer만 등록하고 action horizon 4, history window 2를 사용한다.
+- `LowdimObsTokenizer`는 regex로 선택한 low-dimensional key를 concatenate하고 continuous 또는 per-dimension bin one-hot을 만든다.
+- `OctoModule`은 observation group마다 Dense projection과 positional embedding을 추가하며 task/observation/readout별 attention rule을 생성한다.
+- action readout은 timestep당 1개이고 diffusion head가 mean pooling한 embedding을 condition으로 20-step reverse process를 수행한다.
+- OXE loader의 proprio loading은 optional이며 default false다.
+- data pipeline은 embodiment별 action/proprio dimension padding과 normalization metadata를 지원한다.
+
+현재 repository main은 논문 이후 v1.5 update를 포함한다. task token 반복, language paraphrase, diffusion dropout 제거, attention-mask off-by-one 수정 등이 paper-time checkpoint와 다를 수 있다. 코드의 현재 config를 논문 원본 결과의 정확한 snapshot으로 간주하지 않았다.
+
+## Proprioception 관점에서 읽을 점
+
+1. cross-embodiment pretraining에서는 state schema 통일보다 image/action 공통분모를 택했다.
+2. proprio는 action target과 상관이 높아 shortcut이 되기 쉽다는 negative result가 있다.
+3. 하지만 contact task처럼 vision만으로 불충분한 sensor는 downstream에 새 tokenizer로 넣을 수 있다.
+4. low-dimensional token은 text vocabulary와 공유하는 ID가 아니라 별도 projection을 거친 observation embedding이다.
+5. readout query가 정해져 있어 새 observation token 수가 달라져도 action head interface를 유지한다.
+6. pretrained exclusion, negative preliminary result, downstream success를 하나의 “proprio가 좋다/나쁘다” 결론으로 합치면 안 된다.
+
+## 한계와 주의
+
+1. proprio negative result에 정량 표와 정확한 schema가 없다.
+2. fine-tuning sensor task에 sensor-removal ablation이 없다.
+3. zero-shot 평가는 pretraining과 같은 robot/task이고 trial 수가 작다.
+4. novel skill 평균은 5%로 compositional/open-world generalization이 약하다.
+5. language 56%, wrist camera 27%의 modality imbalance가 남는다.
+6. 25-dataset mixture curation과 weight 선택의 독립 ablation은 제한적이다.
+7. Table I의 six-domain average는 task 난이도와 robot이 다른 성공률의 단순 평균이다.
+8. modularity는 새 module 추가가 쉽다는 뜻이지 zero-shot으로 새 sensor 의미를 아는 것은 아니다.
+9. repository main과 paper checkpoint version 차이를 재현 시 고정해야 한다.
+
+## Figure/Table Inventory
+
+| 원문 | 내용 | 반영 |
+| --- | --- | --- |
+| Figure 1 | Octo input/output flexibility | overview 이미지 |
+| Figure 2 | block-wise architecture와 fine-tuning | Architecture 이미지 |
+| Figure 3 | OXE dataset mixture | Dataset 설명 |
+| Figure 4 | 9 robot setups | Experiments 이미지 |
+| Figure 5 | zero-shot comparison | 결과 이미지 |
+| Figure 6 | model scaling | Scaling 설명 |
+| Figure 7 | appendix evaluation setups | protocol 확인 |
+| Table I | six fine-tuning setups | 결과 이미지/표 |
+| Table II | aggregate ablations | 결과 이미지/표 |
+| Table III | OXE dataset mixture details | curation 확인 |
+| Table IV | training hyperparameters | Training recipe |
+| Table V | Small/Base architecture | model table |
+| Table VI | task-level ablations | appendix 결과 |
+| Table VII | generalization breakdown | 이미지/표 |
+
+## 검증 메모
+
+- 17쪽 PDF와 Appendix A–F를 직접 확인했다.
+- Figure 1–7, Table I–VII을 inventory하고 주요 method/result를 local asset으로 반영했다.
+- Table I/II/VI/VII 수치를 원문과 대조했다.
+- official code에서 pretraining modality, low-dimensional tokenizer, attention rule, diffusion head를 확인했다.
+- proprio 결과가 정성 negative result이며 downstream sensor 실험과 별개임을 명시했다.
+- 공개용 문서에 비공개 robot/project 세부를 포함하지 않았다.
+
+<SectionFeedback page="Octo" section="문서 전체" />

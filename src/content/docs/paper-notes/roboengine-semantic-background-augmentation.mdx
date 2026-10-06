@@ -1,0 +1,216 @@
+---
+research: {"kind": "paper", "topics": ["vla", "data"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2503.18738"}
+title: RoboEngine
+description: semantic robot/object segmentation과 foreground-aware background diffusion으로 한 장면의 robot demonstrations를 다양한 실제 배경에 일반화하는 IROS 2025 논문.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/roboengine-semantic-background-augmentation" />
+
+# RoboEngine
+
+<SectionFeedback page="RoboEngine" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | RoboEngine: Plug-and-Play Robot Data Augmentation with Semantic Robot Segmentation and Background Generation |
+| 저자 | Chengbo Yuan, Suraj Joshi, Shaoting Zhu, Hang Su, Hang Zhao, Yang Gao |
+| 공개 | IEEE/RSJ IROS 2025, pp. 7622–7629; arXiv:2503.18738v2 |
+| DOI | [10.1109/IROS60139.2025.11247097](https://doi.org/10.1109/IROS60139.2025.11247097) |
+| 링크 | [Project](https://roboengine.github.io/) · [PDF](https://roboengine.github.io/resources/roboengine-paper.pdf) · [arXiv](https://arxiv.org/abs/2503.18738) · [Code](https://github.com/michaelyuancb/roboengine) · [RoboSeg](https://huggingface.co/datasets/michaelyuanqwq/roboseg) |
+| 기준 | 8쪽 IROS/arXiv PDF, Appendix A–D 전체 |
+
+## 한 줄 요약
+
+RoboEngine은 camera calibration이나 green screen 없이 robot과 task object를 semantic segmentation으로 보존하고 나머지 background를 diffusion model로 다시 생성한다. 한 장면에서 모은 50/100 demonstrations로 여섯 새 장면에 배포했을 때 평균 normalized behavior score를 `0.20→0.62`, 평균 success를 `15.6→60.9%`로 높였다.
+
+## 먼저 구분할 것: VLA와 3D simulation인가?
+
+RoboEngine도 VLA policy 논문은 아니다.
+
+- task language는 어떤 object mask를 보존할지 정하는 segmentation prompt에 쓰이고, scene description은 background generation에 쓰인다.
+- 실제 action policy는 task별 Diffusion Policy이며 language instruction을 policy input으로 받는다고 보고하지 않는다.
+- 3D scene이나 physics rollout을 만들지 않는다. 각 RGB frame에서 foreground를 유지하고 background pixels를 생성하는 **2D visual augmentation**이다.
+- proprioception과 action `J_i`는 원본 label을 그대로 재사용한다. 새 trajectory나 action label을 생성하지 않는다.
+
+따라서 “synthetic VLA data” 관점에서는 language-aware image data engine이지만, 논문의 policy-level evidence는 task-specific imitation learning에 한정된다.
+
+## 문제와 설계 목표
+
+기존 background augmentation은 세 가지를 동시에 만족하기 어렵다는 것이 출발점이다.
+
+| 요구 | 기존 방식의 문제 |
+| --- | --- |
+| 편의성 | GreenAug는 green screen, CACTI/inpainting 계열은 camera calibration이나 scene-specific tuning 필요 |
+| 다양성 | 작은 distractor만 inpaint하면 scene 전체 변화가 작음 |
+| 현실성 | ImageNet image나 texture를 그대로 붙이면 table/support geometry가 무시됨 |
+
+RoboEngine은 robot-specific segmentation model과 foreground-conditioned background diffusion을 함께 공개해 `ColorJitter`처럼 호출 가능한 toolkit을 목표로 한다.
+
+![RoboEngine overview](/roboengine/figure-1-overview.jpg)
+
+*Figure 1. RoboSeg → Robo-SAM → foreground-aware background generation → 한 scene에서 학습하고 새로운 scene에 배포하는 흐름.*
+
+## RoboSeg와 Robo-SAM
+
+RoboSeg는 35개가 넘는 robot datasets에서 고른 3,800 images로 구성된다. Franka, WidowX, HelloRobot, UR5, Sawyer, xArm 등과 여러 camera/background를 포함한다.
+
+각 image에는 세 mask가 있다.
+
+1. `robot-main`: gripper와 연결된 main arm.
+2. `robot-auxiliary`: base 등 나머지 robot part.
+3. `object`: task-related objects.
+
+wire까지 annotation하는 fine-grained mask이며, 원 task instruction과 GPT-4o가 만든 scene description 10개도 함께 둔다. EVF-SAM multitask semantic segmentation version을 fine-tune한 것이 Robo-SAM이다.
+
+![Robo-SAM segmentation results](/roboengine/figure-3-segmentation.jpg)
+
+*Table I과 Figure 3. `robot` language prompt에 대한 GIoU와 qualitative masks. Zero-shot set은 인터넷에서 수집한 45개 robot images다.*
+
+| method | Test Set GIoU | Zero-shot Set GIoU |
+| --- | ---: | ---: |
+| CLIPSeg | 0.2810 | 0.4049 |
+| LISA | 0.6040 | 0.7571 |
+| EVF-SAM | 0.6290 | 0.7777 |
+| Robo-SAM | **0.8620** | **0.9037** |
+
+Robo-SAM은 EVF-SAM보다 Test `+0.233`, Zero-shot `+0.126` GIoU다. 다만 Test Set 97장과 internet Zero-shot 45장은 작고, zero-shot set의 annotation protocol이나 source list는 자세히 제공하지 않는다.
+
+수량 accounting도 PDF만으로 완전히 닫히지 않는다. Appendix는 3,562 train + 92 validation이고 “RoboSeg의 나머지”를 evaluation에 쓴다고 적지만, 본문 Test Set은 97장이다. `3800-3562-92=146`이라 49장의 역할이 명시적으로 설명되지 않는다.
+
+## Augmentation pipeline
+
+각 frame을 `I_i = {R_i, O_i, B_i}`로 분해한다.
+
+1. Robo-SAM이 robot `R_i`를 찾는다.
+2. task instruction에서 noun phrase를 뽑고 EVF-SAM이 task object `O_i`를 찾는다.
+3. robot+object foreground mask와 scene description을 BackGround-Diffusion에 넣어 `B_i*`를 생성한다.
+4. `I_i* = {R_i, O_i, B_i*}`로 합성하고 language, state, action 등 `J_i`는 그대로 붙인다.
+
+BackGround-Diffusion은 foreground mask를 조건으로 support surface와 배경을 만들도록 설계된 diffusion model이며, RoboSeg 전체로 100 epochs fine-tune한다. Robo-SAM은 30 epochs, learning rate `1e-5`, batch 32; background model은 100 epochs, learning rate `5e-3`, batch 32다.
+
+여기서 “physics-aware”는 명시적 rigid-body simulation이나 collision checker가 있다는 뜻이 아니다. foreground mask와 학습 prior를 통해 table/support layout이 그럴듯하도록 생성한다는 의미다. 생성 결과를 geometric/physical verifier로 걸러내지는 않는다.
+
+## 비교한 augmentation
+
+모든 baseline은 plug-and-play 조건을 맞추기 위해 **논문이 제안한 Robo-SAM mask를 공통 사용**한다.
+
+| 이름 | 처리 |
+| --- | --- |
+| No aug | generative augmentation 없음 |
+| Inpainting | SAM2로 task-irrelevant object mask를 찾아 5개 object를 Stable Inpainting |
+| Background | scene text에서 Stable Diffusion 2.1로 전체 background 생성 후 foreground 합성 |
+| ImageNet | ImageNet image를 background로 합성 |
+| Texture | MIL texture를 background로 합성 |
+| RoboEngine | foreground-conditioned BackGround-Diffusion |
+
+따라서 Table II는 기존 논문의 end-to-end system을 원 설정 그대로 재현한 비교가 아니라, 동일 Robo-SAM frontend 위에 augmentation backend를 바꾼 비교다. augmentation 자체를 비교하기에는 통제되어 있지만, “기존 method 전체 대비”로 읽을 때는 이 차이를 남겨야 한다.
+
+## Policy와 real-robot protocol
+
+| 항목 | 설정 |
+| --- | --- |
+| robot | Franka Panda + Robotiq gripper, DROID-style absolute pose control |
+| visual input | third-view RGB 1개 |
+| policy | Diffusion Policy, image encoder를 DINOv2-Base로 교체 |
+| temporal setting | observation horizon 1, action horizon = prediction horizon |
+| training | task별 1,000 epochs, 모든 method에 ColorJitter/RandomCrop 적용 |
+| tasks | Fold Towel, Put Mouse on the Pad |
+| source data | 한 scene에서 Fold 50 demos, Mouse 100 demos |
+| source pose coverage | towel `35×35 cm`, mouse/pad `15×15 cm` grid |
+| OOD scenes | Fold 4개, Mouse 2개 |
+| evaluation | scene당 8 rollouts |
+
+table height는 모든 scene에서 73–76 cm로 맞춘다. 논문 스스로 visual generalization을 목표로 하고 spatial generalization은 다루지 않는다고 명시한다.
+
+Behavior score는 각 task의 grasp와 finish stage를 0–3으로 세분화하고, Table II에서는 maximum score로 나눠 `[0,1]`로 normalize한다. score가 2 이상이면 success다.
+
+## 주요 real-robot 결과
+
+![RoboEngine real-robot results](/roboengine/figure-4-table-2-real-results.jpg)
+
+*Table II와 Figure 4. 각 cell은 normalized behavior score / success rate다. 아래는 source, mask, 여섯 augmentation과 여섯 OOD evaluation scenes다.*
+
+| method | Fold grasp | Fold finish | Mouse grasp | Mouse finish | average |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| No aug | .36 / 40.6% | .29 / 15.6% | .15 / 6.0% | .07 / 0.0% | .20 / 15.6% |
+| Inpainting | .36 / 40.6% | .34 / 34.4% | .63 / 12.5% | .10 / 0.0% | .24 / 21.8% |
+| Background | .50 / 53.1% | .54 / 62.5% | .46 / 37.5% | .32 / 18.8% | .45 / 43.0% |
+| ImageNet | .50 / 53.1% | .52 / 62.5% | .56 / 43.7% | .39 / 18.8% | .48 / 44.5% |
+| Texture | .50 / 50.0% | .54 / 62.5% | .63 / 56.2% | .44 / 25.0% | .51 / 48.4% |
+| RoboEngine | **.56 / 56.2%** | **.59 / 68.7%** | **.79 / 75.0%** | **.58 / 43.7%** | **.62 / 60.9%** |
+
+`210% improvement`는 average normalized behavior score의 상대 증가 `(0.62-0.20)/0.20`이다. 평균 success는 `15.6→60.9%`, 즉 `+45.3%p` 또는 약 `+290%` relative다. 두 metric을 섞어 인용하면 안 된다.
+
+가장 강한 baseline Texture와 비교하면 score `0.51→0.62`는 약 `+21.6%` relative, success `48.4→60.9%`는 `+12.5%p`다. 논문의 “20% over SoTA”는 behavior score 쪽과 대응한다.
+
+## Synthetic data scaling
+
+![RoboEngine scaling trend](/roboengine/figure-5-scaling.jpg)
+
+*Figure 5. Fold Towel finish의 세 OOD scenes에서 unnormalized behavior score를 평균했다.*
+
+| variant | data composition | average score |
+| --- | --- | ---: |
+| No aug | original 50 | 1.63 |
+| 1× | synthetic 50 | 3.63 |
+| 2× | synthetic 100 | 4.17 |
+| 2× mix | original 50 + synthetic 50 | 3.96 |
+| 4× | synthetic 200 | 4.21 |
+| 6× | synthetic 300 | 4.38 |
+
+synthetic sample을 늘리면 계속 좋아지지만 `2×` 이후 기울기는 작아진다. `2× mix`가 `1×`보다 좋지만 pure `2×`보다 낮아, 이 실험에서는 원본을 반드시 섞어야 한다는 증거가 없다. epochs를 data scale에 따라 조절해 optimization steps를 비슷하게 맞췄다.
+
+## 속도
+
+batch size 1에서 frame당 Inpainting `3.90 s`, Background `1.91 s`, ImageNet/Texture `0.97 s`, RoboEngine `2.17 s`다. 이 수치는 segmentation과 generation을 포함한 논문 설정의 비교지만 hardware model은 해당 표 주변에 명시되지 않는다. video 전체 처리량이나 multi-GPU batch throughput으로 확대하면 안 된다.
+
+## 공개 코드 확인
+
+공식 저장소의 `a6e6f6d` snapshot을 확인했다.
+
+- pip editable install 구조와 runnable example이 있으며 model checkpoint를 Hugging Face에서 자동 다운로드한다.
+- robot segmentation, instruction-conditioned object segmentation, background augmentation을 별도 wrapper로 제공한다.
+- `engine`, `background`, `inpainting`, `imagenet`, `texture`, `black` backend가 실제 구현되어 있다.
+- Robo-SAM fine-tuning/evaluation과 background ControlNet-style diffusion training code도 포함한다.
+- video API는 EVF-SAM video model로 mask를 만들지만 background images는 batch의 각 frame에 생성된다. 논문 limitation대로 temporal consistency loss나 video diffusion은 없다.
+- policy training/deployment code는 repository에 포함하지 않고 외부 Diffusion Policy/Data-Scaling-Laws와 DROID Platform repository를 안내한다.
+- automated test suite나 fixed end-to-end reproduction config는 보이지 않는다.
+
+## 한계
+
+- frame 간 temporal consistency가 없어 video에서 background가 flicker하거나 geometry가 변할 수 있다.
+- multi-view/3D consistency와 camera-pose augmentation을 다루지 않는다.
+- visual foreground와 action은 원본 그대로이므로 object pose, trajectory, embodiment를 바꾸지 못한다.
+- “physics-aware”는 generative prior이며 explicit physics validation이 아니다.
+- 두 task, 한 robot, 한 camera configuration이고 policy seed 반복이나 confidence interval이 없다.
+- OOD scene은 크게 변하지만 table height를 통제했다. spatial generalization 증거가 아니다.
+- average는 grasp와 finish stage 네 항목을 동일 가중 평균한다. task completion만의 평균과 다르다.
+- 모든 baseline이 Robo-SAM을 공유하므로 prior method의 원래 prerequisite와 end-to-end quality 비교는 아니다.
+- RoboSeg split 수량과 본문 Test Set 수량의 accounting이 PDF에서 완전히 설명되지 않는다.
+
+## Figure/Table Inventory
+
+| 항목 | 내용 | 반영 |
+| --- | --- | --- |
+| Fig. 1 | dataset–segmentation–augmentation–deployment | overview 이미지 |
+| Fig. 2 | RoboSeg mask와 scene descriptions | dataset 설명 |
+| Fig. 3 | segmentation qualitative comparison | GIoU 이미지 |
+| Fig. 4 | augmentation 결과와 여섯 OOD scenes | real result 이미지 |
+| Fig. 5 | augmented data scaling | scaling 이미지 |
+| Table I | segmentation GIoU | 정확한 수치 |
+| Table II | score/success real evaluation | 핵심 결과 |
+| Table III | frame augmentation time | 속도 |
+| Table IV | scene별 raw behavior score | evaluation 검증 |
+| Table V | scaling raw score | 평균 재계산 |
+
+Appendix A는 Robo-SAM/BackGround-Diffusion training, B는 behavior score 기준, C는 scene별 raw results, D는 scaling epochs와 raw results를 제공한다.
+
+## 검증 메모
+
+IROS proceedings metadata/DOI, project PDF, arXiv v2, project page, RoboSeg release, 공식 code를 교차 확인했다. PDF의 Figure 1–5와 Table I–V를 모두 inventory로 대조하고 핵심 도표를 local asset으로 추출했다. code는 README뿐 아니라 segmentation/augmentation wrappers와 training directories까지 확인했다.

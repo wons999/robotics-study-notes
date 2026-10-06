@@ -1,0 +1,247 @@
+---
+research: {"kind": "paper", "topics": ["vla", "sensing", "data"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2501.03606"}
+title: VTAO-BiManip
+description: 양손 joint를 관절별 token으로 만드는 masked visual-tactile-action pretraining, 미래 action·object prediction, curriculum RL과 bottle-cap 실험을 정리한 Survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/vtao-bimanip-masked-pretraining" />
+
+# VTAO-BiManip
+
+<SectionFeedback page="VTAO-BiManip" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | VTAO-BiManip: Masked Visual-Tactile-Action Pre-training with Object Understanding for Bimanual Dexterous Manipulation |
+| 저자 | Zhengnan Sun, Zhaotai Shi, Jiayin Chen, Qingtao Liu, Yu Cui, Jiming Chen, Qi Ye |
+| 공개 | arXiv:2501.03606v2, 2025-12-25 |
+| 링크 | [arXiv](https://arxiv.org/abs/2501.03606) · [PDF](https://arxiv.org/pdf/2501.03606) |
+| 기준 버전 | 8쪽 arXiv v2 PDF; 공식 code/project는 공개 자료 기준 미확인 |
+| 태그 | bimanual dexterity, proprioception, tactile, masked pretraining, future action prediction, curriculum RL |
+
+## 한 줄 요약
+
+VTAO-BiManip은 human demonstration에서 retarget한 양손 48개 joint angle을 **관절당 한 token**으로 만들고 image·binary tactile과 함께 masked reconstruction 및 5-step future action prediction을 학습한다. frozen representation을 PPO bottle-cap task에 넣었을 때 24×2 joint tokens, 양손 modality, 미래 prediction, privileged object reconstruction이 각각 downstream 성능에 기여한다.
+
+![VTAO-BiManip pretraining과 two-stage curriculum RL](/vtao-bimanip/figure-3-framework.png)
+
+*Figure 3. object pose/size는 encoder 입력이 아니라 reconstruction target이다. downstream RL에서는 pretrained fusion token과 별도 proprioception projection을 함께 쓴다.*
+
+## 문제의식
+
+양손 dexterous manipulation은 세 문제가 결합된다.
+
+1. active hand가 cap을 돌릴 때 passive hand가 bottle을 안정화해야 하는 joint-level coordination
+2. bottle pose와 크기가 바뀌는 동안 grip을 조절하는 object-state awareness
+3. grasp·hold·rotate sub-skill을 올바른 순서로 익히는 exploration
+
+기존 visual-tactile pretraining은 접촉과 외관을 표현하지만 inter-hand kinematics를 직접 감독하지 않는다. 저자들은 human hand motion을 robot joint sequence로 retarget하고, current joint 복원만이 아니라 future joint prediction을 auxiliary objective로 둔다. exploration은 bottle을 먼저 고정하고 나중에 release하는 curriculum으로 분리한다.
+
+이 논문은 일반 VLA가 아니다. language input이 없고, human multimodal representation pretraining 뒤에 simulation PPO를 수행하는 task-specific framework다.
+
+## VTAO human dataset
+
+### capture system
+
+| modality | 장비 | raw rate | 학습 sample |
+| --- | --- | ---: | --- |
+| vision | HoloLens 2 egocentric RGB | 30 Hz | `224×224×3` |
+| tactile | 양손 glove, hand당 20 sensors | 200 Hz | threshold 0.4V의 binary 40D |
+| hand motion | 16-camera optical mocap | 1 kHz | Shadow Hand에 retarget한 joint 48D |
+| object | mocap bottle/cap | 1 kHz | camera frame의 6-DoF pose + 3D size = 9D |
+
+모든 modality는 PC local timestamp를 이용해 30 Hz visual frame에 맞춘다. HoloLens와 calibration board marker로 mocap 좌표를 camera 좌표에 정렬한다.
+
+### 규모와 retargeting
+
+- 26종 bottle
+- 216 human bimanual trajectories
+- trajectory당 6–17 seconds
+- 총 61,684 aligned multimodal frames
+
+human-to-robot retargeting은 human/robot wrist-to-fingertip 및 wrist-to-phalanx vector의 거리를 최소화한다. 각 timestep을 독립 최적화하여 양손 Shadow Hand joint trajectory를 만든다. motion capture와 retargeting 품질의 정량 오차는 보고하지 않는다.
+
+## Proprioception과 action tokenization
+
+논문은 retarget된 current joint angle을 `Action A∈R^48`라고 부른다. 그러나 encoder 관점에서는 현재 양손 configuration을 나타내는 proprioceptive kinematic observation 역할도 한다.
+
+```text
+left hand 24 joint angles + right hand 24 joint angles
+  -> joint별 scalar를 separate MLP token으로 projection
+  -> 48 action/joint tokens
+```
+
+48차원을 한 vector token으로 압축하지 않고 joint마다 한 token을 만든다. tactile도 sensor당 한 token, vision은 patch당 한 token이다. 이로써 attention이 특정 joint–taxel–image patch 대응을 학습할 수 있다. 반면 kinematic-tree edge나 joint identity 구조를 explicit graph로 주지는 않는다.
+
+downstream RL의 proprioception `P`는 두 hand의 joint angle과 velocity를 포함한다. current angle `A_obs`는 frozen VTAO encoder에 들어가 fusion token을 만들고, 전체 `P`는 별도 linear layer `φ(P)`를 거쳐 policy input에 concatenate된다. 즉 proprioception이 encoder와 direct policy path에 **두 번** 들어간다.
+
+## Masked VTAO Pretraining
+
+### token sequence
+
+| token | 개수 | 생성 방식 |
+| --- | ---: | --- |
+| fusion `[FS]` | 1 | global downstream representation |
+| visual | 196 | Conv2D로 `14×14` patches |
+| tactile | 40 | binary taxel별 MLP |
+| action/joint | 48 | joint angle별 MLP |
+| object mask | 9 | pose+size reconstruction용 mask token |
+
+MAE-style masking ratio는 visual `r_v`, tactile `r_c`, action `r_a`, object `r_o`로 modality별 적용한다. 실제 training은 `r_v=0.75`, `r_c=0.5`, `r_a=0.5`를 사용한다.
+
+### 네 reconstruction/prediction objective
+
+decoder는 다음을 동시에 예측한다.
+
+1. masked RGB patch
+2. masked binary tactile signals
+3. current 48D action과 future `p=5` joint-action sequence
+4. bottle의 6-DoF pose와 3D bounding-box size
+
+```text
+L = 1·L_image + 2·L_tactile + 5·L_object + 2·L_action
+```
+
+각 항은 vector Euclidean distance다. object 9D는 encoder input이 아니고 mask token에서 복원할 target이므로, deployment에서 mocap object state가 필요하지 않도록 설계했다. 하지만 pretraining label을 만들 때는 16-camera mocap이 필요하다.
+
+## Downstream Curriculum RL
+
+### state와 action
+
+PPO state는 `{V_obs, T_obs, P}`다. VTAO encoder는 `(V_obs,T_obs,A_obs)`에서 frozen fusion feature `h_FS`를 만들고, policy는 `[h_FS; φ(P)]`를 받는다. object ground truth는 쓰지 않는다.
+
+simulation은 dual Shadow Hand를 사용한다. 각 hand의 24 DoF 중 tendon-coupled distal joint를 제외해 20 control DoF씩 쓰고, left hand의 free 6-DoF pose를 더해 action은 46D다.
+
+### 성공 기준과 curriculum
+
+성공은 cap을 물리적으로 제거하는 것이 아니라 bottle-cap joint가 **4 rad 초과 회전**하는 것이다.
+
+- Stage 1, 1000 PPO iterations: bottle body를 table에 고정한다. left hand는 approach/contact, right hand는 cap angle/speed/contact/approach reward를 배운다.
+- Stage 2, 3500 iterations: bottle을 release한다. left hand에 target position, initial bottle position 유지, upright reward를 주고 right-hand rotation reward는 유지한다.
+
+single-stage 학습은 실험에서 지속적으로 0% 성공했다고 보고하지만 해당 curve/table은 별도로 제공되지 않는다.
+
+## Training Recipe
+
+| 항목 | pretraining | downstream RL |
+| --- | --- | --- |
+| hardware | Xeon Gold 6326 + RTX 3090 | 동일 시스템 |
+| optimizer | AdamW | PPO |
+| learning rate | `2e-5` | 미기재 |
+| batch | 8 | parallel env 수 미기재 |
+| duration | 300 epochs, 약 2시간 | 1000+3500 iterations, 약 62시간 |
+| encoder | train | frozen |
+
+pretrained encoder를 freeze하는 이유는 sparse reward 아래서 representation drift를 줄이기 위해서다. policy MLP 구조, PPO learning rate, discount, GAE, parallel environment 수 등 재현에 필요한 세부 hyperparameter는 공개하지 않는다.
+
+## Experiments and Results
+
+### protocol
+
+Isaac Gym에서 ShapeNet bottle 15개를 사용한다. 10개는 seen training, 5개는 unseen evaluation이다. Stage 2의 3500th-iteration checkpoint를 고르고 각 bottle을 10회 평가한다. paper의 success rate는 따라서 seen 100 trials, unseen 50 trials에 해당한다.
+
+![modality baseline과 전체 VTAO 결과](/vtao-bimanip/figure-4-table-1-modalities.png)
+
+*Figure 4, Table I. visual/tactile/action/object pretraining을 조합한다. chart는 overall trend를 보여주지만 정확한 핵심 ablation 수치는 Table II가 더 명확하다.*
+
+single modality V/T/A나 from-scratch VTA-Scr보다 joint pretraining이 높다. VT→VTA와 VT→VTO가 각각 action prediction과 object reconstruction의 이득을 보이고, 둘을 합친 VTAO가 가장 높다. proprioception-only `Base`, `A`는 학습 실패로 표시되고 privileged object state를 추가한 `Base+Obj`만 학습된다. 이는 joint state만으로 dynamic bottle geometry를 파악하기 어렵다는 반례다.
+
+### ablation의 정확한 수치
+
+![양손 modality, prediction horizon, joint-token granularity ablation](/vtao-bimanip/figure-5-table-2-ablations.png)
+
+*Figure 5, Table II. 값은 seen/unseen bottle success rate의 mean±variation으로 보고되지만 반복 run 수와 ±의 정의는 본문에 명시되지 않는다.*
+
+| variant | 핵심 변경 | seen | unseen |
+| --- | --- | ---: | ---: |
+| Ours | dual tactile/action, 5-step, 24×2 tokens, object | **63±4** | **51±7** |
+| v1 | object target 제거 | 54±23 | 39±15 |
+| v2 | right action만 | 46±15 | 32±9 |
+| v3 | dual tactile, action 없음 | 41±3 | 30±3 |
+| v4 | right tactile만 | 37±17 | 20±7 |
+| v5 | current action reconstruction만 | 35±25 | 21±16 |
+| v6 | 1-step future prediction | 44±8 | 17±5 |
+| v7 | hand당 action token 1개 | 31±4 | 18±9 |
+| v8 | finger당 5 tokens/hand | 50±16 | 26±8 |
+
+### 무엇이 실제로 검증됐는가
+
+- **양손 정보:** v1→v2에서 left action을 빼면 54→46, 39→32로 하락한다. v3→v4에서 left tactile을 빼도 41→37, 30→20으로 하락한다.
+- **미래 예측:** current reconstruction만인 v5는 35/21이고, 1-step v6는 44/17, 5-step v1은 54/39다. 특히 unseen에서는 긴 horizon이 중요하다.
+- **token granularity:** hand당 1 token v7 < finger당 5 tokens v8 < joint당 24 tokens v1이다. finer joint tokenization이 양손 coordination representation에 유리하다.
+- **object auxiliary target:** v1 54/39에서 full VTAO 63/51로 상승한다.
+
+다만 ablation은 object target을 제거한 v1을 공통 기준으로 삼는 경우가 많고 variance가 매우 크다. 각 요소의 interaction까지 분리한 full factorial experiment는 아니다.
+
+### real-world result
+
+dual Leap Hands+tactile sensors와 Unitree Z1 arm으로 bottle-cap setup을 재현한다. ego RGB와 binary tactile을 사용하며 simulation task도 Leap Hand로 다시 구성했다고 적는다. submitted video에서 성공 example을 보이지만 quantitative trial count, success rate, sim-to-real adaptation recipe는 제공하지 않는다. 따라서 “실세계에서 검증”은 qualitative feasibility evidence다.
+
+## Code-Level Check
+
+PDF와 arXiv metadata는 official project/code repository를 제공하지 않는다. 공개 검색에서 저자 공식 구현으로 확인할 수 있는 repository도 찾지 못했다. 따라서 다음 사항은 code-level로 검증할 수 없다.
+
+- Transformer width/layer/head와 masking implementation
+- loss별 normalization과 Euclidean reduction 방식
+- PPO architecture/hyperparameter
+- object token과 future action decoder의 tensor shape
+- simulator task, reward, real deployment code
+
+Survey의 구현 설명은 PDF 수식과 figure에 한정하며 비공식 재현을 공식 코드로 취급하지 않았다.
+
+## 한계와 주의
+
+- 216 trajectories, 하나의 bottle-cap task family로 representation generality를 주장하기에는 좁다.
+- object reconstruction은 deployment input은 아니지만 pretraining label에 expensive mocap pose/size가 필요하다.
+- downstream policy에 `h_FS`와 raw proprioception projection이 함께 들어가므로 개선이 오직 pretrained joint token에서 왔다고 분리하기 어렵다.
+- 성공은 cap removal이 아니라 4-rad rotation이다.
+- real-world result는 qualitative이며 반복 성공률이 없다.
+- Table II의 `±` 정의와 random seed 수가 명시되지 않는다.
+- official code와 상세 PPO configuration이 없어 정확한 재현성이 제한된다.
+- tactile binarization은 sim-to-real calibration을 단순화하지만 force magnitude를 버린다.
+
+## Appendix Notes
+
+별도 appendix는 없다. main PDF가 capture/retargeting, reward equation, training setting을 포함하지만 model configuration과 real-world protocol은 짧게 남아 있다.
+
+## Figure/Table Inventory
+
+| 항목 | 내용 | Survey 반영 |
+| --- | --- | --- |
+| Figure 1 | human dataset, Shadow/Leap Hand bottle-cap setup | problem/system 설명 |
+| Figure 2 | HoloLens, tactile glove, 16-camera mocap capture | Dataset 표 |
+| Figure 3 | VTAO encoder-decoder와 two-stage RL | architecture 이미지·Method |
+| Table I | modality pretraining baselines | modality result 이미지 |
+| Figure 4 | training curves와 seen/unseen modality result | modality result 이미지·해석 |
+| Table II | 8개 ablation의 정확한 success | ablation 이미지·수치 표 |
+| Figure 5 | bimanual, horizon, token granularity curves | ablation 이미지·해석 |
+| Figure 6 | real Leap Hand+Z1 platform | real-world qualitative note |
+
+## Citation Trail
+
+- **Masked Visual-Tactile Pre-training**: visual/tactile reconstruction과 downstream frozen encoder의 직접 전신이다.
+- **MAE**: modality별 token masking과 encoder-decoder 학습 형식의 기반이다.
+- **DexRepNet/DexPilot**: human hand motion을 robot joint trajectory로 retarget하는 geometric objective의 기반이다.
+- **Bi-DexHands와 Twisting Lids Off with Two Hands**: dual-hand RL 및 bottle-cap task의 직접 비교 맥락이다.
+- **PPO**: frozen multimodal representation 위 downstream policy optimization 기반이다.
+
+## 기억할 점
+
+proprioception 연구에서 가장 직접적인 결과는 Table II다. 같은 48개 joint angle이라도 hand당 한 token보다 finger당 token, finger당 token보다 **joint당 token**이 좋았고, current reconstruction보다 5-step future prediction이 강했다. 이는 high-DoF state를 한 벡터로 압축하기보다 구조적 granularity와 temporal predictive objective를 주는 방향을 지지한다.
+
+그러나 이 결론은 single task, small human corpus, PPO downstream에서 나온다. 대규모 VLA의 flow/diffusion action expert로 바로 일반화된 증거는 아니다.
+
+## 검증 메모
+
+- 8쪽 PDF 전체와 Figures 1–6, Tables I–II를 직접 확인했다.
+- architecture, modality result, ablation figure/table을 PDF에서 추출해 모두 열어 확인했다.
+- dataset rate·shape, reward, training, seen/unseen protocol을 본문 수식과 재대조했다.
+- official code 미확인 상태를 명시하고 비공식 구현을 사용하지 않았다.
+
+<SectionFeedback page="VTAO-BiManip" section="전체 Survey" />

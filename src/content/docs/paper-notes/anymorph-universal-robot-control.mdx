@@ -1,0 +1,243 @@
+---
+research: {"kind": "paper", "topics": ["vla", "sensing", "data", "humanoid"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2206.12279"}
+title: AnyMorph
+description: sensor·actuator identity token과 scalar proprioception sequence로 variable-dimensional simulated agents를 제어하는 AnyMorph의 증거와 한계를 분석한 Survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/anymorph-universal-robot-control" />
+
+# AnyMorph
+
+<SectionFeedback page="AnyMorph" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | AnyMorph: Learning Transferable Polices By Inferring Agent Morphology |
+| 저자 | Brandon Trabucco, Mariano Phielipp, Glen Berseth |
+| 공개 | ICML 2022, PMLR 162; arXiv:2206.12279v1, 2022-06-17 |
+| 링크 | [arXiv](https://arxiv.org/abs/2206.12279) · [PDF](https://arxiv.org/pdf/2206.12279) · [PMLR](https://proceedings.mlr.press/v162/trabucco22b.html) · [Project](https://sites.google.com/btrabucco.com/anymorph-icml2022) |
+| 공개 범위 | paper는 source code를 release했다고 쓰지만 현재 공식 project는 `Code: coming soon`이며 repository/checkpoint를 확인할 수 없다. |
+| 태그 | agent-agnostic RL, morphology token, proprioception, sensor identity, actuator query, TD3 |
+
+## 한 줄 요약
+
+AnyMorph는 robot graph나 limb별 aligned feature를 직접 주지 않고, **observation scalar마다 sensor-identity token + 현재 scalar 값**, action dimension마다 actuator-identity query를 만들어 encoder–decoder Transformer로 variable-dimensional policy를 구성한다. 학습된 identity embedding이 morphology를 암묵적으로 표현해 held-out simulated morphology에서 prior method보다 평균 16% 높지만, token ID 자체는 사람이 sensor schema에서 만든다.
+
+![AnyMorph의 encoder-decoder architecture](/anymorph/figure-3-architecture.png)
+
+*Figure 3. Encoder source는 proprioceptive scalar sequence이고 decoder query는 actuator token sequence다. decoder cross-attention이 actuator마다 관련 sensor를 선택해 action scalar를 낸다.*
+
+## 문제의식
+
+기존 agent-agnostic controller는 robot을 graph로 만들고 node를 limb, edge를 joint로 정의하거나, 각 limb에 동일한 proprioceptive feature가 있다고 가정한다. 실제 system에서는 sensor 종류와 action dimension이 morphology마다 달라 graph/alignment를 미리 만드는 비용이 크다.
+
+AnyMorph는 morphology를 다음처럼 재정의한다.
+
+```text
+morphology = observation space를 구성하는 sensor identity sequence
+           + action space를 구성하는 actuator identity sequence
+```
+
+Policy가 받는 state/action vector의 길이가 agent마다 달라도 Transformer sequence length만 달라진다. 이 관점에서는 limb가 없어도 된다.
+
+## “Inferring morphology”의 정확한 의미
+
+논문의 제목은 morphology를 infer한다고 쓰지만, inference 범위를 구분해야 한다.
+
+- **학습되는 것:** 각 sensor/actuator token ID의 D차원 embedding과 attention 관계. RL return만으로 어떤 sensor가 어떤 actuator에 유용한지 학습한다.
+- **사람이 제공하는 것:** 각 observation/action scalar가 어떤 token ID인지 정한 integer sequence.
+- **제공하지 않는 것:** explicit kinematic graph, limb adjacency, continuous link length/mass/gear description.
+
+Appendix D의 실제 token table은 limb i마다 position 3개, orientation 3개, linear/angular velocity 각 3개, type 4개, angle 1개, joint range 1개에 consecutive integer range를 수동 배정한다. 여러 morphology family를 섞을 때 collision이 없도록 family별 constant offset까지 더한다.
+
+따라서 이 방법은 raw trajectory만 보고 unknown hardware를 자동 discovery하지 않는다. **token embedding을 infer**하지만 **tokenization schema는 미리 알아야 한다**. 저자도 conclusion에서 trajectory로 token을 infer하는 것은 future work라고 쓴다.
+
+## Proprioception representation
+
+Agent n의 state는 길이 `N_S(n)`의 scalar sequence다. 각 scalar j에 대해 두 feature를 결합한다.
+
+1. 해당 scalar sensor의 learned morphology embedding, D=32.
+2. 현재 scalar value를 1/10부터 1000까지 geometric frequency로 변환한 sinusoidal embedding, M=96.
+
+결합된 128D vector가 encoder input token 하나가 된다.
+
+```text
+encoder token_j = concat(sensor_id_embedding_j,
+                         cos(k_1 * state_j), sin(k_1 * state_j), ...)
+```
+
+즉 joint angle vector 전체를 한 token으로 압축하지 않고 **scalar 하나당 token 하나**다. sensor identity와 현재 측정값을 분리하므로 같은 값 0.5라도 “hip angle”인지 “torso velocity”인지 embedding이 구분한다.
+
+이 representation은 precise continuous morphology parameter를 직접 주는 MetaMorph와 다르다. link length나 mass가 state vector의 별도 sensor로 제공되지 않으면 AnyMorph는 여러 morphology의 control return을 통해 identity embedding에 그 효과를 흡수해야 한다.
+
+## Method
+
+### 1. Observation encoder
+
+Sensor-token embedding과 sinusoidal state embedding을 concatenate하고 linear projection해 hidden size 128로 만든다. 3-layer, 2-head Transformer encoder가 모든 proprioceptive scalar 사이의 관계를 처리한다.
+
+Position embedding은 sequence 순서를 별도로 쓰는 것이 아니라 sensor ID가 위치/의미를 제공한다. observation length가 agent마다 달라도 padding을 통해 batch 처리할 수 있다.
+
+### 2. Action-token decoder
+
+각 action dimension의 actuator identity token을 learned 32D embedding으로 만들고 hidden 128로 project한다. 3-layer Transformer decoder는 causal mask를 쓰지 않는다. action dimensions는 동시에 예측되므로 이전 action scalar를 autoregressive하게 기다릴 이유가 없다.
+
+Decoder query마다 encoder state와 cross-attention하여 한 scalar pre-activation을 출력하고 final tanh로 action mean을 만든다.
+
+```text
+actuator query_i × all sensor states
+  → cross-attention
+  → scalar action_i
+```
+
+이 구조에서 “어떤 proprioception이 어느 motor에 필요한가”가 actuator-to-sensor attention으로 나타난다. variable action dimension은 actuator query 개수로 처리한다.
+
+### 3. TD3 optimization
+
+TD3를 사용하며 morphology별 replay buffer를 따로 두고, 모든 training morphology에서 lockstep으로 data collection과 update를 번갈아 한다. exploration은 action mean 주변 Gaussian noise다. task마다 같은 hyperparameter를 쓴다.
+
+## Training Recipe
+
+| 항목 | 값 |
+| --- | ---: |
+| morphology embedding D | 32 |
+| scalar sinusoidal embedding M | 96 |
+| hidden / FFN | 128 / 256 |
+| encoder / decoder layers | 3 / 3 |
+| heads / dropout | 2 / 0.0 |
+| RL | TD3, batch 100, replay 최대 10M |
+| total steps | 모든 training morphology 합계 3M |
+| seeds / episode | 4 / 최대 1,000 steps |
+| learning rate | 5e-5; baseline은 1e-4 |
+| compute | single RTX 2080 Ti, 3M steps까지 약 7일 |
+
+Baseline인 Amorpheus와 Shared Modular Policies는 same TD3 framework와 tuned LR을 쓴다. 그러나 architecture parameter count와 wall-clock을 완전히 맞춘 비교인지 paper가 상세히 제시하지 않는다.
+
+## Benchmark
+
+Huang et al.의 simulated agent-agnostic benchmark를 사용한다. base environment는 HalfCheetah-v2, Walker2d-v2, Hopper-v2, Humanoid-v2에서 파생된다.
+
+| family | 전체 morphology 수 | held-out test |
+| --- | ---: | ---: |
+| Cheetah | 15 | 3 |
+| Walker | 6 | 2 |
+| Humanoid | 8 | 2 |
+| Hopper | 3 | 없음 |
+
+단일 family task 4개와 family를 섞은 task 4개, 총 8 tasks다. 가장 큰 Cheetah–Walker–Humanoid–Hopper는 32 morphologies, 그 전 task는 29 morphologies다. Zero-shot은 training에 쓰지 않은 sub-morphology를 2.5M steps checkpoint에서 추가 학습 없이 평가한다.
+
+중요하게 held-out morphology는 같은 family의 full morphology에서 limb가 빠진 variant다. Appendix D는 missing limb에 해당하는 observation/action token을 sequence에서 빼는 방식이다. 즉 training에서 보지 못한 **조합**을 평가하지만 sensor vocabulary와 family는 이미 알려져 있다.
+
+## Experiments and Results
+
+### Training performance
+
+![8 tasks에서 AnyMorph와 baseline의 training curve](/anymorph/figure-4-training.png)
+
+*Figure 4. morphology 수가 많은 mixed-family task에서 AnyMorph의 이득이 커지고, morphology가 3개뿐인 Hopper에서는 Amorpheus보다 낮다.*
+
+AnyMorph는 Hopper를 제외한 task에서 baseline과 같거나 높다. 29-morphology Cheetah–Walker–Humanoid는 Amorpheus 대비 85%, 32-morphology Cheetah–Walker–Humanoid–Hopper는 53% 높은 training return을 figure caption이 보고한다. Conclusion은 largest task의 training lead를 82%라고 적어 본문 수치와 일치하지 않는다.
+
+이 결과는 learned sensor/actuator identity embedding이 많은 morphology를 함께 볼수록 regularization/parameter sharing 효과를 얻는다는 해석과 맞는다. 반대로 적은 morphology에서는 token embedding을 학습할 다양성이 부족할 수 있다.
+
+### Zero-shot held-out morphology
+
+![held-out morphology zero-shot result](/anymorph/figure-5-zero-shot.png)
+
+*Figure 5. 4 seeds × held-out morphology당 10 episodes의 평균 return이며 95% confidence interval을 표시한다.*
+
+전체 aggregation에서 prior methods보다 16% 높다. 두 어려운 mixed-family task는 각각 28%, 32% 개선된다. 그러나 Humanoids 단독에서는 Amorpheus보다 낮고, small task에서는 대체로 parity다.
+
+이 zero-shot은 같은 morphology family 안의 withheld limb combination이다. Appendix D는 family 간 token collision을 일부러 막기 때문에, Humanoid만 학습하고 Walker라는 새 family로 가는 **out-of-domain zero-shot은 지원하지 않는다**고 명시한다. 이를 위해서는 family 간 공유 가능한 token semantics가 필요하다.
+
+### Broken-sensor robustness
+
+![sensor corruption fraction별 robustness](/anymorph/figure-6-robustness.png)
+
+*Figure 6. sensor scalar를 standard-normal noise로 차례로 교체하면 AnyMorph가 8 tasks 모두 더 큰 area under curve를 보인다.*
+
+Corruption order는 random이 아니다. Appendix B는 AnyMorph final decoder attention이 적게 보는 sensor부터 정렬해 먼저 고장낸다. baseline에도 같은 순서를 적용하므로 comparison은 가능하지만, AnyMorph 자신이 덜 쓰는 sensor를 먼저 망가뜨리는 유리한 curriculum이다. random order나 중요 sensor-first robustness는 제시되지 않는다.
+
+Figure 7의 한 Humanoid episode에서는 actuator-to-sensor attention이 sparse하고 많은 sensor를 거의 무시한다. 저자는 이를 robustness의 원인으로 해석하지만 attention weight가 causal importance를 보장하지는 않는다.
+
+## Proprioception 관점의 핵심 해석
+
+AnyMorph의 장점은 state dimension이 달라도 scalar token sequence로 동일한 network contract를 유지한다는 것이다. actuator query가 attention으로 필요한 sensor scalar를 찾아가므로 explicit joint-to-limb alignment를 architecture에 hard-code하지 않는다.
+
+그러나 결과가 보여 주는 것은 “proprioception tokenization + learned identity + encoder-decoder policy” bundle의 효과다.
+
+- raw state value를 sinusoidal embedding하지 않은 ablation이 없다.
+- learned identity를 random/fixed ID로 바꾼 ablation이 없다.
+- proprioception 없이 morphology token만 쓴 조건은 제어 자체가 불가능해 비교하지 않는다.
+- continuous hardware parameter variation이나 visual observation은 평가하지 않는다.
+
+따라서 이 논문은 proprioception의 필요성보다 **heterogeneous scalar state를 어떻게 addressable token으로 만들 것인가**에 답한다.
+
+## Code-Level Check
+
+PDF는 source code를 release했다고 쓰지만 공식 project page는 현재 `Code: coming soon`이다. arXiv, PMLR, project, 저자/기관 공개 페이지에서 authoritative repository나 checkpoint를 확인하지 못했다.
+
+이 때문에 다음을 code-level로 검증할 수 없다.
+
+- token offset과 padding/mask의 실제 구현
+- state normalization 후 sinusoidal embedding 순서
+- morphology별 replay scheduling과 batch composition
+- TD3 critic이 variable-dimensional state/action을 처리하는 방식
+- paper figure checkpoint selection과 exact seeds
+
+Appendix D는 token integer range를 충분히 상세히 제공하지만 full training reproduction에는 부족하다. 특히 paper의 “released code”와 현재 project 상태가 충돌한다.
+
+## 한계와 주의
+
+1. **simulation locomotion benchmark다.** manipulation, vision, real hardware 결과가 없다.
+2. **morphology token은 수동이다.** graph는 없어도 sensor/actuator identity schema와 family offset이 필요하다.
+3. **out-of-domain family zero-shot이 안 된다.** Appendix D가 명시한다.
+4. **continuous physics description이 없다.** 새 mass/length/dynamics 변화 robustness는 검증하지 않는다.
+5. **held-out는 같은 vocabulary의 sub-morphology다.** unseen combination과 unseen robot family를 구분해야 한다.
+6. **corruption order가 AnyMorph attention 기반이다.** random sensor failure보다 유리할 수 있다.
+7. **공식 code를 현재 확인할 수 없다.** 논문 문구와 project가 상충한다.
+8. **수치 표기가 흔들린다.** largest-task training lead가 본문 53%/Figure caption과 conclusion 82% 문맥에서 달라진다.
+
+## MetaMorph와의 직접 비교
+
+| 항목 | MetaMorph | AnyMorph |
+| --- | --- | --- |
+| morphology input | geometry, density, joint axis/range, gear 등 continuous description | sensor/actuator integer identity embedding |
+| proprio token | module+joint vector를 module token에 결합 | scalar 하나당 sensor token 하나 |
+| topology | kinematic tree DFS ordering 사용 | graph/limb structure 불필요 |
+| output | module별 joint action | actuator query별 scalar action |
+| generalization | same design grammar의 parameter variation, 새 topology fine-tuning | same family vocabulary의 held-out sub-morphology zero-shot |
+| 핵심 약점 | 정확한 robot description·DFS order 필요 | token schema·family offset 필요, OOD family 불가 |
+
+둘은 상반된 trade-off다. MetaMorph는 richer physics metadata로 robust control을 얻고, AnyMorph는 metadata를 identity token으로 줄여 interface flexibility를 얻는다. 어느 쪽도 robot description 없이 raw proprioception만으로 arbitrary real robot를 자동 식별한 것은 아니다.
+
+## Figure / Table Inventory
+
+| 원문 | 내용 | Survey 반영 |
+| --- | --- | --- |
+| Figure 1 | observation/action format과 morphology token overview | 문제의식 |
+| Figure 2 | tokenization concept | inference 범위 |
+| Figure 3 | encoder-decoder architecture | Method 핵심 figure |
+| Figure 4 | 8-task training curves | Training results |
+| Figure 5 | held-out zero-shot | Zero-shot |
+| Figure 6 | broken-sensor curves | Robustness |
+| Figure 7 | actuator-to-sensor attention | sparse attention 해석 |
+| Table 1 | graph/alignment assumption 비교 | 문제의식 |
+| Tables 2–3 | model·TD3 hyperparameters | Recipe |
+| Table 4 | train/test morphology split | Benchmark |
+| Tables 5–6 | observation/action token IDs | tokenization 검증 |
+
+## 검증 메모
+
+- ICML/arXiv PDF 15쪽의 본문과 Appendix A–D를 직접 확인했다.
+- Figures 1–7과 Tables 1–6을 전수 inventory하고 핵심 figure를 local asset으로 추출해 검수했다.
+- PMLR, official project, Mila article을 대조했고 current code availability를 확인했다.
+- “learned morphology”를 learned embedding과 manually assigned token schema로 분해해 해석했다.
+
+<SectionFeedback page="AnyMorph" section="전체 Survey" />

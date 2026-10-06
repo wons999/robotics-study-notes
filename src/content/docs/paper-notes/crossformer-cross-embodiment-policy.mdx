@@ -1,0 +1,243 @@
+---
+research: {"kind": "paper", "topics": ["vla", "data"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2408.11812"}
+title: CrossFormer
+description: 서로 다른 observation·action space를 정렬하지 않고 하나의 Transformer로 20개 robot embodiment를 학습하는 CrossFormer와 proprioception의 제한적 역할을 분석한 Survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/crossformer-cross-embodiment-policy" />
+
+# CrossFormer
+
+<SectionFeedback page="CrossFormer" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Scaling Cross-Embodied Learning: One Policy for Manipulation, Navigation, Locomotion and Aviation |
+| 저자 | Ria Doshi, Homer Walke, Oier Mees, Sudeep Dasari, Sergey Levine |
+| 공개 | arXiv:2408.11812v1, 2024-08-21; CoRL 2024 Oral (Top 4%) |
+| 링크 | [arXiv](https://arxiv.org/abs/2408.11812) · [PDF](https://arxiv.org/pdf/2408.11812) · [Project](https://crossformer-model.github.io/) · [Code](https://github.com/rail-berkeley/crossformer) · [Checkpoint](https://huggingface.co/rail-berkeley/crossformer) |
+| 태그 | cross-embodiment, heterogeneous observation, heterogeneous action, proprioception, action heads |
+
+## 한 줄 요약
+
+CrossFormer는 observation과 action을 하나의 공통 물리 좌표로 억지로 맞추는 대신, **존재하는 sensor만 modality별 token으로 만들고 shared causal Transformer 뒤에 embodiment class별 action head를 둔다**. 900K trajectory의 단일 checkpoint가 single-arm, bimanual, navigation, quadruped를 함께 제어하지만, proprioception을 직접 검증한 논문이라기보다 proprio가 필요한 두 embodiment만 선택적으로 수용하는 architecture 연구다.
+
+![CrossFormer의 observation tokenizer, shared Transformer, 네 action head](/crossformer/figure-2-architecture.png)
+
+*Figure 2. 없는 modality는 mask하고, workspace/navigation/wrist image 및 quadruped/bimanual proprio token을 같은 backbone에 넣는다. readout token과 action head는 action family별로 분리한다.*
+
+## 문제의식
+
+Cross-embodiment learning의 어려움은 robot마다 camera 수, proprioceptive sensor, action dimension, control frequency가 모두 다르다는 점이다. 기존 접근은 wrist와 navigation camera를 한 slot으로 합치거나, manipulation action과 navigation waypoint를 공통 action으로 정렬했다. 이 과정은 정보를 버리거나 사람이 correspondence를 설계해야 한다.
+
+CrossFormer의 선택은 더 단순하다.
+
+```text
+각 embodiment의 존재하는 observation
+  → modality-specific tokenizer
+  → shared blockwise-causal Transformer
+  → 해당 action family의 readout tokens
+  → family-specific action head
+```
+
+즉 shared되는 것은 observation/action의 의미나 차원이 아니라 **Transformer representation**이다. 이 덕분에 서로 disjoint한 sensor·actuator도 같은 batch에서 학습할 수 있지만, action head가 완전히 통합된 것은 아니다.
+
+## Dataset
+
+논문은 약 900K trajectory, 20 robot embodiment를 사용한다.
+
+| family | batch 비중 | 주요 data |
+| --- | ---: | --- |
+| single-arm manipulation | 58% | Octo의 OXE subset, DROID, Bridge 등 |
+| navigation | 17% | GNM 60시간 |
+| bimanual manipulation | 17% | 두 기관에서 수집한 ALOHA 약 7K trajectory |
+| quadruped locomotion | 8% | Go1 RL expert rollout 25분 |
+
+추가로 Franka-tabletop 200 trajectory를 수집한다. Appendix Table 1에는 28개 dataset의 정확한 sampling weight가 있고, target dataset인 Bridge, ALOHA, GNM은 각각 17%, Go1-walk과 Franka-tabletop은 각각 8.5%로 up-weight한다. 따라서 결과를 단순히 “대규모 data를 자연 빈도로 섞은 결과”라고 보면 안 된다. 저자도 hand-picked sampling weight를 limitation으로 인정한다.
+
+### 공개 artifact의 숫자 불일치
+
+- arXiv PDF의 abstract, 본문, conclusion은 모두 **20 embodiments**라고 쓴다.
+- 프로젝트 페이지는 **30 embodiments**라고 쓴다.
+- PDF 본문은 ALOHA를 **20 Hz**로 제어한다고 쓰지만 프로젝트 페이지는 **50 Hz**라고 쓴다.
+- PDF 본문은 학습이 TPU v5e-256에서 **47시간**, Appendix B는 **80시간**, code README는 **47시간**이라고 쓴다.
+
+이 Survey는 architecture·실험 수치는 PDF와 공개 code를 우선하고, 위 차이는 재현성 issue로 남긴다.
+
+## Method
+
+### 1. Observation을 고정 schema에 넣되 없는 sensor는 mask한다
+
+각 timestep의 trajectory는 image (I_t), proprioception (P_t), action (a_t)로 볼 수 있다. history 길이는 (k=5)다. CrossFormer는 다음 observation type을 지원한다.
+
+| token group | 내용 | 사용 setting |
+| --- | --- | --- |
+| workspace image | third-person camera | manipulation |
+| navigation image | egocentric camera | ground navigation |
+| wrist image | 최대 좌·우 wrist view | manipulation |
+| quadruped proprio | joint position + velocity estimate | locomotion |
+| bimanual proprio | 두 arm의 joint position | ALOHA |
+
+Image는 view type별 ResNet-26으로 encode하고 spatial feature를 flatten한 뒤 512차원 token으로 투영한다. workspace, navigation, left wrist, right wrist에 총 네 encoder를 둔다. Language instruction은 FiLM으로 image feature를 condition하고, goal image는 current image와 channel-wise stack한다.
+
+모든 batch element가 동일한 token slot을 갖도록 없는 observation과 사용하지 않는 readout group은 mask한다. padding은 늘지만 token 위치 자체가 embodiment/action type의 표지로 작동해 별도 embodiment prefix가 필요 없다.
+
+### 2. Proprioception은 어디에 어떻게 들어가는가
+
+PDF는 proprioceptive observation을 “token embedding size로 단순 projection”한다고 설명한다. 공개 code를 보면 더 구체적이다.
+
+- `LowdimObsTokenizer`는 proprio vector의 **각 scalar를 별도 token**으로 만든다. 기본값에서는 discretization하지 않고 scalar를 shape 1 feature로 둔 뒤 Dense layer로 512차원에 투영한다.
+- ALOHA는 `proprio_bimanual` 14차원, quadruped dataset config는 `proprio_quadruped` 46차원으로 선언한다.
+- bimanual proprio token에는 training dropout 0.2가 적용된다.
+- 일반 proprio/action은 dataset 통계의 mean/std로 normalize하지만, 공개 pretrain config는 `proprio_bimanual` normalization을 skip한다.
+- single-arm과 navigation에는 proprio tokenizer가 없다. 공개 config가 OXE proprio를 load하더라도 architecture가 실제 소비하는 것은 bimanual과 quadruped key뿐이다.
+
+이 구조는 embodiment마다 proprio dimension의 의미를 통일하지 않는다. 14개의 bimanual joint scalar와 46개의 quadruped scalar가 같은 tokenizer weight를 공유하는 것도 아니고, 서로 대응되는 joint를 정렬하지도 않는다. 대신 둘 다 shared Transformer의 token sequence 안에서 interaction한다.
+
+#### 59차원인가 46차원인가
+
+Evaluation section은 Go1 observation `o_t`를 59차원이라고 쓴다. 반면 공개 training config의 quadruped proprio input은 46차원이다. `o_t`가 expert/environment의 전체 observation이고 policy tokenizer에 들어간 vector가 subset일 가능성이 있지만, paper와 code가 mapping을 설명하지 않아 확정할 수 없다. joint position·velocity 외 나머지 값의 정확한 구성도 PDF에는 없다.
+
+### 3. Blockwise-causal Transformer
+
+12 layers, 8 heads, width 512, MLP 2048인 decoder-only Transformer를 쓴다. attention은 timestep 단위 causal이다. 한 timestep 안의 observation token끼리는 서로 볼 수 있고, 과거 timestep도 볼 수 있지만 미래는 볼 수 없다. readout token은 task·observation과 **자기 action family의 readout**만 attend한다.
+
+context length는 2,135 tokens로, 모든 observation/readout group을 padding해도 5 timestep을 담는다. 특히 navigation은 5-step history가 필요했고, 다른 setting에서는 이 history가 성능을 해치지 않았다고 보고한다.
+
+### 4. Action alignment 대신 네 head를 둔다
+
+| head | action | chunk | 실행 주기 |
+| --- | --- | ---: | ---: |
+| single arm | relative Cartesian pose + gripper, 7D | 4 | 5–15 Hz |
+| navigation | current pose 기준 relative waypoint, 2D | 4 | 4 Hz |
+| bimanual | 두 arm joint position, 14D | 100 | 20 Hz |
+| quadruped | leg joint position, 12D | 1 | 20 Hz |
+
+각 readout token embedding을 해당 action dimension으로 linear projection하고 L1 loss로 continuous action을 학습한다. bimanual은 100 readout token, single-arm/navigation은 4개, quadruped는 1개다. 따라서 “variable action space를 한 vocabulary로 통합”한 것이 아니라 **backbone만 공유하고 출력 contract는 분리**한 설계다.
+
+## Training Recipe
+
+| 항목 | 설정 |
+| --- | --- |
+| parameters | 130M, ResNet-26과 action heads 포함 |
+| initialization | ResNet-26 ImageNet pretrained |
+| optimizer | AdamW, learning rate 3e-4 |
+| schedule | 2,000-step warmup 후 reciprocal square-root |
+| batch / steps | 512 / 300K |
+| regularization | weight decay 0.1, gradient clip 1.0 |
+| augmentation | color jitter, random resize/crop |
+| task conditioning | future observation uniform hindsight goal; language가 있으면 language 또는 goal을 무작위 mask |
+| checkpoint selection | validation MSE; 저자 표현으로 robot performance와 “very roughly” correlate |
+
+## Experiments and Results
+
+![여섯 evaluation embodiment](/crossformer/figure-4-evaluation-setups.png)
+
+*Figure 4. WidowX, ALOHA, Franka, LoCoBot, Go1, Tello를 실제 hardware에서 평가한다.*
+
+### Specialist와의 비교
+
+![CrossFormer, single-robot baseline, best prior method의 embodiment별 결과](/crossformer/figure-5-main-results.png)
+
+*Figure 5. 평균은 CrossFormer 0.73, target robot data만 쓴 같은 architecture 0.67, best prior method 0.51이다.*
+
+| embodiment / task | single-robot | best prior | CrossFormer |
+| --- | ---: | ---: | ---: |
+| WidowX 4 tasks 평균 | 0.42 | 0.34 | 0.40 |
+| Franka 2 tasks 평균 | 0.62 | 0.60 | 0.62 |
+| ALOHA 2 tasks 평균 | 0.50 | 0.50 | 0.70 |
+| LoCoBot 3 skills 평균 | 0.92 | 0.48 | 0.93 |
+| Tello cornering | 0.68 | 0.68 | 0.82 |
+| Go1 walking normalized reward | 1.00 | N/A | 1.00 |
+| 전체 평균 | 0.68 | 0.51 | 0.73 |
+
+CrossFormer는 전체 평균에서 specialist를 5%p 넘지만, 개별 manipulation task에는 negative transfer도 있다. 예를 들어 WidowX carrot-on-plate는 0.67→0.33이고, Franka sweep은 0.41로 동일하다. 반대로 ALOHA uncap/cut은 0.60/0.40에서 0.80/0.60으로 오른다. 저자도 결론에서 **significant positive transfer를 아직 보이지 못했다**고 명시한다.
+
+![task별 trial 수를 포함한 상세 결과](/crossformer/table-3-detailed-results.png)
+
+*Table 3. manipulation 성공률, navigation subgoal 도달 비율, Go1 normalized reward라는 서로 다른 metric을 하나의 평균으로 묶는다.*
+
+### Yang et al.과 action alignment 비교
+
+같은 GNM/Bridge 관련 data를 쓰는 Yang et al.의 186M policy와 비교하면 obstacle avoidance, cornering, sharp turn, WidowX pick-and-place에서 CrossFormer가 전체 약 3배라고 보고한다. Yang et al.은 WidowX third-person evaluation에서 0이었고, 저자는 한 slot에 wrist/third-person view를 교대로 넣은 alignment가 underfit을 만들었다고 추정한다.
+
+그러나 이는 alignment만 분리한 controlled ablation이 아니다. architecture, camera-slot 처리, data 구성도 함께 다르며 WidowX zero라는 큰 차이가 평균을 지배한다.
+
+### Proprioception 관점에서 실험이 말하는 것과 말하지 않는 것
+
+**말할 수 있는 것**
+
+- image가 없는 저수준 Go1 locomotion과 high-frequency ALOHA까지 하나의 backbone이 수용 가능하다.
+- proprio dimension을 공통 joint schema로 align하지 않고도 family-specific token group과 head로 학습할 수 있다.
+- 14D bimanual state와 quadruped state처럼 성격이 다른 low-dimensional input을 variable observation interface 안에 넣을 수 있다.
+
+**말할 수 없는 것**
+
+- proprioception on/off ablation이 없어 ALOHA·Go1 성능 향상이 proprio 때문인지는 알 수 없다.
+- CrossFormer vs specialist 차이는 multi-embodiment co-training 효과이며, proprio representation 효과가 아니다.
+- Go1에는 vision-free proprio-only baseline이나 state 구성 ablation이 없다.
+- single-arm에 proprio를 넣었을 때 좋아지는지/나빠지는지도 시험하지 않는다.
+
+즉 이 논문의 proprioception contribution은 **성능 인과 증거보다 heterogeneous interface 설계**에 있다.
+
+## Code-Level Check
+
+공식 repository의 main branch commit `4a56b64`를 직접 확인했다.
+
+- 공개 구현은 Octo codebase 위 JAX/Flax로 작성되어 있고 training, fine-tuning, remote inference, 130M checkpoint를 제공한다.
+- `HEAD_TO_DATASET`으로 dataset마다 네 action head 중 하나를 지정한다.
+- missing proprio key는 정해진 dimension의 zero tensor와 pad mask로 채운다.
+- `LowdimObsTokenizer`는 continuous scalar별 token을 만들고, model module의 Dense projection이 이를 512차원으로 바꾼다.
+- inference server는 bimanual을 제외한 proprio를 checkpoint mean/std로 normalize한다.
+- fine-tuning 시 새 observation tokenizer나 action head를 초기화하고 pretrained backbone만 유지할 수 있다.
+
+공개 code가 paper의 architecture를 상당 부분 재현하지만 robot interface와 모든 private dataset converter가 포함된 완전한 end-to-end reproduction package는 아니다.
+
+## 한계와 주의
+
+1. **positive transfer가 제한적이다.** 평균은 높지만 저자도 유의미한 cross-embodiment positive transfer를 결론으로 주장하지 않는다.
+2. **output은 완전 통합되지 않았다.** 네 action family별 head와 readout slot이 필요하다.
+3. **sampling weight를 수작업한다.** target dataset up-weight가 결과에 영향을 준다.
+4. **metric 평균의 의미가 약하다.** binary manipulation success, navigation progress, locomotion reward를 같은 평균에 섞는다.
+5. **trial 수가 작다.** navigation은 skill당 표에 2 trials, Tello는 3 trials이며 통계적 불확실성이 크다.
+6. **proprio ablation이 없다.** 이 연구만으로 state representation의 우열을 결론낼 수 없다.
+7. **paper·site·code 표기가 충돌한다.** embodiment 수, ALOHA 주기, training time, Go1 observation dimension을 재현 전에 다시 확인해야 한다.
+8. **큰 model의 control latency가 병목이다.** 저자도 high-frequency robot에서 더 큰 backbone을 쓰기 어렵다고 지적한다.
+
+## 다른 proprioception 논문과의 연결
+
+| 연구 | CrossFormer와의 차이 |
+| --- | --- |
+| [HPT](../hpt-heterogeneous-pretrained-transformers/) | HPT는 morphology별 stem/trunk/head와 masked pretraining으로 proprio-visual transfer 자체를 분석한다. CrossFormer는 네 action family의 joint co-training에 초점이 있다. |
+| [RPT](../rpt-sensorimotor-pretraining/) | RPT는 proprio token을 직접 mask/reconstruct해 sensorimotor representation을 학습한다. CrossFormer의 proprio에는 reconstruction objective가 없다. |
+| [State-free Policy](../state-free-vision-language-action-policy/) | State-free는 manipulation의 proprio shortcut을 제거한다. CrossFormer는 single-arm에서 state를 쓰지 않지만 그 선택을 별도 ablation하지 않는다. |
+| [ThinkProprio](../thinkproprio-state-grounded-token-selection/) | ThinkProprio는 proprio를 visual-token query/guidance로 활용한다. CrossFormer는 plain observation token으로 self-attention에 넣는다. |
+
+## Figure / Table Inventory
+
+| 원문 | 내용 | Survey 반영 |
+| --- | --- | --- |
+| Figure 1 | 6 embodiment teaser | 결과 범위 설명 |
+| Figure 2 | tokenizer–Transformer–action heads | Method 핵심 figure |
+| Figure 3 | 네 family의 batch sampling ratio | Dataset table로 반영 |
+| Figure 4 | 실제 evaluation setup | Experiments |
+| Figure 5 | specialist·prior method 비교 | Main results |
+| Figure 6 | Yang et al. 비교 | 별도 해석 |
+| Table 1 | 28-dataset sampling mixture | Dataset |
+| Table 2 | training hyperparameters | Training Recipe |
+| Table 3 | task별 detailed real evaluation | Experiments |
+
+## 검증 메모
+
+- arXiv v1 PDF 17쪽의 main text와 Appendix A–D를 직접 확인했다.
+- Figures 1–6과 Tables 1–3을 전수 inventory하고 핵심 figure/table을 로컬 asset으로 추출해 시각 검수했다.
+- 공식 project page, GitHub repository, Hugging Face checkpoint를 확인했다.
+- 공개 code의 proprio tokenizer, dataset schema, normalization, readout/action-head config를 PDF와 대조했다.
+
+<SectionFeedback page="CrossFormer" section="전체 Survey" />

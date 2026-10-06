@@ -1,0 +1,361 @@
+---
+research: {"kind": "note", "topics": ["sensing", "vla"], "status": "reviewing", "reviewedAt": null}
+title: Proprioception 표현과 평가 설계
+description: robot policy 논문들이 proprioception을 구성·토큰화·융합하는 방법과 실험 근거를 비교하고, 공정한 재현 실험 설계를 정리한 노트.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="experiments/proprioception-representation-and-evaluation" />
+
+# Proprioception 표현과 평가 설계
+
+<SectionFeedback page="Proprioception 표현과 평가 설계" section="문서 범위" />
+
+## 문서 범위
+
+이 문서는 여러 robot-policy 논문의 proprioception 설계를 다음 질문으로 다시 정렬한다.
+
+1. 무엇을 state로 사용하는가?
+2. state를 어떤 representation으로 바꾸는가?
+3. VLM, action expert, policy trunk 중 어디에 넣는가?
+4. 현재 state만 쓰는가, history나 future prediction도 쓰는가?
+5. 성능 향상이 proprioception 설계 자체에서 왔다는 근거가 있는가?
+6. 어떤 action representation과 evaluation split에서 결과가 성립하는가?
+
+단순히 “state를 사용한다”는 사실과 “그 방식이 더 낫다는 실험”은 분리한다. GR00T N1, RDT-1B, Dexora처럼 큰 policy가 같은 방향으로 수렴했더라도 state ablation이 없다면 이는 **널리 쓰이는 관행**이지 우월성의 직접 증거가 아니다.
+
+## 먼저 구분할 네 가지 근거 수준
+
+| 등급 | 의미 | 대표 사례 |
+| --- | --- | --- |
+| A — 직접 ablation | 같은 model/data에서 state representation이나 injection만 바꿈 | π0.5-KI, ThinkProprio, TA-VLA |
+| B — 인과 개입 | 실패 원인을 state channel 또는 특정 phase로 직접 개입해 확인 | State-free Policy의 state hack, GAP의 transition-window intervention |
+| C — architecture 관행 | 해당 설계를 사용해 전체 policy 결과를 냈지만 state 자체 ablation은 없음 | GR00T N1, RDT-1B, Dexora |
+| D — 간접·제한 근거 | locomotion→manipulation 전이, 소표본, 고분산, 철회 논문 | Humanoid NTP, VTAO-BiManip, NADA |
+
+이 등급은 논문 전체의 품질 순위가 아니다. **proprioception에 관한 특정 주장**이 얼마나 직접 검증됐는지를 나타낸다.
+
+## Proprioception은 무엇으로 구성되는가
+
+### Current joint/EEF state
+
+가장 흔한 입력은 현재 시점의 absolute joint state 또는 end-effector pose다.
+
+| paper | state signal | history | normalization |
+| --- | --- | --- | --- |
+| [π0.5-KI](/paper-notes/pi/knowledge-insulation/) | platform별 joint/proprio state | current only | dimension별 quantization |
+| [ThinkProprio](/paper-notes/thinkproprio-state-grounded-token-selection/) | 9–16D joint, gripper, EE pose 조합 | current only | dataset statistics, `[-3,3]` clip, 256 bins |
+| [GR00T N1](/paper-notes/groot/n1-open-foundation-model/) | embodiment별 joint 또는 EEF state | current only | min–max, EEF rotation은 6D |
+| [RDT-1B](/paper-notes/rdt-1b-robot-diffusion-transformer/) | 128D unified physical slots + padding indicator | current only | m, rad, m/s 같은 physical unit 유지 |
+| [Dexora](/paper-notes/dexora-bimanual-dexterous-manipulation/) | bilateral arm+hand joint state 36D | current only | policy I/O 방식은 논문에서 미기재 |
+| [GAP](/paper-notes/gap-vision-proprioception-policy-failure/) | 7D absolute EEF pose+gripper | current only | task statistics 기반 |
+
+`joint state`와 `EEF pose`는 같은 proprioception으로 묶이지만 shortcut 특성이 다르다. absolute EEF pose는 object placement와 높은 상관을 가질 수 있고, joint state는 embodiment configuration과 controller target을 더 직접 반영한다.
+
+### Torque와 effort
+
+[TA-VLA](/paper-notes/ta-vla-torque-aware-vla/)는 joint angle 대신 motor-current-derived effort를 추가한다. effort에는 contact뿐 아니라 gravity, inertia, friction, actuator dynamics가 섞인다. 따라서 이를 pure external force로 해석하면 안 된다.
+
+### Kinematic node 또는 body part
+
+flat vector를 하나의 token으로 압축하지 않고 관절이나 body part로 나누는 흐름도 있다.
+
+- [Body Transformer](/paper-notes/body-transformer-robot-embodiment/): joint/body node마다 비공유 tokenizer와 detokenizer를 둔다.
+- [Embedding Morphology into Transformers](/paper-notes/embedding-morphology-into-transformers/): action chunk를 joint-major token으로 바꾸고 topology mask와 joint attribute를 사용한다.
+- [VTAO-BiManip](/paper-notes/vtao-bimanip-masked-pretraining/): bimanual joint를 joint별 token으로 만든다.
+- [HPT](/paper-notes/hpt-heterogeneous-pretrained-transformers/): raw dimension은 embodiment별 stem이 흡수하고 modality별 16 latent tokens만 trunk에 보낸다.
+
+이 네 방식은 동일하지 않다. Body Transformer는 state/action 양쪽의 graph computation을 구조화하고, morphology 논문은 π0.5 action expert의 **action-side**를 구조화한다. HPT는 kinematic graph를 쓰지 않고 fixed latent interface를 만든다.
+
+## Injection taxonomy
+
+### 1. Discrete token → VLM prefix
+
+state dimension별 값을 bin으로 양자화하고 VLM token sequence에 넣는다.
+
+```text
+normalized state q_i
+  -> bin index b_i
+  -> text token 또는 기존 vocabulary embedding
+  -> vision/language prefix
+```
+
+[π0.5-KI](/paper-notes/pi/knowledge-insulation/)의 text state와 [ThinkProprio](/paper-notes/thinkproprio-state-grounded-token-selection/)의 vocabulary reuse가 대표적이다. pretrained embedding geometry를 그대로 쓸 수 있다는 장점이 있다.
+
+ThinkProprio에서는 state token이 action conditioning만 하는 것이 아니라 visual patch selection의 query로도 쓰인다. 그러나 CALVIN에서 encoding alone은 `4.44→4.45`로 작고, full selector/context/diversity 조합이 `4.52`를 만든다. headline 결과를 “vocabulary token의 효과”만으로 돌리면 안 된다.
+
+### 2. Continuous token → action expert/DiT stream
+
+```text
+state vector -> Linear/MLP/Fourier projection
+             -> state token
+             -> noised action tokens와 self-attention
+```
+
+GR00T N1, RDT-1B, Dexora가 이 형태를 사용한다. vision-language token은 cross-attention 조건으로 분리하는 경우가 많다. 직접적인 위치 ablation은 TA-VLA가 가장 가깝다. effort를 VLM encoder보다 action expert 앞의 독립 token으로 넣을 때 더 좋았다.
+
+### 3. Continuous projection → VLM prefix
+
+ThinkProprio의 CALVIN 비교에서는 MLP-projected state를 VLM에 넣은 행이 `4.15`로 no-state `4.44`보다 낮았다. 반면 π0.5-KI의 자체 recipe에서는 continuous state가 text state와 통계적으로 큰 차이가 없었다.
+
+이는 모순이 아니다. backbone, initialization, injection 위치, training recipe가 다르다. “continuous projection은 항상 나쁘다”는 결론보다 **새 projection이 pretrained VLM embedding distribution을 흔들 수 있다**는 위험 신호로 읽는 편이 맞다.
+
+### 4. Passive modulation
+
+ThinkProprio에서 MLP state를 action head AdaLN에만 넣으면 no-state와 같은 `4.44`였다. 이 결과는 state가 full attention token으로 들어가는 것보다 수동적 modulation이 약할 수 있음을 보여준다. 다만 단일 setting이므로 FiLM/AdaLN 전체를 무효라고 일반화할 수 없다.
+
+### 5. Embodiment-specific stem
+
+HPT는 raw state schema를 하나로 통일하지 않는다. dataset/embodiment별 MLP와 learnable queries가 state sequence를 16 tokens로 resample하고 shared trunk만 공동 학습한다. 이는 morphology-aware tokenization보다 **schema adapter**에 가깝다.
+
+## 시간 구조: current only와 history는 어느 쪽이 맞는가
+
+두 결과가 겉으로 충돌한다.
+
+| paper | temporal design | result |
+| --- | --- | --- |
+| TA-VLA | 10-frame effort history를 1 token으로 flatten | task별 `15/20`, `16/20` |
+| TA-VLA | 같은 history를 10 tokens로 유지 | `9/20`, `7/20` |
+| Humanoid NTP | state/action context 16 steps | next-token locomotion policy 기본값 |
+| Humanoid NTP | context를 32·48로 확장 | command tracking이 단조 개선 |
+| RDT-1B | proprio current only, image history 2 | shortcut 방지 논거; 직접 ablation 없음 |
+
+핵심 변수는 history 유무 하나가 아니다.
+
+- signal의 timescale: contact effort와 gait dynamics가 다르다.
+- tokenization: 한 token으로 압축할지 timestep별 token을 유지할지 다르다.
+- fusion 위치: VLM prefix인지 action expert인지 다르다.
+- pretrained sequence contract: 기존 suffix에 여러 token을 끼우면 분포가 바뀔 수 있다.
+
+따라서 “history는 금지” 또는 “길수록 좋다”가 아니라 current-only, single-token history, sequence history를 같은 architecture에서 비교해야 한다.
+
+## Auxiliary objectives와 guidance
+
+### Future effort prediction — TA-VLA
+
+TA-VLA는 future action과 future effort를 같은 flow vector에 넣어 공동 예측한다.
+
+```text
+L = L_action + beta * L_future_effort
+```
+
+Button Pushing에서 π0 `5/20`, observation history `15/20`, future-effort objective `11/20`, 둘의 조합 `18/20`이다. predicted effort를 별도 planner로 feedback하는 구조는 아니며 inference에서는 action slice만 사용한다.
+
+### Next state/action prediction — Humanoid NTP
+
+[Humanoid Locomotion as Next Token Prediction](/paper-notes/humanoid-locomotion-next-token-prediction/)은 state와 action의 다음 token을 연속 회귀한다. action-only 대비 state+action prediction은 tracking error `0.335→0.305`, modality-aligned output slot은 non-aligned `0.338`보다 `0.299`로 낮았다.
+
+이는 작은 locomotion transformer의 결과다. 대형 manipulation VLA에서도 같은 효과가 난다는 증거는 아니다.
+
+### Masking과 future action — VTAO-BiManip
+
+VTAO는 masked visual-tactile-action representation을 pretrain하고 multi-step future action을 예측한다. downstream success는 future prediction 포함 `63±4%`, 제거 `35±25%`, 1-step `44±8%`다. 방향성은 크지만 RL downstream이고 variance가 높다.
+
+### Proprioception-guided visual selection — ThinkProprio
+
+fixed-count state tokens가 visual patch의 query가 되어 현재 robot configuration과 관련된 영역을 남긴다. 이 경우 proprioception은 controller condition을 넘어 **perception compute allocation**을 바꾼다.
+
+### Masked sensorimotor pretraining — RPT와 MSDP
+
+[RPT](/paper-notes/rpt-sensorimotor-pretraining/)는 image, 8D state, past action token의 70–90%를 가리고 원래 modality를 복원한다. scratch보다 sample efficiency와 cross-robot transfer가 좋지만 image+action-only pretraining ablation이 없어 proprio target의 독립 기여는 분리되지 않는다.
+
+[MSDP](/paper-notes/msdp-multimodal-sensorimotor-policy/)는 RGB, F/T, 14D joint position/velocity를 mask-reconstruct하거나 action-conditioned next observation으로 예측한다. noisy-vision Peg Insertion에서 no-proprioception curve가 명확히 낮아지는 직접 증거가 있다. 다만 state가 pretraining input과 downstream RL input에서 동시에 빠지는지 세부 protocol이 짧아 representation 효과와 online-control 정보 효과가 섞여 있다.
+
+## Cross-embodiment interface에서 state를 다루는 방식
+
+[CrossFormer](/paper-notes/crossformer-cross-embodiment-policy/)는 모든 robot의 state/action을 공통 물리 schema로 맞추지 않는다. ALOHA의 14D bimanual state와 quadruped state를 서로 다른 token group으로 만들고, 없는 modality는 mask하며 action family별 head를 둔다. 한 checkpoint가 다양한 embodiment를 제어하지만 proprioception on/off ablation은 없다. 이 결과는 **heterogeneous interface가 동작한다는 근거**이지 scalar-per-token 방식의 우월성 증거가 아니다.
+
+[OpenVLA-OFT](/paper-notes/openvla-oft-finetuning/)는 current proprio vector를 2-layer GELU MLP로 LLM width의 token 하나로 만들고 visual patch 뒤에 붙인다. LIBERO의 `95.3→97.1`은 wrist camera와 proprioception을 동시에 추가하고 dataset filtering도 바뀐 결과다. proprio-only gain으로 사용하면 안 된다.
+
+[Octo](/paper-notes/octo-generalist-robot-policy/)의 released pretraining recipe는 proprio를 사용하지 않는다. Appendix의 preliminary experiment에서는 proprio 추가가 전반적으로 악화됐지만 exact 수치가 없다. 반면 downstream fine-tuning에서는 joint state나 F/T 같은 새 low-dimensional sensor tokenizer를 추가할 수 있다. pretraining exclusion, 정성 negative result, downstream sensor 수용을 하나의 결론으로 합치면 안 된다.
+
+## 인접 shortcut 연구와의 경계
+
+[Causal-ACT](/paper-notes/causal-act-visual-shortcut/)는 joint position path를 유지한 채 **visual feature만** causal graph search로 masking한다. OOD transfer를 `0.23→0.82`로 높였지만 proprioception representation이나 state shortcut을 다룬 결과가 아니다.
+
+[Shortcut Learning in Generalist Robot Policies](/paper-notes/shortcut-learning-generalist-robot-policies/)는 viewpoint, background, object, language와 OXE sub-dataset fragmentation을 분석한다. controlled Diffusion Policy/MiniVLA 실험은 proprioception을 입력에서 제외했고, 저자도 state/tactile shortcut을 future work로 둔다. 이 논문은 “shortcut의 원인이 항상 proprioception이다”라는 해석을 막는 반대편 자료다.
+
+## 기반 policy와 morphology 연구에서 얻는 간접 증거
+
+[ACT](/paper-notes/act-action-chunking-transformer/)는 current 14D bimanual qpos를 CVAE encoder와 policy decoder 양쪽에 넣는다. `k=100`은 proprio history가 아니라 future action horizon이고 temporal ensemble은 과거 action prediction을 output space에서 평균한다. qpos 제거나 state-history ablation은 없다.
+
+[Diffusion Policy](/paper-notes/diffusion-policy-visuomotor-policy-learning/)의 visual policy도 image-only가 아니라 EEF pose와 gripper state를 함께 쓴다. state-policy와 visual-policy 비교는 ground-truth object state와 pixels의 차이이며 proprio 유무 비교가 아니다. 기본 observation history 2도 image+state를 함께 늘린다.
+
+[MetaMorph](/paper-notes/metamorph-universal-controllers/)는 module별 instantaneous proprioception과 explicit morphology parameter를 같은 token에 넣는다. morphology를 제거하면 joint multi-robot training이 크게 약해지지만 proprio-only 제거 조건은 없다. 결과는 simulated locomotion universal controller에 관한 것이며 manipulation VLA로의 이전은 가설이다.
+
+[AnyMorph](/paper-notes/anymorph-universal-robot-control/)는 scalar sensor마다 learned identity token을 붙이고 actuator token을 decoder query로 사용한다. variable-dimensional state/action interface의 좋은 원형이지만 manually enumerated sensor identity가 필요하고 unseen robot family zero-shot까지 보인 것은 아니다.
+
+[HOVER](/paper-notes/hover-humanoid-versatile-controller/)와 [OmniH2O](/paper-notes/omnih2o-humanoid-teleoperation/)는 privileged full-body teacher를 joint·IMU·previous-action history를 받는 deployable student로 distill한다. OmniH2O에서 25-step flattened history는 real global MPJPE를 `83.26→47.94 mm`로 낮추지만, PPO에 history를 직접 넣은 policy는 실패하고 DAgger student가 성공한다. history 길이뿐 아니라 privileged supervision과 optimization route가 핵심이다.
+
+## Proprioception이 오히려 해가 되는 세 메커니즘
+
+### Absolute-state memorization
+
+[State-free Policy](/paper-notes/state-free-vision-language-action-policy/)는 table height가 달라지면 with-state policy가 `30/30→0/30`으로 무너지고, test-time state에 height offset만 더하면 `30/30`이 복원되는 개입을 보여준다. failure가 vision보다 state channel의 position shortcut에 있다는 강한 증거다.
+
+다만 state-free의 큰 이득은 **relative EEF action과 충분한 wide wrist-camera view**가 있을 때 성립한다. absolute EEF, relative joint, absolute joint action에서는 해당 OOD setting이 모두 실패했다. joint-space policy에 그대로 일반화하면 안 된다.
+
+### Temporal modality competition
+
+[GAP](/paper-notes/gap-vision-proprioception-policy-failure/)은 proprioception이 loss를 빨리 줄이면서 target vision이 중요한 motion-transition phase의 visual learning을 억제한다고 본다. phase transition probability `rho_t`를 추정하고 early training 동안 proprio encoder gradient만 `lambda(1-rho_t)`로 줄인다.
+
+GAP은 uniform masking보다 높았고 Octo adaptation에서도 평균 개선을 보고한다. 다만 bimanual real experiment는 arm별 policy를 따로 사용해 true bimanual state fusion을 검증하지 않았다.
+
+### Rollout distribution shift
+
+[NADA](/paper-notes/nada-proprioception-distribution-alignment/)는 lower validation loss와 worse rollout이 동시에 나타나는 현상을 보고하고 rollout-conditioned noise를 사용한다. Square에서 proprio policy의 rollout은 `3.0%`, RGB policy는 `52.8%`였다.
+
+이 논문은 저자가 제출 다음 날 철회했다. 확립된 근거로 사용하지 않고, noise robustness 실험의 가설 생성 자료로만 취급한다.
+
+## 논문별 사용법과 결과 요약
+
+| paper | representation / injection | 주요 결과 | 근거 | 가장 큰 주의점 |
+| --- | --- | --- | --- | --- |
+| π0.5-KI | discrete text/special 또는 continuous state → VLM | text 약 90%, continuous 약 88%, special 약 76% | A | 단일 real task, 10 episodes, KI recipe와 혼입 |
+| ThinkProprio | 256-bin vocab token → VLM + visual selector | no-state 4.44, vocab 4.48, full 4.52 | A | encoding 자체 마진은 작음 |
+| TA-VLA | effort history 1 token → action expert + future effort | π0 5/0, DePost 10/12, history 15/16, history+obj 18/20 | A | 두 task 중심의 소표본 설계공간 |
+| State-free | state 제거, vision+relative EEF action | height OOD 0→약 0.97–1.00; state hack으로 30/30 복원 | B | action/camera hard prerequisite |
+| GAP | EEF state + phase-guided gradient attenuation | 8/8 sim tasks 개선, Octo 평균 +17% 보고 | B | phase detector와 extra training 필요 |
+| Embedding Morphology | joint-major action tokens + graph mask + attributes | DROID 19.7→47.4%; G1 24.7→28.0 | A/C | capacity 증가 혼입, hand CI overlap |
+| Body Transformer | body node tokenizer + topology attention | MoCapAct BC 0.650 vs Transformer 0.576 | A | manipulation IL보다 locomotion/RL 중심 |
+| Humanoid NTP | state/action sequence → aligned next-token regression | action-only 0.335, state+action 0.305 | A/D | small locomotion model, CI 없음 |
+| VTAO-BiManip | joint tokens + masking + multi-step future action | 63±4 vs no prediction 35±25 | A/D | RL downstream, 고분산 |
+| GR00T N1 | embodiment MLP state → DiT | generalist robot 결과 | C | state ablation 없음 |
+| RDT-1B | unified physical slots+mask → DiT | bimanual manipulation 결과 | C | history/representation 우월성 미검증 |
+| Dexora | per-part high-DoF state → DiT | bimanual dexterous 결과 | C | state ablation·policy normalization 미기재 |
+| HPT | embodiment stem → fixed 16 state tokens | no-state 26.7, scratch 43.3, HPT-XL 76.7 on Sweep | A | representation과 pretraining 효과가 함께 변함 |
+| NADA | mixed state + rollout-calibrated noise | Square 3.0→56.7 | D | withdrawn; 아이디어 전용 |
+| OpenVLA-OFT | current state MLP → VLM token | 95.3→97.1 on LIBERO | C | wrist camera·filtering과 state가 혼입 |
+| Octo | pretraining state 제외; downstream optional tokenizer | Insertion 70%, Pick-Up 60% | C | sensor-removal ablation 없음; negative result는 무수치 |
+| CrossFormer | scalar state tokens + missing-modality mask | 다양한 robot에서 specialist와 유사 | C | state on/off ablation 없음, metric 혼합 |
+| RPT | image/state/action masked reconstruction | scratch 대비 sample efficiency·transfer 개선 | C | sensorimotor bundle 효과, state 단독 기여 없음 |
+| MSDP | masked current/next multisensory prediction | noisy-vision Peg에서 no-proprio curve 열세 | A/C | state 제거가 pretrain/downstream 양쪽에 걸칠 수 있음 |
+| Causal-ACT | joint state 유지, visual feature만 causal mask | OOD transfer 0.23→0.82 | 인접 | proprio method가 아님 |
+| Shortcut Learning | visual/text dataset fragmentation 분석 | augmentation으로 shortcut score 감소 | 인접 | controlled 실험은 no-proprio |
+| ACT | current bimanual qpos → CVAE/Transformer | chunking·CVAE·ensemble로 real task 개선 | C | qpos 제거/history ablation 없음 |
+| Diffusion Policy | image + EEF/gripper history → diffusion condition | visual manipulation benchmark 강세 | C | image-only ablation 없음 |
+| MetaMorph | module state + explicit morphology → joint token | 100 morphology joint training과 transfer | C/D | locomotion sim, morphology-only ablation 중심 |
+| AnyMorph | scalar sensor-ID token → actuator query | held-out morphology zero-shot 개선 | C/D | manual sensor identity, family 외 zero-shot 제한 |
+| HOVER | 25-step joint/IMU/action history student | multi-mode humanoid tracking 개선 | C/D | history·DAgger 독립 ablation 부족 |
+| OmniH2O | 25-step deployable history + DAgger | real MPJPE 83.26→47.94 mm | A/D | humanoid tracking이며 VLA manipulation 아님 |
+
+## 공정한 재현 실험 설계
+
+### 질문 E0 — state가 필요한가
+
+```text
+vision + language + state  vs  vision + language only
+```
+
+반드시 in-distribution과 spatial OOD를 분리한다. state-free 결과를 검증하려면 action interface도 relative EEF, relative joint, absolute joint로 나눠야 한다. state 제거 시 visual observability가 충분한지도 camera ablation으로 확인한다.
+
+### 질문 E1 — representation과 injection 위치
+
+같은 backbone, data, optimizer, parameter budget을 유지하고 다음을 비교한다.
+
+1. discrete pretrained-vocabulary tokens → VLM prefix
+2. single continuous token → action expert self-attention
+3. per-part continuous tokens → action expert self-attention
+4. continuous token → VLM prefix
+5. passive AdaLN/FiLM condition
+
+parameter 수가 다른 variant에는 capacity-matched control을 둔다. Embedding Morphology의 AKT 결과처럼 추가 encoder capacity가 mechanism 효과로 오인될 수 있기 때문이다.
+
+### 질문 E2 — current와 history
+
+```text
+current only
+vs flatten(history) -> 1 token
+vs timestep history -> N tokens
+```
+
+token 수가 달라지는 실험에는 동일 compute/token-budget control을 둔다. contact-rich task와 smooth motion task를 분리해 signal timescale의 영향을 본다.
+
+### 질문 E3 — structure-aware representation
+
+flat state, body-part tokens, joint-node tokens를 비교한다.
+
+- node tokenizer를 공유할지 비공유할지
+- graph mask를 모든 layer에 쓸지 alternating layer에 쓸지
+- random sparse mask control
+- joint attributes를 넣되 parameter-matched FiLM control
+
+random mask는 “희소 attention 때문인지 실제 kinematic topology 때문인지”를 가르는 필수 대조군이다.
+
+### 질문 E4 — auxiliary objective
+
+future state/action/effort prediction을 action loss에 더한다.
+
+```text
+L_total = L_action + beta * L_future_state
+```
+
+future prediction에는 dedicated aligned output slots를 두는 variant와 shared pooled feature variant를 비교한다. one-step과 multi-step도 분리한다.
+
+### 질문 E5 — shortcut robustness
+
+- no state
+- state dropout 또는 uniform masking
+- Gaussian noise
+- GAP-style phase-guided gradient attenuation
+- placement 다양화
+
+training validation loss와 closed-loop rollout을 함께 기록한다. lower validation loss와 lower rollout success가 동시에 나타날 수 있다.
+
+## 공통 metric
+
+| category | metric | 이유 |
+| --- | --- | --- |
+| task | success rate, progress score, episode return | 실제 closed-loop 능력 |
+| OOD | height/position/view/background split별 success | state shortcut 탐지 |
+| state use | frozen hidden-state linear probe의 joint/EEF error | representation에 state가 보존됐는지 확인 |
+| visual use | visual feature linear probe, attention/selection overlap | proprio가 vision 학습을 억제하는지 확인 |
+| dynamics | one-step/multi-step state prediction error | auxiliary objective가 실제 dynamics를 배웠는지 확인 |
+| optimization | train/validation action loss | rollout과의 역설 확인 |
+| efficiency | latency, retained visual tokens, memory | tokenization 비용 확인 |
+| robustness | state noise/dropout sweep | state channel 민감도 |
+
+probe accuracy와 task success가 함께 오르면 “understanding”이라는 해석이 강해진다. probe만 높고 success가 그대로라면 state 정보가 보존됐을 뿐 control에 사용됐다는 근거는 아니다. 반대로 success만 오르고 probe가 그대로면 parameter capacity나 optimization 효과를 의심해야 한다.
+
+## 최소 실험표
+
+| run | state | injection | history | structure | aux | 목적 |
+| --- | --- | --- | --- | --- | --- | --- |
+| B0 | none | — | — | — | — | visual baseline |
+| B1 | current | discrete VLM | 1 | flat | — | token baseline |
+| B2 | current | continuous expert | 1 | flat | — | 위치/표현 비교 |
+| B3 | current | continuous expert | 1 | per-part | — | 저비용 구조화 |
+| B4 | current | continuous expert | N→1 | flat | — | compressed history |
+| B5 | current | continuous expert | N tokens | flat | — | sequence history |
+| B6 | current | continuous expert | 1 | per-node graph | — | morphology-aware state |
+| B7 | current | continuous expert | 1 | best | future state | predictive objective |
+| B8 | current | best | best | best | best + GAP | shortcut robustness |
+
+모든 run에서 random seed, training steps, observation/action horizon, camera set, action representation, normalization statistics를 고정한다. B6처럼 parameter가 늘어나는 run은 같은 수의 unstructured MLP parameters를 추가한 capacity control을 함께 둔다.
+
+## 해석 체크리스트
+
+- state dimension과 실제 물리 의미를 적었는가?
+- absolute/delta state와 absolute/relative action을 구분했는가?
+- history length와 action chunk horizon을 혼동하지 않았는가?
+- normalization이 policy I/O용인지 분석용인지 확인했는가?
+- state injection 위치와 representation을 동시에 바꾸지 않았는가?
+- model capacity, visual camera, training recipe가 함께 바뀌지 않았는가?
+- success가 binary인지 partial-credit인지 확인했는가?
+- state ablation이 없는 architecture 결과를 우월성 증거로 쓰지 않았는가?
+- 철회 논문과 소표본 결과를 확립된 사실로 쓰지 않았는가?
+
+## 결론
+
+현재 문헌에서 가장 안전하게 말할 수 있는 결론은 세 가지다.
+
+1. **State의 유용성은 representation보다 action interface와 OOD 조건에 강하게 좌우된다.**
+2. **Discrete VLM token과 continuous action-expert token은 모두 유효한 경로지만, 같은 조건에서의 공정한 직접 비교가 부족하다.**
+3. **Proprioception을 많이 넣는 것이 항상 좋지 않다.** absolute-state memorization, visual-learning suppression, rollout distribution shift를 별도 실험으로 확인해야 한다.
+
+따라서 좋은 실험은 “state를 넣었더니 성공률이 올랐다”에서 끝나지 않는다. 어떤 정보가 어느 token에 보존됐고, closed-loop에서 실제로 사용됐으며, placement가 달라졌을 때 shortcut으로 바뀌지 않는지를 함께 보여줘야 한다.
+
+<SectionFeedback page="Proprioception 표현과 평가 설계" section="전체 노트" />

@@ -1,0 +1,114 @@
+---
+research: {"kind": "paper", "topics": ["vla", "sensing"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2511.14427"}
+title: MSDP
+description: vision·force/torque·proprioception을 masked current/next-sensor prediction으로 pretrain하고 frozen latent를 contact-rich RL에 연결하는 MSDP survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/msdp-multimodal-sensorimotor-policy" />
+
+# MSDP
+
+<SectionFeedback page="MSDP" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Self-Supervised Multisensory Pretraining for Contact-Rich Robot Reinforcement Learning |
+| 저자 | Rickmer Krohn, Vignesh Prasad, Gabriele Tiboni, Georgia Chalvatzaki |
+| 공개 | arXiv:2511.14427, IEEE RA-L accepted March 2026 |
+| 링크 | [arXiv](https://arxiv.org/abs/2511.14427) · [PDF](https://arxiv.org/pdf/2511.14427) · [Project](https://msdp-pearl.github.io/) |
+| 기준 | 8쪽 PDF 전체; 공식 구현 repository는 논문·project 공개 링크에서 확인되지 않음 |
+
+## 한 줄 요약
+
+MSDP는 RGB, wrist force/torque, proprioception token의 70%를 가리고 현재 관측을 복원하거나 action-conditioned 다음 관측을 예측한다. frozen encoder가 만든 sensor token을 critic에는 learnable query cross-attention, actor에는 mean pooling으로 전달했을 때 simulation 네 과제와 실제 Franka 두 과제에서 RL 학습이 빨라진다.
+
+![MSDP framework](/msdp/figure-2-framework.png)
+
+*Figure 2. masking은 pretraining에만 쓰며 downstream actor와 critic은 서로 다른 latent bridge를 사용한다.*
+
+## Observation과 proprioception
+
+simulation observation은 RGB `64×64×3`, wrist F/T `4×6`, joint position·velocity proprioception `14D`다. history 없이 현재 timestep만 사용한다. vision은 overlapping receptive field의 4-layer CNN stem, F/T와 proprioception은 각각 linear projection으로 128D token을 만든다. learnable position/modality embedding을 더하고 2-layer, 4-head, pre-norm Transformer encoder에 넣는다.
+
+실물에서는 proprioception 정의가 달라진다. Franka의 end-effector position과 velocity, 네 개의 F/T reading, third-person RealSense RGB를 쓴다. 즉 논문의 핵심은 특정 joint-space schema가 아니라 서로 다른 sensor token을 공통 latent에 맞추는 방식이다.
+
+## Pretraining
+
+- sensor token 70%를 무작위 masking한다. vision은 완전히 가리지 않지만 low-dimensional sensor는 modality 전체가 사라질 수 있다.
+- **MSDP-R:** 현재 multisensory observation을 MSE로 reconstruct한다.
+- **MSDP-P:** 현재 observation과 action으로 다음 multisensory observation을 MSE prediction한다.
+- decoder 뒤 modality별 head를 둔다. vision reconstruction head는 shared linear projection이다.
+- simulation random-policy sample 30k개로 30k updates, batch 64, learning rate `3e-4`를 사용한다.
+
+이 objective에서 proprioception은 단순히 action decoder에 한 번 concatenate되는 보조 상태가 아니다. 다른 센서가 가려졌을 때 이를 복원하는 context이자, 자신이 가려졌을 때 vision/F/T로 예측할 target이다. MSDP-P에서는 action 이후의 joint state까지 예측하므로 dynamics supervision 역할도 한다.
+
+## Frozen encoder와 latent bridging
+
+pretrained encoder는 RL 중 freeze한다. critic은 learnable query 하나가 모든 sensor embedding에 cross-attention하여 task-specific feature를 고른다. actor는 먼저 visual tokens를 평균내 token 수 불균형을 줄인 뒤 모든 sensor embedding을 평균낸다. 저자는 actor에서 학습 가능한 query보다 parameter-free pooling이 안정적이었다고 설명한다.
+
+simulation은 SAC, real은 demonstration을 replay에 섞는 RLPD를 쓴다. encoder의 representation 이득과 downstream RL algorithm 이득이 결합되어 있으므로, 숫자를 encoder 단독 효과로 해석하면 안 된다.
+
+## 실험
+
+### simulation protocol과 결과
+
+PyBullet/panda-gym의 Peg Insertion, Push Cube, Close Drawer Gently, Dual Arm Peg Insertion을 500k environment steps 학습한다. 12 runs의 mean과 95% confidence interval을 보고한다.
+
+![simulation learning curves와 Peg sensor ablation](/msdp/figures-4-5-simulation.png)
+
+*Figures 4–5. MSDP-P/R은 네 과제 전반에서 빠르며, Peg Insertion의 vision noise 조건에서는 proprioception 제거가 크게 악화된다.*
+
+- Peg Insertion에서 all-sensor MSDP-P는 약 200k steps부터 높은 성공률에 도달한다. no-proprioception은 느리고 최종 성능도 낮다.
+- Push Cube는 vision-only도 성공하지만 all-sensor agent가 episode length를 약 30% 줄인다.
+- Close Drawer Gently는 simulator contact bottleneck 때문에 방법 간 분리가 약하다.
+- Dual Arm Peg Insertion은 두 robot의 proprioception/F/T를 각각 encoder에 mapping하며 MSDP가 높은 최종 성능을 낸다.
+
+![sensor, latent bridge, vision-only downstream ablation](/msdp/figures-6-9-ablations.png)
+
+*Figures 6–9. cross-attention bridge가 pooling/concatenation/CLS보다 빠르고, multisensory pretraining 뒤 vision만 남겨도 vision-only pretraining보다 낫다.*
+
+proprioception의 직접 증거는 Figure 5다. visual noise 때문에 peg pose가 불확실할 때 joint state가 필요하다. 그러나 exact table이 아니라 learning curve이고, no-proprioception이 encoder pretraining과 RL input에서 동시에 제거되는지 세부 protocol이 짧아 순수 representation 기여를 정밀 분해하지는 못한다. Figure 8은 반대로 downstream에서 vision만 제공해도 pretraining 때 proprioception/F/T를 함께 본 representation이 더 좋음을 보여 cross-modal supervision 효과를 뒷받침한다.
+
+### real-world
+
+20 demonstrations와 약 2,000 play samples, 총 약 3,000 samples로 pretrain하고 6,000 online interactions 이내 RLPD를 수행한다. Peg는 5 runs, Push는 3 runs다. first success는 각각 약 2,000/1,000 interactions 뒤이며 전체 pipeline은 55분 미만이다.
+
+![real-world curves와 robustness conditions](/msdp/figures-10-11-real.png)
+
+*Figures 10–11. MSDP-R/P가 실제 Peg와 Push에서 강하며 Peg의 F/T 사용은 no-F/T 대비 success를 14% 높인다.*
+
+Peg 최종 policy는 stiffness 1500/2500에서 90/100%, back/front/disco light 100%, partial occlusion 95%, external force 80%를 20 trials씩 기록한다. Push에서는 MSDP-P가 약한데, 저자는 적은 데이터·observation history 부재에서 forward dynamics 예측이 어려운 점을 원인으로 든다.
+
+## 무엇이 검증됐고 무엇은 아닌가
+
+- multisensory masked pretraining이 contact-rich RL의 sample efficiency를 높인다는 일관된 evidence가 있다.
+- Peg의 no-proprioception ablation은 proprioception이 noisy vision 아래 중요한 것을 보인다.
+- 반면 실제 실험의 명시적 sensor ablation은 F/T 중심이다. real proprioception 자체의 제거 결과는 없다.
+- 현재 frame만 사용하므로 velocity/force의 시간 구조를 직접 모델링하지 않는다.
+- real observation과 simulation observation의 proprioception 좌표계가 달라 동일 encoder recipe의 범용성은 보이지만 동일 state definition의 전이는 아니다.
+- project page는 있으나 공식 training code를 확인하지 못해 masking 단위, loss normalization, RLPD 세부를 code-level로 검증할 수 없다.
+
+## Figure/Table Inventory
+
+| 항목 | 내용 | 반영 |
+| --- | --- | --- |
+| Fig. 1 | MSDP 개념과 실제 contact-rich setup | 문제의식 |
+| Fig. 2 | encoder, pretraining, actor/critic bridge | architecture 이미지 |
+| Fig. 3 | simulation 네 task | protocol |
+| Fig. 4 | simulation main curves | 결과 이미지 |
+| Fig. 5 | Peg sensor ablation | proprio evidence |
+| Fig. 6 | Push episode length | efficiency |
+| Fig. 7 | latent bridge ablation | bridge 설명 |
+| Fig. 8 | vision-only downstream, multisensory pretraining | cross-modal evidence |
+| Fig. 9 | critic cross-attention map | 해석 |
+| Fig. 10 | real Peg/Push curves | real 결과 |
+| Fig. 11 | visual perturbations | robustness |
+
+논문에는 표와 별도 appendix가 없다.
+

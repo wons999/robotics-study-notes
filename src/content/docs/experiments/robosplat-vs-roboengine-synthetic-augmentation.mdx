@@ -1,0 +1,175 @@
+---
+research: {"kind": "note", "topics": ["data"], "status": "reviewing", "reviewedAt": null}
+title: RoboSplat vs. RoboEngine
+description: RSS 2025 RoboSplat과 IROS 2025 RoboEngine의 synthetic robot data 생성 범위, 3D/2D 표현, camera·background generalization, 비용과 한계를 직접 비교.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="experiments/robosplat-vs-roboengine-synthetic-augmentation" />
+
+# RoboSplat vs. RoboEngine
+
+<SectionFeedback page="RoboSplat vs. RoboEngine" section="비교 범위" />
+
+## 이 문서의 역할
+
+이 문서는 두 논문의 내용을 각각 다시 요약하는 Paper Survey가 아니라, synthetic robot data pipeline을 선택하고 후속 실험을 설계하기 위한 비교 노트다. 논문별 method, appendix, 공개 코드의 상세 근거는 [RoboSplat Survey](/paper-notes/robosplat-gaussian-splatting-demonstration-generation/)와 [RoboEngine Survey](/paper-notes/roboengine-semantic-background-augmentation/)에 두고, 여기서는 두 방법의 비교 가능 범위, 의사결정 기준, 검증해야 할 가설에 집중한다.
+
+## 결론부터
+
+[RoboSplat](/paper-notes/robosplat-gaussian-splatting-demonstration-generation/)은 **3D scene과 trajectory를 함께 편집하는 demonstration generator**이고, [RoboEngine](/paper-notes/roboengine-semantic-background-augmentation/)은 **원 trajectory를 유지한 채 2D background만 바꾸는 visual augmentation toolkit**이다.
+
+- camera가 이동하거나 object pose·robot embodiment가 달라지는 robustness가 목적이면 RoboSplat이 직접적인 선택이다.
+- deformable task를 포함한 기존 dataset에서 배경 다양성만 빠르게 늘리고 싶으면 RoboEngine이 훨씬 단순하다.
+- 둘 다 논문에서 VLA로 검증되지는 않았다. synthetic data engine의 downstream policy가 각각 task-specific BC Transformer와 Diffusion Policy다.
+
+## 핵심 차이
+
+| 축 | RoboSplat, RSS 2025 | RoboEngine, IROS 2025 |
+| --- | --- | --- |
+| 핵심 표현 | editable 3D Gaussians + kinematic trajectory | 2D semantic masks + foreground-aware diffusion |
+| 실제 seed data | expert trajectory 1개 + static-scene multi-view images | 한 scene의 task별 50/100 trajectories |
+| 생성하는 것 | RGB, qpos, EEF pose, action이 함께 있는 새 trajectory | 새 RGB background; language/state/action label은 원본 유지 |
+| 바꿀 수 있는 축 | object pose/type, camera view, lighting, scene appearance, embodiment | scene background/layout/lighting appearance |
+| camera 변화 | novel view와 frame-varying/moving view 직접 생성·평가 | 지원하지 않음; 논문 limitation이 multi-view/3D |
+| geometry consistency | 한 3D representation에서 multi-view rendering | frame별 2D generation, temporal/3D consistency 없음 |
+| 물리 처리 | URDF FK + motion planning, contact dynamics 없음 | foreground-conditioned generative prior, physics engine/validator 없음 |
+| deformable object | naive 3DGS rigid assumption 때문에 부적합 | 원 foreground/action을 보존하므로 Fold Towel에서 검증 가능 |
+| 새 object/robot | 3D content + grasp annotation, robot Gaussian 교체 | foreground를 바꾸지 않으므로 지원하지 않음 |
+| setup cost | multi-view capture, COLMAP/depth/3DGS, alignment, URDF, scene decomposition | pretrained segmentation/generation checkpoint와 원 videos |
+| 공개 code 범위 | Pick generator와 preprocessed assets 중심; 전체 reconstruction/policy pipeline 미공개 | segmentation/generation toolkit과 model training code 공개; policy code는 외부 repo |
+| downstream policy | ResNet-18 + state MLP + Transformer BC | DINOv2-Base Diffusion Policy |
+| language-conditioned VLA | 아니오 | 아니오; language는 object segmentation에만 사용 |
+
+## 데이터 변환 관점
+
+두 논문의 차이는 `J_i`를 바꾸는지 보면 가장 명확하다.
+
+```text
+RoboEngine
+  (RGB_i, J_i) ──segment/generate background──> (RGB_i*, J_i)
+  J_i = instruction, proprioception, action은 그대로
+
+RoboSplat
+  one trajectory + 3D scene
+    ──object/camera/robot edit + motion planning──>
+  (RGB_1:T*, q_1:T*, EEF_1:T*, action_1:T*)
+```
+
+RoboEngine은 label-preserving augmentation이다. foreground와 behavior가 바뀌지 않으므로 action validity를 유지하기 쉽지만 pose/view/embodiment coverage는 늘지 않는다. RoboSplat은 label-generating augmentation이다. spatial coverage를 넓힐 수 있지만 reconstruction, alignment, grasp와 contact validity가 맞아야 한다.
+
+## 카메라 강건성
+
+사용자가 처음 찾던 근거는 RoboSplat Table II다.
+
+| method | camera evaluation average success |
+| --- | ---: |
+| 200 real, no view augmentation | 6.1% |
+| 1800 RoboSplat pose-only | 9.5% |
+| 200 real → 3200 VISTA | 40.6% |
+| 3200 RoboSplat view-augmented | **80.6%** |
+
+RoboSplat은 세 task에서 novel camera pose와 deployment 중 moving camera를 모두 평가한다. moving-view 성공률은 Pick `86.7%`, Drawer `96.7%`, Pick-Place-Close `56.7%`다.
+
+RoboEngine은 novel backgrounds에서 강하지만 camera pose를 의도적으로 바꾸지 않는다. 한 third-view image stream, 비슷한 table height, 2D frame augmentation을 쓰며 논문도 multi-view/3D augmentation 부재를 limitation으로 적는다. 따라서 “RoboEngine도 움직이는 camera에 강하다”고 추론할 직접 evidence는 없다.
+
+## 배경·appearance 강건성
+
+이 축은 두 방법 모두 다루지만 평가 protocol이 크게 다르다.
+
+| 항목 | RoboSplat | RoboEngine |
+| --- | --- | --- |
+| scene 생성 | COCO texture를 Gaussian planes에 투영하거나 reconstructed 3D scene 교체 | foreground mask를 조건으로 BackGround-Diffusion이 새 scene 생성 |
+| temporal 일관성 | 동일 3D scene을 sequence 전체에서 렌더링 가능 | frame별 generation, consistency 보장 없음 |
+| task evidence | Pick, Drawer, Pick-Place-Close | Fold Towel, Put Mouse |
+| 대표 결과 | appearance `92.2%` paper-level aggregate | average score/success `.62 / 60.9%` |
+| 강한 baseline | 2D inpainting aggregate `72.2%` | Texture `.51 / 48.4%` |
+
+RoboSplat은 3D consistency가 강점이지만 deformable task를 못 다룬다. RoboEngine은 towel의 모양과 action을 원 영상에서 보존한 채 주변만 바꾸므로 deformable task에도 적용할 수 있다.
+
+## headline 수치는 직접 비교할 수 없다
+
+| paper claim | 정확한 의미 |
+| --- | --- |
+| RoboSplat `87.8% vs. 57.2%` | 여섯 generalization 축의 대표 성공률을 평균. 축마다 task, demos, baseline, target robot이 다르고 별도 policy를 학습 |
+| RoboEngine `210% improvement` | 네 stage의 normalized behavior score 평균이 `.20→.62`가 된 상대 증가 |
+
+RoboEngine 평균 success는 `15.6→60.9%`지만, RoboSplat `87.8%`와는 task·trial·shift·policy가 달라 ranking을 만들 수 없다. 공통 benchmark에서 두 augmentation을 같은 source trajectories와 policy로 비교한 실험도 없다.
+
+## 비용과 failure mode
+
+| 질문 | RoboSplat | RoboEngine |
+| --- | --- | --- |
+| 새 scene에 바로 적용 가능한가? | reconstruction/alignment가 먼저 필요 | checkpoint가 지원하는 robot/object mask면 바로 적용 가능 |
+| 생성 속도 | trajectory당 `0.64 s`, 단 preprocessing 제외 | frame당 `2.17 s`, paper table의 hardware 미기재 |
+| 가장 위험한 오류 | 잘못된 frame alignment, rigid contact/object-motion mismatch | mask leakage, diffusion artifact, frame-to-frame flicker |
+| coverage ceiling | rigid 3D scene과 motion planner가 표현 가능한 behavior | 원 trajectory와 foreground pose가 가진 coverage |
+| verification 필요 | collision/contact/grasp validity, render-to-real | segmentation quality, support geometry, temporal consistency |
+
+두 속도 수치는 단위가 trajectory와 frame으로 다르고 포함 범위도 달라 직접 빠르기 비교에 쓸 수 없다.
+
+## 어떤 상황에서 무엇을 쓸까
+
+| 연구 목표 | 우선 선택 | 이유 |
+| --- | --- | --- |
+| moving/novel camera robustness | RoboSplat | novel view synthesis와 moving-view real evaluation이 직접 존재 |
+| object pose coverage | RoboSplat | object와 EEF keyframe을 equivariantly 함께 이동 |
+| cross-embodiment synthetic data | RoboSplat | robot Gaussian과 kinematic trajectory를 target embodiment로 재생성 |
+| 배경만 빠르게 다양화 | RoboEngine | calibration/3D reconstruction 없는 drop-in image pipeline |
+| 기존 대규모 demonstrations 재활용 | RoboEngine | action label을 손대지 않고 batch augmentation |
+| deformable foreground task | RoboEngine | 원 towel foreground motion을 보존; RoboSplat은 rigid 3DGS 한계 |
+| multi-camera consistency | RoboSplat | single 3D representation에서 렌더링 |
+| 완전한 contact-rich synthetic trajectory | 둘 다 부족 | RoboSplat은 contact physics가 없고 RoboEngine은 action을 새로 만들지 않음 |
+
+## VLA data engine으로 확장할 때
+
+두 연구를 VLA에 붙일 수는 있지만 논문 결과와 후속 설계 가설을 구분해야 한다.
+
+### RoboSplat을 VLA에 붙이는 경우
+
+- synthetic RGB/state/action에 원 instruction을 복제할 수 있다.
+- object type을 바꾸면 language도 새 object identity에 맞게 함께 relabel해야 한다.
+- embodiment가 바뀌면 state/action schema normalization과 morphology conditioning이 추가로 필요하다.
+- generated data가 수천 개여도 language/task diversity는 seed demonstration보다 자동으로 늘지 않는다.
+
+### RoboEngine을 VLA에 붙이는 경우
+
+- original instruction을 그대로 유지하되 task object mask가 instruction noun parsing에 누락되지 않는지 확인해야 한다.
+- background prompt가 instruction과 우연히 상관되어 새 visual shortcut을 만들 수 있으므로 prompt–task 독립 sampling과 leakage check가 필요하다.
+- frame별 flicker를 VLA가 motion cue로 오해하지 않도록 sequence consistency filter가 필요하다.
+
+### 결합 가능성
+
+한 가지 자연스러운 조합은 RoboSplat으로 pose/view/embodiment-consistent trajectories를 만든 뒤 RoboEngine 계열 generator로 photometric/background diversity를 추가하는 것이다. 그러나 이는 두 논문이 실험한 결과가 아니라 설계 제안이다. 실제로 결합하려면 sequence 전체에서 같은 background identity와 camera geometry를 유지하고, 3D foreground boundary에서 composite artifact가 생기지 않는지 검증해야 한다.
+
+## 실험을 다시 설계한다면
+
+두 method를 공정하게 비교하려면 다음 controlled matrix가 필요하다.
+
+| 통제 항목 | 제안 |
+| --- | --- |
+| source data | 같은 real trajectories와 같은 multi-view capture budget |
+| downstream | 동일 VLA/visuomotor checkpoint, optimizer, training steps |
+| augmentation count | real-equivalent sample 수와 rendered frame 수를 각각 맞춤 |
+| shift | background, lighting, fixed novel camera, moving camera, object pose를 분리 |
+| metrics | task completion success + stage score + segmentation/render artifact score |
+| repeats | policy seed와 rollout seed 반복, confidence interval |
+| validity | trajectory collision/contact check와 temporal consistency metric |
+| ablation | 2D-only, 3D-only, 3D+2D hybrid |
+
+이 비교가 있어야 “3D representation 자체의 이득”과 “더 많은 synthetic samples/더 강한 generator의 이득”을 분리할 수 있다.
+
+## 최종 판단
+
+RoboSplat의 핵심 contribution은 background augmentation보다 넓다. 실제 scene의 3DGS를 simulator graphics처럼 편집하고 keyframe/motion planning으로 action label까지 재생성해 **viewpoint와 embodiment를 포함한 spatial augmentation**을 가능하게 했다.
+
+RoboEngine의 핵심 contribution은 범용 trajectory generation이 아니라 **robot-specific foreground extraction을 제품화한 것**이다. 이 때문에 green screen/calibration 없이 기존 robot videos에 high-diversity background augmentation을 붙일 수 있고, 실제 novel scenes에서 분명한 성능 향상을 보였다.
+
+사용자가 기억한 “프로젝트 페이지에서 real camera를 계속 움직여도 강건한 영상”과 직접 맞는 것은 RoboSplat이다. RoboEngine은 같은 synthetic-data 흐름에 있지만, 더 좁고 실용적인 background-only branch다.
+
+## 검증 메모
+
+두 논문의 conference metadata, PDF 전체 Figure/Table inventory, project page와 공개 code를 각각 확인한 뒤 비교했다. 수치는 공통 benchmark가 아니므로 원 paper의 평가 단위로 유지했고, paper claim과 이 문서의 설계 제안을 명시적으로 분리했다.

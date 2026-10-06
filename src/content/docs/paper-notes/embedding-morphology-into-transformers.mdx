@@ -1,0 +1,218 @@
+---
+research: {"kind": "paper", "topics": ["vla", "sensing", "data"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2603.00182"}
+title: Embedding Morphology into Transformers
+description: π0.5 action expert에 joint-wise kinematic token, topology-aware attention, joint attribute conditioning을 넣은 cross-robot policy의 방법과 증거를 정리한다.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/embedding-morphology-into-transformers" />
+
+# Embedding Morphology into Transformers for Cross-Robot Policy Learning
+
+<SectionFeedback page="Embedding Morphology into Transformers" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Embedding Morphology into Transformers for Cross-Robot Policy Learning |
+| 저자/그룹 | Kei Suzuki, Jing Liu, Ye Wang, Chiori Hori, Matthew Brand, Diego Romeres, Toshiaki Koike-Akino · MERL |
+| 공개 | arXiv:2603.00182 v1, 2026-02-26 |
+| 링크 | [arXiv](https://arxiv.org/abs/2603.00182) · [PDF](https://arxiv.org/pdf/2603.00182) |
+| 기반 모델 | π0.5-base |
+| 태그 | morphology, cross-robot learning, kinematic token, topology-aware attention, FiLM |
+
+## 한 줄 요약
+
+π0.5의 시간축 action token은 유지하면서 action chunk를 **관절별 보조 token**으로 다시 인수분해하고, 그 token 사이에 kinematic graph mask와 joint descriptor FiLM을 적용한다.
+
+중요한 경계가 있다. 이 논문은 proprioceptive **state 입력을 구조화한 논문이 아니다**. 구조화 대상은 noisy action chunk에서 만든 action-side kinematic token이다.
+
+## 문제의식
+
+일반 VLA의 action token은 한 시점의 모든 관절을 한 embedding으로 압축한다. 따라서 어느 latent가 어느 관절에 대응하는지 알 수 없어 joint-to-joint topology bias를 직접 적용하기 어렵다. 논문은 다음 세 병목을 분리한다.
+
+1. joint-wise interface가 없다.
+2. 매 layer를 1-hop으로 제한하면 장거리 협조가 느려진다.
+3. graph connectivity만으로 joint type, axis, limit 같은 의미를 구분할 수 없다.
+
+## 시스템 및 데이터 설정
+
+| 설정 | robot/action | 학습 데이터 | 평가 |
+| --- | --- | --- | --- |
+| DROID single embodiment | Franka Panda, gripper 포함 8-DoF | DROID 1/8 subset | simulation pick-and-place 3개 task |
+| G1 Dex1 single embodiment | stationary Unitree G1 upper body, 16-DoF joint action | 공개 G1 Dex1 dataset | IsaacLab pick-and-place |
+| multi-embodiment | Panda 8-DoF + SO101 6-DoF | DROID 1/8 + LeRobot/LeIsaac orange task, batch ratio 8:2 | 각 embodiment simulation |
+
+모든 task는 language-conditioned pick-and-place다. 성공은 물체가 AABB target 안에 들어간 뒤 최소 dwell time 동안 거의 정지했는지로 판정한다. 조건당 300 rollout, Wilson 95% confidence interval을 사용한다.
+
+## Method
+
+![Figure 2: action token과 kinematic token, topology bias, joint attribute FiLM](/embedding-morphology/figure-2-architecture.png)
+
+### 1. Kinematic Token
+
+표준 action chunk를 `A ∈ R^(H×J)`라 하자. π0.5의 기존 action token은 각 시점 `t`에서 `J`개 joint 값을 함께 투영해 시간축 `H` token을 만든다. 논문은 이 token을 대체하지 않고, 같은 noisy action에서 보조적인 공간축 view를 만든다.
+
+- horizon을 `G`개 non-overlapping chunk로 나눈다.
+- chunk 길이는 `g = H/G`다.
+- joint `j`, temporal chunk `T_k`의 값을 이어 `b_(j,T_k)=[a_(t,j)]_(t∈T_k) ∈ R^g`로 만든다.
+- 독립 MLP `Enc_0`가 이를 `d`차원 kinematic token으로 투영한다.
+- 총 token 수는 `J×G`다.
+
+`G=1`이면 관절마다 전체 horizon을 요약한 token 하나가 생긴다. 기존 temporal action token은 세밀한 시간 구조를, kinematic token은 관절 간 공간 구조를 담당한다. 최종 action은 여전히 기존 action token에서 출력하며, kinematic token은 context 역할이다.
+
+### 2. Auxiliary Kinematic Token
+
+동일한 `b_(j,T_k)`를 서로 독립적인 `M`개 encoder로 더 투영하여 관절당 표현 용량을 늘린다. 이 AKT는 morphology 정보가 추가되지 않아도 parameter/token capacity를 키운다. 따라서 AKT가 큰 폭으로 개선될 경우 topology 자체의 효과와 용량 효과를 구분해야 한다.
+
+### 3. Topology-aware Attention
+
+관절 graph `G=(V,E)`로부터 self-loop가 포함된 1-hop mask `M=I+A`를 만든다. bias는 **kinematic-token query/key block에만** 적용하고 image, prompt, 기존 action token의 mask는 π0.5를 유지한다.
+
+![Figure 5: π0.5 attention mask에서 kinematic block만 topology로 제한](/embedding-morphology/figure-5-attention-mask.png)
+
+| 방식 | joint block의 정보 흐름 | trade-off |
+| --- | --- | --- |
+| Full-Mask | 모든 layer에서 자기 자신과 1-hop neighbor만 | 강한 locality, 장거리 협조 병목 |
+| Mix-Mask | even layer masked, odd layer global | local inductive bias와 global coordination의 절충 |
+| Soft-Mask | shortest-path distance별 learned additive bias | 경로를 차단하지 않지만 최적화 민감 |
+
+### 4. Joint-attribute Conditioning
+
+각 joint descriptor `s_j`는 prismatic/revolute indicator, unit axis `(a_x,a_y,a_z)`, hard lower/upper limit, contact damping·stiffness의 log 값, friction anchor, lateral/spinning friction을 담는다. Linear FiLM이 `γ_j, β_j`를 출력하고 kinematic token에
+
+`z̃_j = (1+γ_j) ⊙ z_j + β_j`
+
+를 적용한다. topology가 “누구와 연결되는가”를 나타낸다면 descriptor는 “어떤 관절인가”를 보완한다.
+
+## Model Architecture와 학습
+
+| 설정 | fine-tuning | batch | horizon | steps |
+| --- | ---: | ---: | ---: | ---: |
+| DROID | action-policy FT, 약 450M trainable | 32 | 16 | 100k |
+| G1 Dex1 | full FT, 약 3.5B trainable | 8 | 32 | 60k |
+| DROID+SO101 | action-policy FT | 32 | 16 | 125k |
+
+모든 run은 `pi05-base`에서 시작하고 cosine learning-rate schedule을 쓴다. 새 morphology module의 마지막 layer는 zero initialization하여 초기 동작을 base model에 가깝게 둔다. AP-FT에서는 약 2.923B VLM parameter를 freeze하고 약 430M action-policy parameter와 새 module을 학습한다.
+
+논문에는 optimizer, base learning rate, weight decay, data augmentation이 구체적으로 보고되지 않는다. 공개 공식 코드도 확인되지 않아 Table 2와 Appendix C보다 더 세밀한 recipe는 재현할 수 없다.
+
+## Experiments and Results
+
+### DROID
+
+![Table 3: DROID single-embodiment component result](/embedding-morphology/table-3-droid-results.png)
+
+| 구성 | 평균 SR |
+| --- | ---: |
+| π0.5 baseline | 19.7 ± 4.5 |
+| KT | 36.0 ± 5.4 |
+| KT + Full-Mask | 30.1 ± 5.2 |
+| KT + Mix-Mask | 36.9 ± 5.4 |
+| KT + Soft-Mask | 26.1 ± 4.9 |
+| KT + FiLM | 37.7 ± 5.5 |
+| KT + Mix-Mask + FiLM | **47.4 ± 5.6** |
+
+평균만 보면 세 요소의 결합이 강하지만 task별로 균일하지 않다. full model은 Task 2 `77.7%`, Task 3 `58.7%`인 반면 Task 1은 `5.7%`로 baseline `18.3%`보다 낮다. “모든 task의 일관 개선”으로 읽으면 안 된다.
+
+또한 appendix의 Full-FT/full DROID baseline은 `66.3%`다. headline `19.7→47.4`는 1/8 data와 AP-FT라는 저데이터·제한적 fine-tuning regime의 비교다.
+
+### G1 Dex1
+
+![Table 4, Figure 4, Table 5: G1, multi-embodiment, temporal chunk](/embedding-morphology/table-4-figure-4-table-5.png)
+
+G1 baseline `24.7±4.9`, KT `24.3±4.9`, full `28.0±5.0`이다. full model의 point estimate가 가장 높지만 CI가 크게 겹친다. KT 단독은 오히려 baseline보다 낮다. DROID의 2.4배 headline이 16-DoF setting으로 그대로 재현됐다고 보기 어렵다.
+
+### Panda–SO101 joint training
+
+macro SR은 50k에서 `15.5 vs 5.0`, 125k에서 `20.7 vs 17.5`로 full model이 높다. 하지만 per-embodiment appendix를 보면 개선은 Panda에 집중된다.
+
+![Figure 8: Panda와 SO101를 분리한 multi-embodiment curve](/embedding-morphology/figure-8-multi-embodiment.png)
+
+- DROID, 125k: ours `0.213`, π0.5 `0.100`
+- SO101, 125k: ours `0.200`, π0.5 `0.250`
+
+따라서 macro 개선을 “두 robot 모두 좋아졌다”로 해석하면 틀린다. 8:2 Panda-heavy sampling과 single-embodiment SO101의 낮은 ceiling도 함께 봐야 한다.
+
+### Token granularity와 capacity
+
+`G=1/2/4/8/16`의 DROID SR은 `36.0/35.8/34.4/30.5/33.3`이다. 전체 horizon을 관절별 1 token으로 압축한 `G=1`이 가장 좋다. 이 결과는 “시간 정보를 버려야 한다”는 뜻이 아니다. 기존 temporal action token이 그대로 남아 있기 때문이다.
+
+![Tables 6–7: AKT capacity와 soft-bias initialization ablation](/embedding-morphology/tables-6-7-ablation.png)
+
+Mix-Mask에서 AKT는 `37.0→47.3`으로 큰 폭을 만든다. 이는 full model `47.4`와 거의 같다. 즉 headline gain의 상당 부분은 morphology semantics가 아니라 추가 joint-token capacity로도 설명될 수 있다.
+
+### Soft-Mask
+
+![Table 11: soft-mask parameterization과 warm-start 결과](/embedding-morphology/table-11-soft-mask.png)
+
+Adj-SoftMask v2 zero-init가 `34.4%`로 soft variant 중 가장 좋지만 KT+Mix `36.9%`를 넘지 못한다. shortest-path bias는 initialization과 warm start에 민감했고 일관된 개선이 없었다. 이 논문의 범위에서는 학습 가능한 topology bias보다 hard alternating schedule이 더 안정적이다.
+
+## Appendix Notes
+
+- DROID verb/object histogram은 1/8 subset의 language 분포 편향을 보여주지만 정확한 trajectory 수는 보고하지 않는다.
+- time-to-success는 SR과 trade-off가 있다. 가장 높은 SR variant가 항상 가장 빠르지는 않다.
+- Table 9의 linear encoder와 SwiGLU encoder 차이도 크다. `G=16`에서 linear와 SwiGLU 결과가 크게 달라 token granularity 결론에도 encoder capacity가 개입한다.
+- Table 10에서는 KT+Mix+AKT `47.1%`와 KT+Mix+FiLM `47.4%`가 사실상 유사하다.
+
+## Code-Level Check
+
+2026-07-15 기준 arXiv, PDF, 저자/기관 공개 페이지에서 공식 구현 저장소를 확인하지 못했다. 따라서 다음은 검증되지 않았다.
+
+- π0.5 mask tensor에 kinematic block을 붙이는 정확한 index layout
+- variable joint/action dimension padding과 invalid joint mask
+- joint descriptor 산출·정규화 코드
+- FiLM/KT encoder의 정확한 hidden dimension과 AKT 개수
+- optimizer와 learning-rate 값
+
+공식 코드가 공개되기 전에는 논문의 수식과 결과표를 구현 사실 이상으로 확장하지 않는 것이 안전하다.
+
+## 한계와 주의
+
+1. cross-robot 실험은 두 embodiment를 섞은 한 setting뿐이고 SO101는 개선되지 않았다.
+2. morphology-aware module이 **action-side**에만 있다. proprioceptive state-side graph encoding의 근거가 아니다.
+3. AKT capacity confound가 크다.
+4. DROID headline은 약한 AP-FT/1⁄8-data baseline에서 측정됐다.
+5. G1 improvement는 CI가 겹친다.
+6. 세 benchmark 모두 simulation pick-and-place이며 real-robot deployment가 없다.
+7. unseen embodiment zero-shot transfer가 아니라, 평가 embodiment 모두 joint training/fine-tuning 데이터에 포함된다.
+
+## Figure/Table Inventory
+
+| 원문 | 내용 | 이 노트의 반영 위치 |
+| --- | --- | --- |
+| Figure 1 | morphology embedding concept | 문제의식 |
+| Figure 2 | KT, topology bias, FiLM | Method 이미지 |
+| Figure 3 | 세 simulation environment | 시스템 설정 |
+| Figure 4 | multi-embodiment macro curve | 결과 이미지 |
+| Figure 5 | π0.5+KT attention mask | topology section 이미지 |
+| Figures 6–7 | DROID verb/object distribution | Appendix Notes |
+| Figure 8 | Panda/SO101 분리 curve | multi-embodiment 이미지 |
+| Tables 1–2 | descriptor, training protocol | Method/Training |
+| Tables 3–4 | DROID/G1 results | 결과 |
+| Tables 5–7 | chunk, AKT, initialization | ablation |
+| Table 8 | AP-FT frozen/trainable inventory | Training |
+| Tables 9–10 | detailed DROID SR/time | Appendix Notes |
+| Table 11 | soft-mask variants | Soft-Mask |
+
+## Citation Trail
+
+- **π0.5**: VLM/action-expert base와 attention mask의 출발점.
+- **Body Transformer**: `I+A` hard mask와 Hard/Mix/Soft 비교의 직접 선행 연구.
+- **Graphormer**: shortest-path-distance learned bias의 설계 근거.
+- **DROID, LeRobot**: single/cross-embodiment demonstration source.
+- **NerveNet, SMP**: kinematic graph message passing의 GNN 계보.
+
+## 검증 메모
+
+- arXiv v1 17쪽 본문·Appendix A–F를 직접 확인했다.
+- Figure 1–8, Table 1–11 inventory와 본문 반영을 대조했다.
+- 결과표는 main table과 detailed appendix table을 재대조했다.
+- 공식 코드 공개 여부를 별도로 검색했으며 미확인 상태를 명시했다.
+- public wording에 비공개 시스템·프로젝트 정보를 포함하지 않았다.
+
+<SectionFeedback page="Embedding Morphology into Transformers" section="문서 전체" />

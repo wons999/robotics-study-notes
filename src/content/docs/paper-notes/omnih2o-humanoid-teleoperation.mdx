@@ -1,0 +1,137 @@
+---
+research: {"kind": "paper", "topics": ["humanoid", "action"], "status": "reviewing", "reviewedAt": null, "source": "https://arxiv.org/abs/2406.08858"}
+title: OmniH2O
+description: privileged teacher에서 25-step deployable proprioception student로 distill해 3-point whole-body humanoid teleoperation과 data collection을 구현한 OmniH2O survey.
+---
+
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+import ResearchMeta from "../../../components/ResearchMeta.astro";
+
+<ResearchMeta entryId="paper-notes/omnih2o-humanoid-teleoperation" />
+
+# OmniH2O
+
+<SectionFeedback page="OmniH2O" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | OmniH2O: Universal and Dexterous Human-to-Humanoid Whole-Body Teleoperation and Learning |
+| 저자 | Tairan He, Zhengyi Luo, Wenli Xiao 외 |
+| 공개 | arXiv:2406.08858, 2024 |
+| 링크 | [arXiv](https://arxiv.org/abs/2406.08858) · [PDF](https://arxiv.org/pdf/2406.08858) · [Project](https://omni.human2humanoid.com/) · [Official code](https://github.com/LeCAR-Lab/human2humanoid) |
+| 기준 | 25쪽 PDF와 Appendix A–M 전체, official code commit `750f1fa` 확인 |
+
+## 한 줄 요약
+
+OmniH2O는 simulator full-body state와 22-point goal을 보는 privileged PPO teacher를, joint·IMU·action 25-step history와 head/두 hands 3-point goal만 보는 MLP student에 DAgger로 distill한다. explicit root linear velocity 없이도 실제 Unitree H1 tracking을 크게 개선하고, VR/RGB/language teleoperation과 40분 humanoid demonstration dataset 수집에 같은 low-level controller를 사용한다.
+
+![OmniH2O retargeting, teacher-student, teleoperation stack](/omnih2o/figure-3-system.png)
+
+*Figure 3. privileged policy는 913D, deployable policy는 current 90D + history 1,575D = 1,665D다. control policy는 50 Hz, PD loop는 200 Hz다.*
+
+## System overview
+
+AMASS motion을 H1 embodiment로 retarget하고 feasibility filtering한다. standing/squatting을 안정화하려고 각 motion의 root와 lower body를 고정한 variant를 추가한다. low-level policy output은 19 motor target joint angles이며 PD controller가 실행한다. dexterous hands는 VR hand pose에서 IK로 별도 off-the-shelf hand controller에 직접 mapping한다. 따라서 learned whole-body policy가 finger joints까지 출력하는 것은 아니다.
+
+입력 interface는 VR, RGB pose estimator, joystick, exoskeleton, MoCap, language→MDM motion을 head/hand kinematic goals로 통일한다. high-level autonomous policy도 image에서 future motion goal을 내고 OmniH2O가 motor action으로 변환한다.
+
+## Privileged teacher
+
+teacher proprioception은 모든 rigid body의 position/orientation, linear/angular velocity, previous action이다. goal에는 reference pose/velocity와 current-reference difference가 들어간다. Appendix Table 4의 정확한 구성은 motion-goal 342D, differences 345D, local DoF position/rotation 207D, action 19D로 총 **913D**다.
+
+PPO reward는 DoF/body pose·velocity tracking과 torque, limit, action rate, feet contact/slip/orientation 등을 합친다. max-feet-height-per-step reward와 penalty curriculum으로 standing 때 불필요한 stomping을 줄인다. domain randomization은 friction `U(0.2,1.1)`, mass 0.7–1.3×, PD gain 0.75–1.25×, control delay 20–60ms, 5초마다 1m/s push, rough/low-obstacle terrain을 포함한다.
+
+## Deployable student observation
+
+현재 timestep 90D:
+
+| term | dim |
+| --- | ---: |
+| joint position / velocity | 19 / 19 |
+| base angular velocity / projected gravity | 3 / 3 |
+| head·left hand·right hand goal | 27 |
+| previous action | 19 |
+
+history entry는 goal을 제외한 joint 38D + IMU 6D + action 19D = 63D다. 25 entries를 flatten해 current 90D와 concatenate하므로 `63×25+90=1,665D`다. 3-point goal 27D는 각 point의 current-reference position/velocity difference와 reference position, 즉 point당 9D다.
+
+root global linear velocity는 의도적으로 제외한다. history로 속도와 unobserved dynamics를 implicit하게 infer하고, noisy VIO 의존성을 피한다. 다만 motion goal을 robot/root frame으로 변환하기 위한 **root odometry 자체는 여전히 필요**하다. “global velocity-free”와 “odometry-free”는 다르다.
+
+student rollout state에서 privileged teacher action을 query하고 squared L2 imitation loss로 DAgger한다. long history를 PPO에 그대로 넣은 variant는 success 47.11%로 붕괴하지만 DAgger student는 94.10%다. history가 유용하다는 것뿐 아니라, high-dimensional history를 학습하는 optimization method가 결정적이라는 결과다.
+
+공식 code도 `legged_robot.py`에서 DoF, DoF velocity, base angular velocity, gravity, actions를 history entry로 concatenate하고 linear-velocity variant를 별도 구성한다. hardware code에는 ZED odometry 경로가 있다. repository는 paper 이후 commit이므로 논문 수치 생성 snapshot과 동일하다고 보장되지는 않는다.
+
+## Motion tracking results
+
+simulation은 augmented retargeted AMASS 14k sequences, real은 공간 제약 때문에 20 standing sequences를 쓴다. success는 reference로부터 평균 0.5m 이상 벗어난 순간 실패다. global/root-relative MPJPE, acceleration, velocity error를 함께 보고한다.
+
+![simulation/real tracking and ablations](/omnih2o/tables-1-2-tracking.png)
+
+*Tables 1–2. simulation에서는 history 차이가 작아 보이지만, real에서는 History0 global MPJPE 83.26 mm 대비 25-step은 47.94 mm로 큰 차이가 난다.*
+
+### main comparison
+
+| method | sim2real | sim success | global MPJPE | local MPJPE |
+| --- | --- | ---: | ---: | ---: |
+| privileged teacher | 아니오 | **94.77%** | **126.51** | **70.68** |
+| H2O | 예 | 87.52% | 148.13 | 81.06 |
+| OmniH2O | 예 | 94.10% | 141.11 | 77.82 |
+
+deployable student는 teacher success에 0.67 percentage point까지 접근하지만 pose error gap은 남는다. real global/local MPJPE는 H2O 87.33/53.32 mm에서 OmniH2O 47.94/41.87 mm로 개선된다.
+
+### history와 architecture
+
+- sim success: history 0/5/25/50 = 93.80/93.60/**94.10**/93.56%로 차이가 작다.
+- real global MPJPE: history 0/5/25/50 = 83.26/62.18/**47.94**/50.24 mm.
+- GRU/LSTM은 sim success 92.85/91.03%, real LSTM global MPJPE 87.00 mm로 flattened-history MLP보다 나쁘다.
+
+“25 steps가 최적”은 simulation accuracy만 보면 절대적이지 않다. real acceleration/velocity와 global tracking을 함께 볼 때 가장 일관된 선택이다.
+
+### sparse goals와 linear velocity
+
+22/8/3 tracking points의 sim success는 94.72/94.31/94.10%이고 global MPJPE는 127.71/129.30/141.11 mm다. 3 points는 정확도를 희생하지만 consumer VR에서 얻을 수 있는 deployability를 택한다.
+
+explicit linear velocity variant는 sim global MPJPE 138.18로 약간 좋지만 success 93.80%로 낮다. real에서는 ZED VIO variant가 넘어져 평가를 완료하지 못했고 MLP/GRU estimator도 global MPJPE 50.93/49.75로 no-linear-velocity 47.94보다 나쁘다. 이는 “velocity가 쓸모없다”가 아니라 **noisy estimated velocity보다 history-only policy가 낫다**는 evidence다.
+
+## Real interfaces와 robustness
+
+![language control, disturbances and outdoor terrains](/omnih2o/figures-4-5-real.png)
+
+*Figures 4–5. text-to-motion MDM goal, 사람의 strike, grass/slope/gravel을 qualitative하게 시연한다.*
+
+두 Jetson Orin NX setup에서 ZED 60 Hz, policy 50 Hz, PD 200 Hz이며 end-to-end latency를 20ms로 보고한다. VR/RGB teleoperation, language commands, punch/kick disturbance와 outdoor terrains를 보이지만 task success나 perturbation magnitude의 quantitative robustness 표는 없다.
+
+## Data collection과 autonomy
+
+OmniH2O-6는 head-mounted RGBD, head/hand motion goals, motor joint targets를 30 Hz로 저장한 40분 데이터다. six tasks frame counts는 Catch-Release 13,234, Squat 8,535, Hammer-Catch 12,759, Rock-Paper-Scissors 9,380, Boxing 11,118, Basket-Pick-Place 18,436이다.
+
+high-level Diffusion Policy가 image에서 8-step motion goal chunk를 예측하고 OmniH2O가 motor command로 내린다. 4 tasks 평균에서 25/50/100% data success는 4/6.5/8 out of 10, BC/DDIM/DDPM은 1/7.75/8 out of 10이다. 이 LfD 결과는 proprioception policy 자체의 ablation이 아니라 계층형 system의 응용 결과다.
+
+## 핵심 해석과 한계
+
+- privileged teacher는 simulation-only state로 exploration을 쉽게 하고 student는 hardware observation으로 behavior를 복제한다.
+- history는 explicit estimator의 point estimate를 입력하는 대신 policy가 task loss에 맞춰 latent dynamics를 사용하게 한다.
+- DAgger와 history가 강하게 interaction한다. history만 추가한 RL failure를 history 자체의 결함으로 해석하면 안 된다.
+- 3-point goal ambiguity가 있어 서로 다른 lower-body motion이 같은 head/hand goal을 가질 수 있다. motion prior가 plausible completion을 선택할 뿐 desired motion uniqueness를 보장하지 않는다.
+- real quantitative set은 standing 20 motions뿐이고 terrain/disturbance/loco-manipulation은 영상 중심이다.
+- root odometry discontinuity, extreme/OOD goal safety guarantee가 없다.
+- hand control은 learned policy 밖의 IK path이며 contact/tactile feedback이 없다.
+- teacher/student training duration, DAgger aggregation schedule과 seed variation은 충분히 보고하지 않는다.
+
+## Appendix와 Figure/Table Inventory
+
+| 항목 | 내용 | 반영 |
+| --- | --- | --- |
+| Figs. 1–3 | capabilities, retargeting, full system | architecture 이미지 |
+| Tables 1–2 | sim/real tracking와 ablations | 핵심 수치·이미지 |
+| Figs. 4–7, Table 3 | language, robustness, GPT-4o, LfD | applications |
+| Tables 4–14 | 모든 state-space variants | exact dimensions |
+| Tables 15–16 | reward와 domain randomization | training recipe |
+| Fig. 8 | VIO/MLP/GRU velocity estimation | velocity 해석 |
+| Figs. 9–11, Table 17 | motion augmentation, teleop, dataset/LfD | data·applications |
+| Tables 18–19 | RL/DAgger와 LfD hyperparameters | reproducibility |
+
+Appendix A hardware, B ablation definitions, C state spaces, D LfD methods, E rewards, F randomization, G velocity estimator, H motion data augmentation, I physical demos, J dataset, K–L hyperparameters, M GPT-4o prompt를 모두 확인했다.
+
