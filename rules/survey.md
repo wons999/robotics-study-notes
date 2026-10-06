@@ -2,6 +2,8 @@
 
 이 문서는 로보틱스 논문 Survey 노트를 만들 때 반복해서 따라야 하는 제작 규칙이다. 기준 사례는 T-Rex Survey이며, 목표는 논문을 단순 요약하지 않고 나중에 세미나 자료, 구현 검토, 후속 연구 맵으로 재사용할 수 있게 정리하는 것이다.
 
+자료 추가·연결·검사·확인용 서버까지의 공통 절차는 [contributing.md](contributing.md), MDX metadata와 URL 규칙은 [content.md](content.md)를 함께 따른다.
+
 ## 기본 원칙
 
 - 논문 Survey와 세미나 자료 작업은 항상 `effort high`로 수행한다. 빠른 요약 모드로 처리하지 말고, 원문/appendix/공식 코드/공식 모델카드/빌드 결과를 확인하는 검증 루프를 기본값으로 둔다.
@@ -29,15 +31,16 @@
 
 ```md
 ---
-research: {kind: paper, topics: [vla], status: draft, reviewedAt: null}
+research: {kind: paper, topics: [vla], status: draft, reviewedAt: null, source: '원문-version-URL'}
 title: 논문 대표 이름
 description: 논문의 핵심 주제와 Survey 범위를 한 문장으로 적는다.
 ---
 
+import ResearchMeta from '../../../components/ResearchMeta.astro';
+import PaperFigure from '../../../components/PaperFigure.astro';
 import SectionFeedback from '../../../components/SectionFeedback.astro';
 
-# 논문 대표 이름
-
+<ResearchMeta entryId="paper-notes/실제-slug" />
 <SectionFeedback page="논문 대표 이름" section="메타데이터" />
 
 ## 메타데이터
@@ -103,7 +106,27 @@ appendix의 dataset schema, baseline detail, task rubric, failure analysis, impl
 5-pass 검토 결과와 build 결과를 남긴다.
 ```
 
-문서의 `title`과 H1에는 “Deep Survey” 같은 작업 단계 이름을 붙이지 않는다. 웹에는 논문 대표 이름 또는 모델 대표 이름만 보이게 하고, 깊이는 본문 품질과 검증 메모로 보장한다.
+frontmatter의 `title`이 페이지 H1을 생성하므로 같은 제목을 본문 H1에 반복하지 않는다. 제목에 “Deep Survey” 같은 작업 단계 이름을 붙이지 않는다. 웹에는 논문 대표 이름 또는 모델 대표 이름만 보이게 하고, 깊이는 본문 품질과 검증 메모로 보장한다. 템플릿의 source·slug는 실제 값으로 바꾸고 사용하지 않는 component import는 제거한다.
+
+## 원문 version과 시각 자료의 provenance
+
+- PDF version·공개일·공식 project/code URL을 기록한다. 원문에 적힌 실험 조건과 현재 code commit의 default를 따로 대조하고, 차이가 있으면 둘 다 명시한다. 현재 default로 논문의 수치를 설명하지 않는다.
+- PDF SHA-256과 crop provenance는 `public/<topic>/manifest.json`에 남긴다. 기존 manifest를 형식 예시로 참고하되 checksum을 재사용하지 않는다.
+- manifest root는 `source`(PDF version URL), `sourceSha256`, `assets`를 가진다. 각 asset은 `type`(figure/table), `number`(원문 번호), `page`(1부터 시작), `file`, `crop`(PDF page 좌표의 `[x0,y0,x1,y1]`), `bytes`, `sha256`을 기록한다.
+- 연속 표는 `table-03a.png`, `table-03b.png`처럼 구분하고 동일한 원문 `number`를 유지한다. distinct figure/table 수와 실제 crop 파일 수를 구분해 기록한다. caption에 source version·page·continuation과 읽을 내용을 표시한다.
+- figure/table inventory에는 원문 번호·page·본문 반영 위치·읽을 내용을 모두 적는다. 실험 결과는 main/appendix를 포함해 모두 반영하며, 같은 결과를 두 위치에 설명했다고 두 실험으로 세지 않는다.
+- crop이나 source가 바뀌면 모든 관련 bytes/checksum·inventory·본문 참조를 갱신하고 이미지를 다시 직접 확인한다. 검사 등록 방법은 [contributing.md](contributing.md#4-찾을-수-있도록-연결)를 따른다.
+
+## 범용 모델·policy 평가의 해석
+
+- model이 만드는 출력과 실행기·IK·planner·learned policy·whole-body controller가 공급하는 동작을 분리한다. control frequency를 model inference frequency로 표기하지 않는다.
+- training이 없는 연구는 learning/architecture/recipe 항목에 해당 이유와 inference recipe를 쓴다. 공개되지 않은 pretraining data·backbone·loss를 추정해 채우지 않는다. frozen weight와 prompt/code/reference의 task-specific 수정도 구분한다.
+- 관측·depth/calibration·privileged state·demonstration·action frame/order/unit·history·reasoning/harness·call/physical-time budget을 결과의 조건으로 명시한다.
+- success, process score, progress, task coverage, checkpoint coverage, completion claim을 원문의 정의와 denominator대로 구분한다. task/축별 평균, pooled 평균, selected trace를 섞지 않는다.
+- n/total과 trial/seed 수, paired 여부, baseline 입력·sample 차이를 적는다. 작은 표본과 선택된 성공 영상은 범용 신뢰성 추정으로 확대하지 않는다.
+- ICL·tool 사용·program share의 상관 관계를 controlled ablation으로 표현하지 않는다. 서로 다른 논문의 task/interface/harness가 다르면 하나의 성공률 leaderboard로 합치지 않는다.
+- cost는 원문의 가격·token accounting·실험 시점에 대한 값으로 적고 현재 요금으로 간주하지 않는다. sim time·wall time·provider wait와 unavailable 값을 구분한다.
+- code inspection·사이트 검증·모델/시뮬레이터/실물 재현은 별도로 기록한다. `verified`에 관한 상태 계약은 [content.md](content.md)를 따른다.
 
 ## Family Overview와 Paper Deep Dive 분리
 

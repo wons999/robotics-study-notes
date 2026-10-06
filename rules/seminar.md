@@ -2,6 +2,8 @@
 
 이 문서는 논문 세미나 자료를 만들 때 반복해서 따라야 하는 제작 규칙이다. 목표는 발표자가 논문을 정확하고 읽기 쉬운 형태로 설명할 수 있게 만들고, 이전 T-Rex 세미나에서 겪은 레이아웃/검증 시행착오를 줄이는 것이다.
 
+자료 추가·인계는 [contributing.md](contributing.md), metadata·공통 deck 경로는 [content.md](content.md), 논문 근거 검증은 [survey.md](survey.md)를 함께 따른다.
+
 ## 세미나 페이지 구성
 
 - 세미나 랜딩 페이지는 가볍게 유지한다.
@@ -67,10 +69,12 @@
 
 ## 개발과 검증 환경
 
-- Astro/Starlight 세미나 자료는 Docker Node 24 환경을 우선 사용한다.
+- 실행 호스트는 사용자의 현재 운영 규칙을 따르고 Node 24 환경을 사용한다. 허용된 local 실행에서 host Node가 맞지 않으면 Docker Node 24를 사용한다. 명령과 base 설정은 [README](../README.md#개발과-확인용-서버)를 따른다.
 - 로컬 dev server는 보통 hot reload를 믿되, config/base path/dependency/container 상태가 바뀌었거나 화면이 stale하면 재시작한다.
+- remote source 사본은 변경을 동기화하고, preview는 다시 build해야 변경이 반영된다. build·preview의 base를 같게 유지한다.
 - 의미 있는 변경 후 `npm run build`를 실행한다.
 - 슬라이드 layout, figure, table, typography 변경 시 Playwright와 cached Chromium으로 fullscreen 렌더링을 확인한다.
+- 작업 후 실제 slide-only route를 열고 확인용 서버·터널을 유지하며 사용자에게 접속 URL을 제공한다. 상세 인계는 [contributing.md](contributing.md#6-확인용-서버와-인계)를 따른다.
 
 ## 작업 기록과 커밋
 

@@ -20,6 +20,7 @@ When checking user/site feedback, check issues in `wons999/robotics-study-notes-
 
 ## Agent Operating Rules
 
+- Before adding or substantially updating material, follow the end-to-end workflow in `rules/contributing.md`; read its linked content/survey/seminar rules for the relevant work.
 - Content organization and metadata: follow `rules/content.md`.
 - Before substantive survey or seminar work, read `rules/survey.md` and follow it strictly. Do not rely on memory of previous survey mistakes or fixes.
 - For paper survey updates, download or otherwise obtain the paper PDF when available, inspect the PDF directly, extract the paper's figures/tables as local assets when relevant, and verify the written content against the PDF figure/table inventory.
@@ -28,13 +29,16 @@ When checking user/site feedback, check issues in `wons999/robotics-study-notes-
 - Do not add personal workplace details, private project details, or sensitive robot/system information to public site content.
 - Keep public-facing wording general unless the user explicitly asks for a more specific private note.
 - If the feedback repo cannot be read through unauthenticated tools, treat that as expected for a private repository and use the GitHub connector or an authenticated GitHub tool.
+- When a material update establishes a reusable operating decision or reveals stale instructions, update the relevant `rules/` document in the same task and keep README/AGENTS entrypoints consistent. Put current task results and remaining work in `WORKING.md`, not in permanent rules.
 
 ## Local Repo Notes
 
 - This repo was moved to `/home/wh/study/robotics-study-notes`.
 - Use this directory as the working copy for code and content changes.
 - The site is built with Astro/Starlight.
+- Build/test/server execution follows the user's current host rules. The local Docker examples below apply only when local execution is allowed; they do not override the selected execution host.
 - Run `npm run build` before committing meaningful site changes.
+- After completing site code or content changes, start or reuse a verification server, confirm it serves the latest changes, and keep it running for the user. Open the relevant page and include its accessible URL in the final response. Follow the user's host-execution rules; when serving remotely, provide a loopback SSH tunnel.
 - The host Node version can be older than Astro's supported range. For local serving and builds, prefer Docker Node 24, for example:
   `docker run --rm --user 1000:1000 -p 4322:4321 -v /home/wh/study/robotics-study-notes:/app -w /app node:24-alpine npm run dev -- --host 0.0.0.0`
 - If port 4321 is already allocated, expose the container on 4322 and open `http://127.0.0.1:4322/seminars/t-rex/`.

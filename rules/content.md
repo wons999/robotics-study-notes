@@ -1,5 +1,20 @@
 # Content organization
 
+자료 추가의 공통 순서와 완료 기준은 [contributing.md](contributing.md), 상세 연구 검증은 [survey.md](survey.md), 슬라이드 검증은 [seminar.md](seminar.md)를 따른다.
+
+## 저장 위치와 역할
+
+| 경로 | 역할 |
+| --- | --- |
+| `src/content/docs/paper-notes/<slug>.mdx` | 개별 논문·공식 article/release 분석, 계열 overview. `research.kind`로 구분 |
+| `src/content/docs/robot-learning/` | 연구 지도와 robot learning의 연결 설명 |
+| `src/content/docs/robotics-foundations/`, `robot-systems/` | 기초 개념·시스템 학습 자료 |
+| `src/content/docs/topics/` | 연구 질문·권장 읽기 순서·비교 조건. 논문 본문을 복제하지 않음 |
+| `src/content/docs/seminars/` | 발표 자료 landing과 숨겨진 slide-only route |
+| `src/content/docs/experiments/`, `weekly-log/` | 공개 가능한 실험/학습 노트·기록 |
+| `public/<topic>/` | 원문 그림·표와 provenance manifest |
+| `rules/`, `AGENTS.md`, README | 작성자·agent를 위한 영구 운영 규칙. 사이트 본문과 구분 |
+
 ## 공통 메타데이터
 
 ```yaml
@@ -11,12 +26,47 @@ research:
   source: https://arxiv.org/abs/0000.00000
 ```
 
-- `kind`: paper / release / article / overview / map / note / foundation / system / seminar / log.
+- `kind`: paper / release / article / overview / map / note / foundation / system / seminar / log / index. `index`는 자료 목록에서 제외한다.
 - `topics`: vla / sensing / action / data / humanoid / foundations. 복수 선택 가능.
 - `status`: draft는 작성 중, reviewing은 재검토 필요, verified는 기록한 범위의 내용 검증 완료.
 - `reviewedAt`: 내용 검토일 YYYY-MM-DD. 미등록은 null. 이동·메타데이터 이관 날짜를 검토일로 쓰지 않는다.
 - `family`: groot / pi / molmo / ecot 등 모델 계열 문서에만 기록한다.
 - `source`: 원문 URL. 새 Survey에는 반드시 기록한다.
+
+허용 값과 상태 제약의 실제 정의는 `src/content.config.ts`, 표시 이름은 `src/data/research.ts`다. 새 topic/kind가 필요하면 schema·label·읽기 경로·검사를 함께 수정한다. 기존 topic으로 표현 가능한 자료를 위해 새 분류를 늘리지 않는다.
+
+## 새 연구 문서의 MDX 시작 형식
+
+아래 `<slug>`·제목·description·source는 실제 자료로 교체한다. frontmatter의 title이 페이지 제목을 만들므로 본문에 같은 H1을 반복하지 않는다.
+
+```mdx
+---
+title: 자료의 대표 이름
+description: 다루는 질문과 검토 범위
+research:
+  kind: paper
+  topics: [vla, action]
+  status: draft
+  reviewedAt: null
+  source: https://arxiv.org/abs/실제-ID와-version
+---
+
+import ResearchMeta from '../../../components/ResearchMeta.astro';
+import PaperFigure from '../../../components/PaperFigure.astro';
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+<ResearchMeta entryId="paper-notes/<slug>" />
+<SectionFeedback page="자료의 대표 이름" section="메타데이터" />
+
+## 메타데이터
+
+원문 version·날짜·공식 project/code·검토 commit과 범위.
+이후 본문 구성은 rules/survey.md를 따른다.
+```
+
+`ResearchMeta.entryId`는 파일 확장자를 제외한 collection ID와 일치시킨다. 쓰지 않는 component import는 제거한다. `PaperFigure src="/<topic>/figure-01.png"`처럼 public-root 경로를 사용하면 component가 site base를 붙인다. `/robotics-study-notes`를 이미지나 내부 콘텐츠 링크에 직접 중복 삽입하지 않는다.
+
+일반 Markdown 내부 링크는 source 파일 위치가 아닌 **출력 route**를 기준으로 작성한다. 예를 들어 `/paper-notes/a/`에서 다른 Survey는 `../b/`, 주제는 `../../topics/vla/`다. 기존 source 파일을 이동해 해결하기 전에 현재 URL과 `scripts/check-content.mjs`의 검사 결과를 확인한다.
 
 ## 운영
 
@@ -37,4 +87,6 @@ T-Rex의 기존 figure variant와 시각 스타일은 유지한다. 새로운 �
 
 `npm run build`는 콘텐츠 링크·이미지·필수 메타데이터 확인, Astro 타입 검사, 정적 사이트 빌드를 수행한다. `npm test`는 콘텐츠 검사기의 누락 검출을 검증한다. PR workflow는 둘 다 실행하며, main 배포도 동일한 콘텐츠 검사를 거친다. 외부 URL의 유효성은 작성 시 원문을 직접 확인한다. CI에서는 외부 사이트 장애로 전체 검증을 불안정하게 만들지 않도록 네트워크 요청을 하지 않는다.
 
-브라우저 회귀 확인은 preview 실행 후 `CHECK_SITE_URL=http://127.0.0.1:4388/robotics-study-notes CHROMIUM_EXECUTABLE_PATH=/path/to/chrome npm run test:ui`로 실행한다. 목록 검색·상태 필터, 주제·계열 페이지, 논문 59개 이미지, 전체 슬라이드를 세 해상도에서 확인한다. 이미지 manifest 변경은 원문/crop 검토 후 checksum을 갱신한다.
+브라우저 회귀 확인은 build와 같은 base로 preview를 실행한 뒤 `CHECK_SITE_URL=http://127.0.0.1:4388/robotics-study-notes CHROMIUM_EXECUTABLE_PATH=/path/to/chrome npm run test:ui`로 실행한다. 목록 검색·상태 필터, 주제·계열 페이지, 등록된 논문의 그림·표 전체, T-Rex 전체 슬라이드를 세 해상도에서 확인한다. 새 논문의 manifest와 UI 검사 등록은 [contributing.md](contributing.md#4-찾을-수-있도록-연결)를 따른다. 이미지 manifest 변경은 원문/crop 검토 후 checksum을 갱신한다.
+
+본문·결과 표는 좁은 화면과 desktop에서도 확인한다. 전체 페이지가 가로로 넘치지 않는지, caption·축·legend가 잘리지 않는지 확인한다. 자동 로딩 검사가 그림 내용의 정확성과 가독성을 대신하지 않는다.
