@@ -1,0 +1,225 @@
+---
+research: {kind: paper, topics: [vla, action, sensing], status: verified, reviewedAt: '2026-10-06', source: 'https://arxiv.org/abs/2609.24170v1'}
+title: An Unexpected Robot Policy
+description: RoboDojo에서 frozen Astra의 직접 EEF 제어를 평가한 연구. 42개 과제, 시연 ICL의 성능 하락, 관측·좌표 perturbation, 실제 로봇과 피아노 진단을 원문과 코드로 분석한다.
+---
+
+import ResearchMeta from '../../../components/ResearchMeta.astro';
+import PaperFigure from '../../../components/PaperFigure.astro';
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+<ResearchMeta entryId="paper-notes/unexpected-robot-policy" />
+<SectionFeedback page="An Unexpected Robot Policy" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | An Unexpected Robot Policy: Early Evaluations of GPT-6 Astra on RoboDojo and Beyond |
+| 저자 | Wenbo Zhang, Kaixuan Wang, Yutao Ouyang 외; 전체 목록은 원문 참조 |
+| 공개 | arXiv:2609.24170v1, 2026-09-21, 24쪽 |
+| 원문·프로젝트 | [PDF v1](https://arxiv.org/pdf/2609.24170v1), [arXiv](https://arxiv.org/abs/2609.24170v1), [평가 report](https://robodojo-benchmark.com/report/gpt-6-astra-eval) |
+| 공식 코드 | [RoboProbe](https://github.com/RoboProbe/RoboProbe), 확인 commit `52300752080325086095854e01977a8cf281b684` |
+| 읽는 위치 | 범용 모델을 수치 action policy로 사용한 초기 대규모 평가. [네 논문의 비교](../../topics/vla/#범용-모델을-policy로-쓰는-네-논문) |
+
+## 한 줄 요약과 문제의식
+
+별도 로봇 학습 없이 frozen Astra가 RGB와 자기 상태에서 EEF target을 만들면 일부 의미·기억 과제에서 학습 policy보다 강하지만, 정밀 접촉과 실제 로봇에서는 성공이 드물고 **시연을 context에 추가해도 평균 성능은 떨어질 수 있다**.
+
+일반적인 language planner는 학습된 motor skill을 호출한다. 이 논문은 그 action-producing 경로를 범용 모델이 맡을 수 있는지 묻는다. 다만 IK, motion planning, joint tracking까지 언어 모델이 생성하는 것은 아니다. 모델이 정하는 target과 실행기가 제공하는 움직임을 나눠야 결과가 정확히 읽힌다.
+
+<PaperFigure src="/unexpected-robot-policy/figure-01.png" alt="Figure 1: learned motor policy와 직접 numeric target 경로의 차이" caption="Figure 1, p.2. learned motor policy와 직접 numeric target 경로의 차이. PDF v1에서 추출." />
+
+논문은 strict LLM-as-policy 설정의 RoboDojo 평가와, joint-position deployment·mobile humanoid·piano code 생성 진단을 함께 싣는다. 후자의 interface와 개발 과정은 서로 다르므로 하나의 동일 policy 평가로 합산하지 않는다.
+
+## 시스템 설정: 무엇을 보고 무엇을 명령하는가
+
+<PaperFigure src="/unexpected-robot-policy/figure-02.png" alt="Figure 2: model context와 EEF execution loop" caption="Figure 2, p.4. model context와 EEF execution loop. PDF v1에서 추출." />
+
+| 요소 | RoboDojo-Sim 본 평가 |
+| --- | --- |
+| 로봇·센서 | ARX X5 양팔, 각각 6 arm joint; head RGB와 양 wrist RGB |
+| 관측 | 현재 RGB, 양팔 grasp-point pose와 gripper의 14D 상태, 읽기 전용 12 joint state, task instruction |
+| 제공하지 않는 정보 | depth, camera calibration, object ground-truth pose, reward, layout별 정답 trajectory |
+| 사전 설명 | 좌표축·base·table height·reach bounds·gripper polarity, 관측/접촉에 관한 task-independent 조언 |
+| 과제 설명 | official instruction, task wiki recipe, scoring ladder. action sequence는 제공하지 않음 |
+| 출력 | `move_eef`에 14개 named coordinate의 부분집합 또는 `give_up` |
+| action 표현 | 팔당 `[x,y,z,pitch,roll,yaw,gripper]`; xyz는 m, 각도는 degree, gripper 0=closed·1=open |
+| history | text observation·tool result·model note 유지; RGB는 camera별 최근 두 observation turn |
+| 실행 | grasp-point → flange pose → geometric planner → 동기화된 양팔 joint path, 25Hz tracking |
+| 종료·budget | 표준 평가 최대 100 model calls와 task별 environment-step limit 중 먼저 도달한 조건; 성공은 evaluator 판정 |
+
+한 turn에 tool 하나를 선택한다. 생략한 coordinate는 **현재 측정값**을 유지하며, 양팔 coordinate를 함께 지정하면 동시 이동한다. gripper 변경은 arm motion 뒤에 적용된다. `give_up`은 종료 요청이며 성공을 선언하는 tool이 아니다. invalid/unreachable request는 움직이지 않고 오류를 돌려주며, accepted motion은 실행 시간과 도달 오차를 포함한 새 관측을 제공한다.
+
+모델-facing angle의 zero는 straight-down grasp다. 일반적인 world RPY의 zero와 같지 않다. 원문의 bounds는 left x `[-1.1,0.5]`, right x `[-0.5,1.1]`, 공통 y `[-1.25,0.35]`, z `[0.7,1.565]` m이며 pitch `[-180,180]`, roll `[-90,90]`, yaw `[-180,180]` degree다. 이는 숫자 target 범위이며 물체·table과의 충돌 회피 보증이 아니다. 25Hz는 실행기의 tracking rate이고 Astra decision rate가 아니다.
+
+## Dataset, 모델 구조와 학습 recipe
+
+새 action model을 학습하지 않는다. backbone, parameter count, pretraining corpus·loss·optimizer는 공개 평가에서 알 수 없다. Astra weight는 고정이고 default reasoning은 medium이다. 실제 외부 구조는 multimodal model → tool arguments → analytic execution → feedback이며 learned motor policy를 경유하지 않는다.
+
+| 데이터 | 규모·schema | 해석 |
+| --- | --- | --- |
+| 본 평가 | 42 task × 50 episode = 2,100/model, Astra와 GPT-5.5; DeepSeek는 task당 10, 총 420 | five-axis 평가: Generalization 12, Precision 8, Long-horizon 8, Memory 6, Open-world 8 |
+| 평가 sample | task/layout identity, instruction·wiki, RGB, measured EEF/joints, requested coordinates, planner result, score/success | 요청 target과 실제 도달 상태를 분리해 기록 |
+| public policy 비교 | 2026-09-10 official board의 40 policy | 같은 wiki 입력으로 baseline을 재실행한 비교가 아님 |
+| 시연 ICL | 34 task × 10 layout = 340 matched pair; 다른 layout의 성공 demo 하나 | image+EEF state 또는 trajectory text. weight update 없음 |
+| perturbation | baseline 성공인 general_pickup layout 8개 × 6 condition | 넓은 task distribution의 robustness 평가가 아님 |
+| 실제 로봇 진단 | 12 task, 33 retained trial; ARX 9·Piper 21·PiperX 3 | task당 1–4회, official 전체 평가와 표본이 다름 |
+
+시연은 별도 training dataset이 아니라 inference context다. image condition은 선택 frame과 당시 measured EEF를 함께 넣는다. text condition은 시연 trajectory의 text representation을 사용한다. task/wiki 입력과 pretrained model의 과거 지식이 주는 이득은 분리되지 않으며, closed model의 benchmark contamination도 확인할 수 없다.
+
+## 본 평가: 의미·기억의 강점과 접촉의 약점
+
+<PaperFigure src="/unexpected-robot-policy/table-01.png" alt="Table 1: top board의 Score/SR와 축별 평균" caption="Table 1, p.5. top board의 Score/SR와 축별 평균. PDF v1에서 추출." />
+
+Score는 process reward 평균 ×100이고 SR은 완전 성공 비율이다. official Average는 **다섯 평가 축의 동일 가중 평균**이다. Generalization 안의 standard/random 결과도 원문의 평균 규칙을 따른다. 2,100 episode의 단순 pooled 평균과 같다고 가정하면 안 된다.
+
+| 구성 | Average Score / SR% | Gen. | Precision | Long-horizon | Memory | Open-world |
+| --- | --- | --- | --- | --- | --- | --- |
+| Astra | 28.97 / 22.48 | 33.36 / 30.50 | 12.65 / 4.00 | 21.45 / 8.25 | 43.04 / 38.67 | 34.36 / 31.00 |
+| DM0.5 | 24.90 / 19.34 | 15.77 / 10.95 | 24.82 / 16.75 | 33.70 / 19.50 | 47.74 / 47.44 | 2.43 / 2.08 |
+| Galaxea G0.5 | 20.23 / 14.88 | 18.46 / 12.83 | 28.25 / 20.42 | 44.12 / 32.25 | 8.61 / 7.33 | 1.73 / 1.58 |
+| GPT-5.5 | 1.13 / 0.88 | 0.19 / 0.00 | 0.42 / 0.00 | 0.51 / 0.00 | 1.67 / 1.67 | 2.87 / 2.75 |
+| DeepSeek, 420 trials | 2.99 / 1.92 | 2.42 / 1.67 | 1.75 / 0.00 | 2.12 / 0.00 | 2.17 / 1.67 | 6.50 / 6.25 |
+
+Astra는 총 472/2,100회 성공한다. pooled Score는 28.72이고 official Average Score 28.97과 다르다. 평균 board 순위는 이 task mix와 process scoring에 대한 결과다. Precision 4%와 Long-horizon 8.25%는 실제 조작 안정성이 여전히 낮음을 보여준다.
+
+<PaperFigure src="/unexpected-robot-policy/table-02.png" alt="Table 2: 강한 의미 과제와 약한 정밀·접촉 과제" caption="Table 2, p.6. 강한 의미 과제와 약한 정밀·접촉 과제. PDF v1에서 추출." />
+
+강한 과제는 push T와 largest number 각각 SR 60%, align 50%, solve equation 40%, language-conditioned stacking 40%, imitation sequence 36%, language classification 30%다. 해당 public baseline의 최고 SR은 각각 0.7%, 4.7%, 0%, 0%, 2.7%, 0.7%, 0.7%다. 비교 우위가 의미 이해·규칙·관측 기억에서 발생하는지를 볼 수 있다.
+
+반대로 make kong 0% 대 public best 90%, build tower 2% 대 78.7%, insert tubes 0% 대 59.3%, tic task 0% 대 58.7%, pour balls 4% 대 46%, pour liquid 4% 대 42%, store laptop 0% 대 22.7%, pen holder 0% 대 22%다. task를 설명하는 능력과 지속적인 접촉을 실행하는 능력은 구분된다.
+
+<PaperFigure src="/unexpected-robot-policy/figure-03.png" alt="Figure 3: semantic matching·active view·bimanual 시도와 접촉 실패" caption="Figure 3, p.7. semantic matching·active view·bimanual 시도와 접촉 실패. PDF v1에서 추출." />
+
+Figure 3은 semantic matching, active viewpoint 변화, 두 팔 사용과 실패 사례를 보여준다. make-kong episode에서 의미를 맞춘 단계가 있어도 task SR은 0%다. moving conveyor, bimanual sweep, tower collision 사례도 포함된다. 양팔 명령을 낼 수 있다는 사실만으로 coordinated contact skill을 입증하지 않는다.
+
+## Ablation: one-shot demonstration이 왜 도움이 되지 않았는가
+
+<PaperFigure src="/unexpected-robot-policy/table-03.png" alt="Table 3: 340 matched pair의 zero-shot/image/text 비교" caption="Table 3, p.7. 340 matched pair의 zero-shot/image/text 비교. PDF v1에서 추출." />
+
+같은 340 task–layout pair에서 zero-shot은 78/340=22.9%, image+EEF demo는 61/340=17.9%, text demo는 44/340=12.9%다. 각각 −5.0pp, −10.0pp다. 시연이 다른 layout이므로 절대 좌표의 이전, 긴 context, 좋은 원래 전략을 바꾸는 효과가 함께 들어 있다.
+
+<PaperFigure src="/unexpected-robot-policy/table-07.png" alt="Table 7: 기존 성공을 잃는 경우와 새로운 성공의 분해" caption="Table 7, p.17. 기존 성공을 잃는 경우와 새로운 성공의 분해. PDF v1에서 추출." />
+
+zero-shot에서 0/10인 15 task·150 pair 중 image가 새로 해결한 것은 2/150, text는 0/150이다. 나머지 19 task·190 pair에서는 zero-shot 78/190=41.1%, image 59/190=31.1%, text 44/190=23.2%로 하락했다. image는 failure→success 31회보다 success→failure 48회가 많았고, text는 18회보다 52회가 많았다. image가 좋아진 task는 7개, 나빠진 task는 12개이며 text가 좋아진 것은 1개다.
+
+<PaperFigure src="/unexpected-robot-policy/table-08.png" alt="Table 8: press-by-number의 개선 예외, condition당 10회" caption="Table 8, p.17. press-by-number의 개선 예외, condition당 10회. PDF v1에서 추출." />
+
+예외적으로 press-by-number는 zero-shot 5/10, image 7/10, text 8/10이다. 이는 전체 평균을 뒤집지 않는다. **이 특정 one-shot serialization이 평균적으로 나빴다**는 결론은 가능하지만, 모든 in-context learning이 불가능하다는 결론은 아니다. [GPT-Policy](../gpt-policy/)는 keyframe·action alignment와 reference instruction을 다르게 구성하며 task·hardware·표본 수도 달라 직접 대조 실험이 아니다.
+
+## Perturbation: 관측이 바뀌어도 closed loop를 유지하는가
+
+<PaperFigure src="/unexpected-robot-policy/table-04.png" alt="Table 4: 8개 selected layout의 6조건 success" caption="Table 4, p.8. 8개 selected layout의 6조건 success. PDF v1에서 추출." />
+
+| 조건 | 성공 / 8 | 바뀐 정보 |
+| --- | --- | --- |
+| 위아래 image flip | 8 | RGB를 뒤집음 |
+| 좌우 mirror | 6 | RGB 좌우 반전 |
+| head 제거 | 6 | wrist 두 view만 제공 |
+| right wrist만 | 3 | 두 view 추가 제거 |
+| per-move pose jitter | 3 | 이동마다 평균 norm 10cm의 위치 bias |
+| xyz 부호 반전 | 4 | model-facing 위치·bounds를 변환, 실제 controller 좌표로 다시 환산 |
+
+baseline 성공인 layout만 골랐으므로 기준은 8/8이다. 조건당 layout별 한 번씩, retry 없이 평가한다. 부호 반전 조건은 설명되는 coordinate bounds도 바뀐다. 이 결과만으로 좌표 frame을 아무 안내 없이 알아냈다거나 online dynamics를 학습했다고 할 수 없다.
+
+<PaperFigure src="/unexpected-robot-policy/figure-04.png" alt="Figure 4: 변형 관측과 별도의 큰-budget rerun" caption="Figure 4, p.8. 변형 관측과 별도의 큰-budget rerun. PDF v1에서 추출." />
+<PaperFigure src="/unexpected-robot-policy/table-09.png" alt="Table 9: selected episode의 call 수와 성공/실패" caption="Table 9, p.19. selected episode의 call 수와 성공/실패. PDF v1에서 추출." />
+
+Figure 4의 right-wrist-only row에는 별도 **큰 budget rerun**이 있다. 표준 실행이 25 calls 후 실패한 layout 9를 170 model calls·400 environment steps로 재실행해 38 calls에서 성공한 것이다. 표준 Table 4의 3/8에 이 성공을 넣지 않는다.
+
+<PaperFigure src="/unexpected-robot-policy/table-10.png" alt="Table 10: negate-xyz episode의 target 수정과 모델 note" caption="Table 10, p.20. negate-xyz episode의 target 수정과 모델 note. PDF v1에서 추출." />
+
+Table 10은 negate-xyz 성공 episode에서 모델이 관측 오차에 맞춰 y target을 수정한 기록이다. call 5의 수정은 여전히 unreachable했고 후속 calls에서 다시 조정한다. 모델 note는 관찰 가능한 설명이지만 내부 학습 메커니즘의 증거는 아니다. history ablation과 적절한 baseline이 없으므로 일반적인 closed-loop correction과 새로운 적응 능력을 분리하기 어렵다.
+
+## 실제 로봇과 별도 진단
+
+### RoboDojo-Real과 joint-position deployment
+
+<PaperFigure src="/unexpected-robot-policy/table-11.png" alt="Table 11: retained 33-trial diagnostic과 official board의 차이" caption="Table 11, p.21. retained 33-trial diagnostic과 official board의 차이. PDF v1에서 추출." />
+
+retained 33 trial 중 성공은 stack bowls의 1회로 pooled SR 3.03%, Score 6.97이다. official baseline의 18-task board와 Astra의 12-task diagnostic subset은 동일 평가가 아니다. 논문은 unsafe action으로 hardware damage가 발생해 공식 real campaign을 완성하지 못했다고 기록한다. 이 단일 진단을 신뢰할 수 있는 실물 policy의 증거로 읽지 않는다.
+
+<PaperFigure src="/unexpected-robot-policy/table-12.png" alt="Table 12: 별도 joint-position deployment의 qualitative 기록" caption="Table 12, p.21. 별도 joint-position deployment의 qualitative 기록. PDF v1에서 추출." />
+
+Franka와 Piper의 joint-position 사례는 pouring, shelf 등 qualitative observation을 제공한다. 이것도 RoboDojo-Sim EEF board와 action interface가 다르다. Appendix F의 mobile humanoid는 walking·turning·hand/wrist command를 조합한 두 task sequence다. red object sequence 23초, white object sequence 117초의 기록은 있으나 low-level controller audit와 aggregate success 평가가 없어 strict LLM-as-policy 주장으로 확대하지 않는다.
+
+### Piano: weight는 frozen이지만 program은 practice로 고친다
+
+<PaperFigure src="/unexpected-robot-policy/table-13.png" alt="Table 13: practice 횟수·wall time와 최종 verification F1" caption="Table 13, p.22. practice 횟수·wall time와 최종 verification F1. PDF v1에서 추출." />
+
+88-key piano, 두 Shadow hand, 45D action, 50ms 간격의 실행에서 Astra가 `play.py`를 작성하고 simulator feedback으로 반복 수정한다. 이 실험은 high-reasoning Codex harness이며 RoboDojo의 medium direct-tool setting과 다르다. score·pitch·timing·keyboard geometry·FK·metric/render는 제공하지만 human fingering·RL action/code·sim model/contact force 등은 제공하지 않는 규칙이다.
+
+| 곡 | notes | 최종 F1 | precision / recall | practice tries | wall time |
+| --- | --- | --- | --- | --- | --- |
+| Twinkle, one hand | 14 | 0.907 | 1.00 / 0.91 | 22 | 31분 |
+| Twinkle, two hands | 34 | 0.902 | 0.99 / 0.89 | 33 | 34분 |
+| Chopin | 117 | 0.599 | 0.85 / 0.58 | 150 | 40분 |
+
+Chopin은 목표 F1 0.9에 도달하지 못했다. two-hand Twinkle의 RL reference 0.8863은 보고된 참고값이지 같은 training cost 비교가 아니다. frozen model이므로 weight update는 없지만, 수십 번의 task-specific program refinement는 존재한다.
+
+<PaperFigure src="/unexpected-robot-policy/table-14.png" alt="Table 14: 완성 program을 수정하지 않은 음악·tempo transfer" caption="Table 14, p.23. 완성 program을 수정하지 않은 음악·tempo transfer. PDF v1에서 추출." />
+
+완성된 two-hand program을 수정하지 않고 재실행하면 delivered F1 0.902, tempo ×0.85에서 0.883, −7 semitone·tempo ×1.25에서 0.837, +5·×1.1에서 0.805다. 단독 +2는 0.683, −3은 0.655, C-major scale 0.903, C-major chords 0.654, D-major scale 0.556이다. 조건당 한 episode여서 반복 성공률이나 범용 악곡 이전을 입증하지 않는다. 34 score notes와 Table 14의 35 sounded notes는 서로 다른 집계다.
+
+audit는 201 shell commands·6 image calls·0 network calls에서 규칙 위반을 찾지 않았다고 보고한다. 그러나 OS user namespace restriction은 비활성화되어 있었으므로 instruction/audit 준수와 강제된 OS sandbox를 구분한다. 별도의 161-keyframe open-loop 실행은 one-hand F1 0.901·two-hand 0.920이며 위 closed-loop program 결과와 섞지 않는다.
+
+## Appendix Notes: 전체 board와 과제별 score
+
+<PaperFigure src="/unexpected-robot-policy/table-05.png" alt="Table 5: 43개 entry 전체 board, Score와 SR 분리" caption="Table 5, p.15. 43개 entry 전체 board, Score와 SR 분리. PDF v1에서 추출." />
+<PaperFigure src="/unexpected-robot-policy/table-06.png" alt="Table 6: 42개 task별 process Score; SR가 아님" caption="Table 6, p.16. 42개 task별 process Score; SR가 아님. PDF v1에서 추출." />
+
+Table 5는 Table 1의 complete 43-entry board이며, Table 6는 42개 과제의 **Score**를 전사한 표다. Table 6의 높은 process score를 task SR로 읽으면 안 된다. Appendix A는 interface와 prompt, B는 전체 board, C는 demonstration protocol·paired transition·설명 가설, D는 perturbation 정의·episode trace·control 부재, E는 real diagnosis, F는 humanoid, G는 piano, H는 한계를 보강한다.
+
+## Code-Level Check
+
+확인한 official commit은 평가 논문보다 발전한 코드일 수 있다. 아래는 실행 재현이 아니라 source inspection 결과다.
+
+| 경로 | 확인한 역할·주의 |
+| --- | --- |
+| `policy/RoboDojo_Agent_L3_Inspect_EEF/policy.py` | `EefAgentPolicy`가 named Cartesian tool을 만들고 inherited loop를 사용. omitted coordinates를 state에서 복원, planner 결과와 arrival feedback 처리 |
+| 같은 디렉터리 `pose.py` | straight-down reference angle, grasp-point↔flange 변환. target 회전 시 grasp point를 유지하도록 tool offset을 다시 적용 |
+| `policy/RoboDojo_Agent_L3_Inspect/policy.py` | multimodal history, image pruning, model-call budget, ICL message 생성 |
+| EEF ICL formatting | demo의 measured EE pose와 gripper를 현재 tool과 같은 14D named representation으로 변환. 관측 state와 commanded action을 구분 |
+| `docs/llm_benchmark_protocol.md` | 현재 RoboDojoLite protocol은 별도 subset과 smoke 범위. 논문의 2,100 episode 결과를 그대로 재현하는 설정으로 가정하지 않음 |
+
+**현재 EEF class와 `eval.sh`의 default는 170 calls이며 논문의 표준 protocol은 100이다.** generic loop의 `KEEP_ALL_IMAGES` default도 true다. 원문 조건을 목표로 할 때는 `L3_INSPECT_MAX_LLM_CALLS=100`, `L3_INSPECT_KEEP_ALL_IMAGES=0`, `L3_INSPECT_IMAGE_HORIZON=2` 및 reasoning/task budget을 명시적으로 맞춰야 한다. 이것만으로 완전 재현이 보장되지는 않으며 wait 처리와 environment revision도 고정해야 한다. 코드를 보고 원문의 budget을 170으로 바꾸지 않는다.
+
+새 model/loss/training/dataset optimization module을 제공하는 연구가 아니다. 공개 코드는 policy harness·motion conversion·evaluation을 확인하는 자료이고 proprietary Astra weight와 pretraining은 재구성할 수 없다.
+
+## 한계와 후속 검증
+
+한 simulator·한 evaluation seed, 다른 baseline 입력 조건, 제한된 image history, 42 task의 비균등 축 구성, closed-model contamination, 추론 비용과 budget이 해석의 경계다. ICL 실험에는 context length·layout transfer·reference encoding을 따로 고정한 ablation이 필요하다. perturbation은 여러 task·반복 seed와 history 없는 controller 비교가 필요하다. 실제 로봇은 prompt 설명·target feasibility·object outcome 검증을 분리해야 한다.
+
+## Citation Trail과 이어 읽기
+
+Code as Policies·VoxPoser는 language reasoning과 geometric execution의 분담을, SayCan·HiRobot은 learned skill 호출을, RT-2·OpenVLA·π 계열은 학습 action policy를 비교하는 출발점이다. 이 연구의 직접 target 생성 결과는 [Astra의 여섯 영역 평가](../astra-embodied-policy-capabilities/)와 함께 읽으면 controller 의존성을 볼 수 있다. [GPT-Policy](../gpt-policy/)는 real-world contextual demonstration의 구성, [CodeActionBench](../codeactionbench/)는 geometry API·program·hidden verifier의 역할을 더 구체화한다.
+
+## Figure/Table Inventory
+
+아래 번호는 PDF v1 기준이며 모든 항목은 해당 분석 절에 local crop으로 첨부했다. 여러 페이지로 이어지는 표는 이어진 부분까지 포함한다.
+
+| 번호 | PDF page | 반영 위치 | 읽을 내용 |
+| --- | --- | --- | --- |
+| Figure 1 | 2 | 문제의식 | learned motor policy와 직접 numeric target 경로의 차이 |
+| Figure 2 | 4 | 시스템 설정 | model context와 EEF execution loop |
+| Figure 3 | 7 | 본 평가 | semantic matching·active view·bimanual 시도와 접촉 실패 |
+| Figure 4 | 8 | Perturbation | 변형 관측과 별도의 큰-budget rerun |
+| Table 1 | 5 | 본 평가 | top board의 Score/SR와 축별 평균 |
+| Table 2 | 6 | 본 평가 | 강한 의미 과제와 약한 정밀·접촉 과제 |
+| Table 3 | 7 | ICL ablation | 340 matched pair의 zero-shot/image/text 비교 |
+| Table 4 | 8 | Perturbation | 8개 selected layout의 6조건 success |
+| Table 5 | 15 | Appendix board | 43개 entry 전체 board, Score와 SR 분리 |
+| Table 6 | 16 | Appendix board | 42개 task별 process Score; SR가 아님 |
+| Table 7 | 17 | ICL ablation | 기존 성공을 잃는 경우와 새로운 성공의 분해 |
+| Table 8 | 17 | ICL ablation | press-by-number의 개선 예외, condition당 10회 |
+| Table 9 | 19 | Perturbation | selected episode의 call 수와 성공/실패 |
+| Table 10 | 20 | Perturbation | negate-xyz episode의 target 수정과 모델 note |
+| Table 11 | 21 | 실제 로봇 | retained 33-trial diagnostic과 official board의 차이 |
+| Table 12 | 21 | 실제 로봇 | 별도 joint-position deployment의 qualitative 기록 |
+| Table 13 | 22 | Piano | practice 횟수·wall time와 최종 verification F1 |
+| Table 14 | 23 | Piano | 완성 program을 수정하지 않은 음악·tempo transfer |
+
+## 검증 메모
+
+2026-10-06에 PDF 본문·Appendix A–H, 모든 Figure 1–4·Table 1–14, 핵심 수치와 denominator, official source의 action/history/ICL 경로, 다른 세 논문과의 비교 조건을 다섯 차례의 검토 관점으로 확인했다. 18개 crop의 caption·표 본체를 전수 확인하고 source PDF 및 asset SHA-256을 `public/unexpected-robot-policy/manifest.json`에 기록했다. 게시 전 사이트 build·content check와 브라우저의 전체 이미지 로딩 검사를 통과했다. 검토 상태는 내용 검증을 뜻한다. model inference, simulator campaign, 실물 동작을 직접 재현한 것은 아니다.

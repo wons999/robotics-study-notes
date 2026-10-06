@@ -1,0 +1,251 @@
+---
+research: {kind: paper, topics: [vla, action, data, sensing], status: verified, reviewedAt: '2026-10-06', source: 'https://arxiv.org/abs/2609.19138v1'}
+title: GPT-Policy — In-Context Robot Learning
+description: frozen VLM에 사람·로봇 시연, action reference, 목표 이미지와 history를 제공하는 real-world policy 연구. 시연 정렬, IK·retiming, 10개 과제의 결과와 공개 harness를 분석한다.
+---
+
+import ResearchMeta from '../../../components/ResearchMeta.astro';
+import PaperFigure from '../../../components/PaperFigure.astro';
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+<ResearchMeta entryId="paper-notes/gpt-policy" />
+<SectionFeedback page="GPT-Policy" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | In-Context Robot Learning with VLM Agents |
+| 저자 | Dongzhou Cheng, Taoran Yi, Ye Fang, Xingwu Zhang, Fan Feng, Yixuan Li, Gengxiong Zhuang 외; MorphiRobot 등 |
+| 공개 | arXiv:2609.19138v1, 2026-09-16, 32쪽, Appendix A–D |
+| 원문·프로젝트 | [PDF v1](https://arxiv.org/pdf/2609.19138v1), [arXiv](https://arxiv.org/abs/2609.19138v1), [GPT-Policy project](https://cheng-haha.github.io/GPT-Policy/) |
+| 공식 코드 | [cheng-haha/GPT-Policy](https://github.com/cheng-haha/GPT-Policy), 확인 commit `3a74ed4b45d25ff9af4939c9209292e725712f50` |
+| 연구 성격 | task-specific weight training 없이 context를 구성하는 real-world evaluation·execution system |
+
+## 한 줄 요약과 문제의식
+
+범용 VLM이 시연을 읽고 새 tool action을 만들 때, **영상에 무엇을 했는지 보여주는 것과 measured state·command·좌표 관례를 함께 제공하는 것은 다르다**. GPT-Policy는 그 reference를 context로 정리하고 analytic motion harness로 실행해, 10개 실제 로봇 과제에서 가능한 행동과 남은 실패를 보여준다.
+
+학습된 VLA는 큰 demonstration dataset으로 관측→action mapping을 만든다. 이 연구는 새로운 demonstration을 parameter update 대신 inference context로 넣는다. 따라서 논문의 learning은 optimizer가 policy weight를 바꾸는 과정이 아니라, 고정 모델의 행동이 task/context에 맞춰 달라지는 과정이다. context formatting, geometric API, IK, tracking과 feedback은 결과의 일부다.
+
+<PaperFigure src="/gpt-policy/figure-01.png" alt="Figure 1: context family와 실제 로봇의 closed-loop control" caption="Figure 1, p.2. context family와 실제 로봇의 closed-loop control. PDF v1에서 추출." />
+
+## 시스템 설정과 전체 architecture
+
+<PaperFigure src="/gpt-policy/figure-02.png" alt="Figure 2: reference·live observation·history를 policy context로 결합" caption="Figure 2, p.4. reference·live observation·history를 policy context로 결합. PDF v1에서 추출." />
+
+현재 instruction T, observation o, context c, 이전 execution feedback f에서 frozen VLM policy가 `a=(tool_name, arguments)`를 선택하고 실행기 E가 다음 관측과 feedback을 돌려준다.
+
+```text
+a_t ~ π_θ(tool_name, arguments | T, c_t, o_t, f_(t-1))
+(o_(t+1), f_t) = E(a_t)
+c_(t+1) = retained references + observation/request/feedback history
+θ remains fixed: no gradient update or task-specific action head training
+```
+
+| 플랫폼 | embodiment·관측 | 실행 interface |
+| --- | --- | --- |
+| YAM | 양팔 각 6 joint; overhead + 두 wrist RGB, 640×480, JPEG quality 85 | arm-base-frame TCP pose, YAM grasp-site calibration, 100Hz reference streaming |
+| ARX X5 | 양팔 각 6 joint; 같은 RGB 구성 | fingertip TCP 기준, timestamped SDK command, 100Hz reference |
+| Morphi Kino | 양팔 각 7 joint, mobile base·waist·head; head/chest/두 wrist RGB 1280×720 | native Cartesian/joint/base/head tools, 해당 arm 실행 10Hz |
+
+논문의 구성은 RGB이고 이 평가에 depth 입력은 사용하지 않는다. Kino의 base/head tools와 YAM·ARX motion pipeline은 같은 구현으로 가정하지 않는다. 그립 폭의 nominal maximum은 YAM 0.095m·ARX 0.088m다.
+
+## Method: tool request에서 실제 움직임까지
+
+<PaperFigure src="/gpt-policy/figure-03.png" alt="Figure 3: tool request·IK·reference execution·feedback의 역할" caption="Figure 3, p.5. tool request·IK·reference execution·feedback의 역할. PDF v1에서 추출." />
+
+### Action representation과 관측 경계
+
+YAM·ARX의 Cartesian target은 팔의 base frame에서 `[x,y,z,qx,qy,qz,qw]`다. quaternion을 정규화하고 finite input을 확인한다. `move_to` 또는 `move_eef_chunk`는 완전한 pose나 순서 있는 waypoint를 제공한다. **null arm은 직전에 제출한 target을 유지**한다. pose의 일부 scalar를 null로 두고 측정값을 자동 보충하는 방식이 아니다. 양팔 모두 null이면 새 trajectory가 없다.
+
+`set_gripper`는 별도 요청이며 normalized 0=close, 1=open이다. Cartesian motion 중에는 기존 gripper command를 유지한다. contact-free clear path는 chunk로 묶을 수 있지만 contact, gripper change, occlusion, tracking anomaly에서는 새 관측이 필요하다. submitted target, accepted plan, settled joint, confirmed object grasp, task success는 각각 다르다.
+
+### Cartesian interpolation, IK, reference retiming
+
+1. measured joint의 FK를 시작점으로 삼고 TCP target을 solver의 EEF frame으로 변환한다.
+2. translation은 선형 보간하고 rotation은 shortest-path SLERP로 보간한다.
+3. 이전 IK solution을 다음 sample의 seed로 사용해 연속적인 branch를 유지한다.
+4. 실제 Cartesian residual과 joint bounds를 검사한다.
+5. scalar progress의 Ruckig profile로 reference를 만들고 joint derivative limit에 맞춰 전체 시간을 늘린다.
+6. 양팔 segment의 길이를 맞춰 시작하고, 실행 후 measured state·도달 오차·settling feedback을 제공한다.
+
+ARX는 official SDK IK 뒤에 damped least-squares refinement와 bound clipping을 적용한다. numerical convergence 기준은 translation 1e−4m·rotation 5e−4rad지만, 최종 acceptance는 execution residual 약 2mm·1degree 이하다. solver status만 보고 성공으로 처리하지 않는다. YAM도 finite/bounds/residual 검사를 적용한다. 이 공통 YAM/ARX 구현에는 각 IK sample의 hard joint-jump cap이나 scene collision checking을 가정하면 안 된다.
+
+속도·가속도·jerk 최대 초과 비율을 r_v, r_a, r_j라 하면 시간 scale은 아래와 같다.
+
+```text
+α0 = max(1, r_v, sqrt(r_a), cbrt(r_j))
+if α0 > 1: α = 1.001 × α0; otherwise α = 1
+τ' = α × τ
+q'(τ') keeps the same joint path
+velocity / acceleration / jerk scale by 1/α, 1/α², 1/α³
+```
+
+검사는 sampled reference의 finite difference에 적용된다. continuous physical trajectory 전체의 엄밀한 보증이나 실제 접촉 force limit은 아니다. nominal TCP sampling은 5mm·0.035rad, TCP speed 0.08m/s·0.5rad/s, joint speed는 YAM 0.6rad/s·ARX 0.25rad/s, joint acceleration 2rad/s²·jerk 12rad/s³다. end hold는 0.12초, synchronized start delay는 0.1초다.
+
+<PaperFigure src="/gpt-policy/table-03.png" alt="Table 3: 플랫폼별 sensing·IK·reference·settling 기준" caption="Table 3, p.18. 플랫폼별 sensing·IK·reference·settling 기준. PDF v1에서 추출." />
+
+YAM·ARX settling은 position error 0.03rad, 최소 0.3초 관측과 stability 조건을 사용한다. YAM은 encoder span ≤0.002rad·span/time ≤0.05rad/s, ARX는 연속 10 sample speed ≤0.05rad/s다. 3초 timeout은 unsettled feedback이지 hidden task failure 판정이 아니다.
+
+Kino는 native 10Hz interface에서 translation increment ≤0.003m/axis, rot6d component increment ≤0.02, translation speed 0.03m/s/axis를 사용한다. rot6d threshold는 rotation angle 0.02rad와 다르며 axis별 speed는 vector norm limit이 아니다. IK에는 residual 0.003m·0.02rad, joint delta 0.15rad 등의 조건이 있지만 YAM/ARX와 같은 explicit joint acceleration·jerk retiming은 적용되지 않는다. joint command duration cap 30초·hold 1초, arrival 0.015rad와 tracking guard 0.08rad 등을 사용하며 미도달은 `target_incomplete`로 돌아온다.
+
+## Dataset: demonstration을 어떻게 context로 바꾸는가
+
+학습 corpus를 만든 것이 아니라 inference용 reference를 준비한다. 다음 다섯 context family를 별도로 평가한다.
+
+| context | 입력 | 제공하지 않는 것·주의 |
+| --- | --- | --- |
+| Human Video | timestamped keyframes와 사용 가능한 annotation | robot action/state 없음; 사람 움직임을 robot target으로 재구성 |
+| Robot Video | robot keyframe·stage·observation/result annotation | numerical state/action/alignment field 생략 |
+| Video + Action | 같은 video frame + measured state + 다음 keyframe까지의 command segment | historical data이며 live target replay가 아님 |
+| Goal Image | desired final arrangement | trajectory나 intermediate contact 설명 없음 |
+| Self-history / human interaction | 이전 관측·요청·feedback 또는 live human move/gesture | offline demo와 다름; operator message도 사용 가능 |
+
+VLM으로 video window별 keyframe 후보를 고르고 global review로 중복을 제거한다. initial/final/contact/release/arm-role 변화는 남기고 최대 24 keyframes·48 images로 제한한다. image는 최대 1280에 맞추되 확대하지 않는다. reference 앞뒤에는 historical demonstration label과 live scene으로 돌아오는 경계를 둔다. video annotation에 procedural information도 포함되므로 annotation을 고정하지 않은 ablation에서는 순수한 이미지 효과와 분리되지 않는다.
+
+<PaperFigure src="/gpt-policy/table-04.png" alt="Table 4: human reference의 frame 수·timestamp, 추가 glue 예시" caption="Table 4, p.19. human reference의 frame 수·timestamp, 추가 glue 예시. PDF v1에서 추출." />
+
+human reference의 towel은 8 frame, notebook은 6 frame이다. 예를 들어 towel은 0, 5.190, 7.257, 14.488, 18.622, 19.655, 21.722, 23.755초다. notebook은 0, 1.967, 3.433, 4.4, 5.867, 8.8초다. Table 4의 glue 7-frame demonstration은 추가 예시이며 main ten-task 결과에 별도로 더하지 않는다.
+
+<PaperFigure src="/gpt-policy/table-05.png" alt="Table 5: robot video/state/action interval과 retained sample 수" caption="Table 5, p.20. robot video/state/action interval과 retained sample 수. PDF v1에서 추출." />
+
+| robot reference | keyframes / images | Video + Action에 추가되는 state / interval | raw → retained action samples |
+| --- | --- | --- | --- |
+| Bottle opening | 13 / 13, top view | 13 / 12 | 212 → 205 |
+| Plug reinsertion | 14 / 42, 세 view | 14 / 13 | 1,405 → 131 |
+
+teleoperation recording은 video capture, measured state, issued command를 shared host timestamp로 정렬한다. nearest state와 additional view가 0.1초 이내일 때 연결하며, 이것은 hardware exposure synchronization이 아니다. mismatch와 missing field를 남긴다. 각 keyframe에는 당시 measured state와 다음 keyframe까지의 action interval을 붙인다. interval endpoint, 약 1Hz periodic sample, gripper transition 양쪽을 보존한다.
+
+| sample field | 의미 |
+| --- | --- |
+| timestamp / image IDs / view | historical relative video time, 실제 capture/read offset, camera 식별 |
+| stage / observation / result | demo의 phase annotation; 현재 episode의 결과가 아님 |
+| joint position/velocity, FK TCP | measured robot state; per-arm base/TCP convention 명시 |
+| gripper measured / commanded | 실제 opening과 요청 opening을 별도 보존 |
+| joint target / EEF target | 당시 issued action, `[xyz,xyzw]`; 실제 도달 증거가 아님 |
+| interval rows | field order·sampling period 포함; `=`는 같은 interval 직전 값 반복, null은 missing |
+
+historical absolute coordinates는 current object와 frame mapping을 확인해야 쓸 수 있다. prompt는 contact side, object-to-gripper orientation, tool axis, push/pull direction, arm roles, stage order를 보존하도록 안내한다. action reference는 teacher-forced trajectory replay나 supervised loss target이 아니다.
+
+## Model Architecture와 Training Recipe
+
+multimodal VLM은 reference·current observation·history를 함께 읽고 structured tool call을 낸다. 새 vision encoder/fusion/action head를 학습하는 architecture 논문이 아니다. GPT-6 Astra를 중심으로 일부 Fable 5.1·Kimi K3 사례를 비교한다. 각 model의 proprietary backbone·layer/hidden size·pretraining loss·optimizer·corpus는 이 논문으로 확인되지 않는다.
+
+task finetuning, gradient loss, learning-rate schedule, training batch, robot action checkpoint는 해당하지 않는다. 대신 inference recipe가 재현의 핵심이다: demo extraction/annotation, TCP calibration, pose ordering, motion limit, provider history compaction, completion judgment를 고정해야 한다. provider별 harness도 완전히 동일하지 않다. Codex refresh는 reference·text를 보존하고 오래된 live image를 제거한다. ARX Claude Messages branch는 initial context를 유지하고 text summary·TCP geometry·motion rejection feedback과 별도 completion-review session을 사용하며 YAM branch와도 차이가 있다.
+
+## Experiments and Results
+
+<PaperFigure src="/gpt-policy/table-01.png" alt="Table 1: condition당 3 trials, 성공·실패를 포함한 time/decision 평균" caption="Table 1, p.7. condition당 3 trials, 성공·실패를 포함한 time/decision 평균. PDF v1에서 추출." />
+
+각 condition은 **3 trials**다. decision count와 time은 성공·실패 episode를 모두 포함한 평균이고, task별 decision/target convention도 완전히 같지 않다. 빨리 실패한 구성의 낮은 wall time을 효율 향상으로 읽지 않는다.
+
+| 과제 | context | success | mean decisions | mean wall time, 분 |
+| --- | --- | --- | --- | --- |
+| Towel pickup | 없음 → Human Video | 0/3 → 2/3 | 96.3 → 76.7 | 24.6 → 18.9 |
+| Notebook pickup | 없음 → Human Video | 0/3 → 2/3 | 94.0 → 66.7 | 24.6 → 16.1 |
+| Bottle opening | 없음 / Robot Video / Video+Action | 0/3 / 2/3 / 3/3 | 71.0 / 74.3 / 54.7 | 16.1 / 15.2 / 17.9 |
+| Plug reinsertion | 없음 / Robot Video / Video+Action | 0/3 / 0/3 / 2/3 | 24.0 / 33.7 / 48.3 | 5.3 / 7.9 / 10.8 |
+| T-shaped blocks | Goal Image | 3/3 | 66.7 | 15.8 |
+| Fruit arrangement | Goal Image | 3/3 | 49.0 | 12.4 |
+| Lemon finding | Self-history | 3/3 | 35.3 | 8.1 |
+| Mobile exploration | Self-history | 3/3 | 40.33 | 25.53 |
+| Tic-tac-toe | Human interaction | 3/3 | 69.7 | 13.6 |
+| Pointed-fruit grasping | Human interaction | 3/3 | 67.3 | 15.0 |
+
+### 영상 시연과 numerical action reference
+
+<PaperFigure src="/gpt-policy/figure-04.png" alt="Figure 4: human towel/notebook demonstration과 robot 실행" caption="Figure 4, p.8. human towel/notebook demonstration과 robot 실행. PDF v1에서 추출." />
+
+사람 towel·notebook video는 실제 성공 사례를 늘린다. 그러나 human motion을 그대로 robot joint motion으로 복제한 것이 아니라, keyframe의 contact relation과 stage를 robot tools로 다시 구성한다. 2/3는 항상 성공한다는 뜻이 아니다.
+
+<PaperFigure src="/gpt-policy/figure-05.png" alt="Figure 5: bottle/plug의 Video와 Video+Action 실행 사례" caption="Figure 5, p.9. bottle/plug의 Video와 Video+Action 실행 사례. PDF v1에서 추출." />
+
+bottle의 success는 cap 조작만이 아니라 최종 bottle을 upright 상태로 securely 유지하는 조건이다. plug는 release 후 완전히 seated되어야 한다. Robot Video가 plug 0/3이고 Video+Action이 2/3인 것은 pose·orientation reference의 유용성을 시사한다. 동시에 table의 더 긴 wall time은 실패가 일찍 끝난 no-context 조건과 함께 해석해야 한다.
+
+<PaperFigure src="/gpt-policy/figure-07.png" alt="Figure 7: selected bottle run의 orientation·gripper alignment" caption="Figure 7, p.11. selected bottle run의 orientation·gripper alignment. PDF v1에서 추출." />
+
+selected bottle run에서 Video+Action의 세 key phase orientation mismatch는 1e−3degree 미만인 반면 Video는 29.4·74.3·73.9degree다. reference가 tool axis와 arm 역할을 유지하는 데 도움을 준 사례다. bottle tilt도 Video+Action 약 20degree 대 Video 약 90degree로 차이가 나타난다. 선택한 trace의 alignment를 전체 3-trial 분포나 성공의 단독 원인으로 확대하지 않는다.
+
+### Goal, history, 사람과의 상호작용
+
+<PaperFigure src="/gpt-policy/figure-06.png" alt="Figure 6: goal 배치, 탐색 기억, live human interaction" caption="Figure 6, p.10. goal 배치, 탐색 기억, live human interaction. PDF v1에서 추출." />
+
+Goal Image는 색·위치·간격 또는 fruit identity를 최종 배치로 전달한다. self-history는 visibility가 달라지는 탐색에서 이전 관측을 유지한다. tic-tac-toe success는 win **또는 draw**이며 3회 모두 승리했다는 뜻이 아니다. pointing task는 live gesture와 human workspace clearance를 읽는다. 이 여섯 과제에는 모두 같은 quantitative no-context control이 없어, 성공 사례는 확인되지만 context family 각각의 causal improvement를 정밀 추정할 수 없다.
+
+### 모델 비교는 single-task diagnostic
+
+<PaperFigure src="/gpt-policy/figure-08.png" alt="Figure 8: red towel의 선택된 실행; aggregate 모델 순위가 아님" caption="Figure 8, p.12. red towel의 선택된 실행; aggregate 모델 순위가 아님. PDF v1에서 추출." />
+<PaperFigure src="/gpt-policy/table-02.png" alt="Table 2: 개별 red-towel progress와 time/token, SR가 아님" caption="Table 2, p.12. 개별 red-towel progress와 time/token, SR가 아님. PDF v1에서 추출." />
+
+| Red towel의 개별 실행 | task progress% | wall time, 분 | tokens, M |
+| --- | --- | --- | --- |
+| Astra, no video | 55 | 24.63 | 12.047 |
+| Astra, video | 100 | 15.85 | 4.956 |
+| Fable 5.1, video | 30 | 13.27 | 2.386 |
+| Kimi K3, video | 20 | 11.73 | 1.735 |
+
+progress는 rubric의 completion degree이며 success rate가 아니다. Astra의 선택된 실행에서는 time 35.6%·tokens 58.9% 감소가 있지만, 이 표는 모델별 다수 seed 평균 leaderboard가 아니다. main towel 2/3 결과와 selected progress100 run은 다른 집계다.
+
+## Appendix Notes: prompt와 feedback의 계약
+
+<PaperFigure src="/gpt-policy/table-06.png" alt="Table 6: P0–P4의 extraction·reference·motion·recovery 기능" caption="Table 6, p.20. P0–P4의 extraction·reference·motion·recovery 기능. PDF v1에서 추출." />
+
+Appendix A는 task·context·rubric, B는 robot/motion configuration, C는 demonstration collection·alignment·filtering, D는 prompt와 context/tool format을 공개한다. P0a/P0b는 window extraction/global review, P1은 coordinate와 response 계약, P2는 historical reference의 올바른 사용, P3는 motion·grasp·release, P4는 failure recovery·termination이다.
+
+<PaperFigure src="/gpt-policy/table-07.png" alt="Table 7: F1–F7의 live/reference/action/tool/feedback 경계" caption="Table 7, p.23. F1–F7의 live/reference/action/tool/feedback 경계. PDF v1에서 추출." />
+
+F1은 live observation, F2는 chronological video, F3a는 measured keyframe state, F3b는 intervening command rows, F4는 goal image, F5는 self-history/human cue, F6a는 motion/gripper request, F6b는 geometry/image/termination tool, F7은 execution feedback이다. schema를 나눠 historical evidence가 live action instruction으로 섞이지 않게 한다.
+
+P3/P4는 grasp 전에 fresh image·TCP error·joint velocity를 확인하고, release 전에 surface/다른 손이 object를 받치는지 확인하도록 안내한다. released command 뒤에도 물체가 손가락에 붙어 있으면 completion으로 간주하지 않는다. joint torque에는 gravity가 포함되므로 직접 contact force로 읽지 않는다. 이 instruction은 실행기가 모든 physical condition을 보장한다는 뜻이 아니다.
+
+## Code-Level Check
+
+| 공식 source 경로 | 직접 확인한 내용 |
+| --- | --- |
+| `src/gpt_policy/input/preparation.py` | video를 같은 text 위치에 reference parts로 치환, keyframe metadata/cache 처리 |
+| `input/recorded_demo.py` | recording source hash, frame/order 검증, nearest host read-time alignment, ≤0.1s 여부와 exposure-synchronized=false 기록 |
+| `input/action_sampling.py` | endpoints·periodic samples·gripper transition 보존, missing channel과 clock boundary 처리 |
+| `motion/planner.py` | `EefTrajectoryPlanner`: measured FK 시작, ordered pose/null arm 유지, frame 변환, sequential IK, synchronized reference와 end hold |
+| `motion/ik.py` | `ContinuousIK`: SDK solution 또는 measured seed에서 refine, residual로 최종 acceptance, bound-aware numerical Jacobian |
+| `motion/trajectory.py` | sampled velocity/acceleration/jerk ratio에 따른 전체 time stretching |
+| `harness/providers/codex.py` | session refresh와 reference/text 보존, 과거 live image 제거 |
+| `configs/robots/yam.json` 등 | YAM/ARX의 실제 rate·TCP·motion limit. public config 존재와 모든 플랫폼의 완전한 재현은 별개 |
+
+code는 action inference/hardware adapter/context preparation을 공개한다. 새 model/loss/training implementation은 이 방법의 대상이 아니다. 현재 source와 PDF의 serialized example가 문자 단위로 같다고 가정하지 않고, measured state·issued command·alignment의 역할을 기준으로 대조했다. 이 조사에서 Kino 전체 deployment를 재현하거나 robot driver를 실행하지 않았다.
+
+## 한계와 후속 연구
+
+표본이 condition당 3회, 과제·장면이 제한되고 broad OOD·long-term reliability·controlled provider 비교가 없다. 10여 분의 wall time, 서로 다른 harness, annotation 정보, scene collision checking 부재도 결과의 조건이다. 성공한 context를 다른 hardware나 object에 그대로 옮긴다는 주장은 검증되지 않았다.
+
+논문의 여섯 후속 방향은 bimanual safety, force/contact/slip sensing, 빠른 System1과 느린 agent의 분담, active perception·persistent memory, contextual subskill composition과 stale-history 제거, friction/compliance에 대한 dynamics adaptation이다. 제안된 방향이며 이 연구에서 완성한 기능으로 표기하지 않는다.
+
+## Citation Trail과 네 논문의 관계
+
+Code as Policies·VoxPoser는 tool-mediated action, RT-2·OpenVLA·π 계열은 learned policy, visual imitation 연구는 demonstration interpretation을 비교하는 배경이다. [Unexpected Robot Policy](../unexpected-robot-policy/)의 ICL 하락과 이 연구의 개선은 모순으로 단정할 수 없다. task, action interface, real/sim, keyframe selection, action alignment, instruction, sample size가 모두 다르다. [Astra embodied-policy 평가](../astra-embodied-policy-capabilities/)는 Direct/Hybrid 분담, [CodeActionBench](../codeactionbench/)는 program execution과 hidden success verification을 보강한다.
+
+## Figure/Table Inventory
+
+모든 Figure 1–8·Table 1–7을 PDF에서 추출해 해당 분석 절에 첨부했다. 무엇을 확인하는 자료인지는 아래와 같다.
+
+| 번호 | PDF page | 반영 위치 | 읽을 내용 |
+| --- | --- | --- | --- |
+| Figure 1 | 2 | 문제의식 | context family와 실제 로봇의 closed-loop control |
+| Figure 2 | 4 | Architecture | reference·live observation·history를 policy context로 결합 |
+| Figure 3 | 5 | Method | tool request·IK·reference execution·feedback의 역할 |
+| Figure 4 | 8 | 영상 시연 | human towel/notebook demonstration과 robot 실행 |
+| Figure 5 | 9 | Action reference | bottle/plug의 Video와 Video+Action 실행 사례 |
+| Figure 6 | 10 | Goal/history/interaction | goal 배치, 탐색 기억, live human interaction |
+| Figure 7 | 11 | Action reference | selected bottle run의 orientation·gripper alignment |
+| Figure 8 | 12 | 모델 비교 | red towel의 선택된 실행; aggregate 모델 순위가 아님 |
+| Table 1 | 7 | 실험 결과 | condition당 3 trials, 성공·실패를 포함한 time/decision 평균 |
+| Table 2 | 12 | 모델 비교 | 개별 red-towel progress와 time/token, SR가 아님 |
+| Table 3 | 18 | Method | 플랫폼별 sensing·IK·reference·settling 기준 |
+| Table 4 | 19 | Dataset | human reference의 frame 수·timestamp, 추가 glue 예시 |
+| Table 5 | 20 | Dataset | robot video/state/action interval과 retained sample 수 |
+| Table 6 | 20 | Appendix prompt | P0–P4의 extraction·reference·motion·recovery 기능 |
+| Table 7 | 23 | Appendix format | F1–F7의 live/reference/action/tool/feedback 경계 |
+
+## 검증 메모
+
+2026-10-06에 PDF 본문·Appendix A–D, 15개 그림·표, success/progress/time·sample denominator, action/data/harness 공식 코드, 관련 연구와 비교 범위를 각각 검토했다. 모든 local crop을 열어 caption·table body를 확인했고 PDF/asset SHA-256은 `public/gpt-policy/manifest.json`에 기록했다. 게시 전 사이트 build·content check와 브라우저의 전체 이미지 로딩 검사를 통과했다. 검토 상태는 내용 검증을 뜻한다. hardware trial이나 VLM inference를 직접 재현한 결과는 포함하지 않는다.

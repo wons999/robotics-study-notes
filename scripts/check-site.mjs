@@ -8,17 +8,20 @@ const expectedBase=new URL(origin).pathname.replace(/\/$/, '') + '/';
 const failures=[];page.on('pageerror',e=>failures.push(e.message));
 function assert(ok,message){if(!ok)failures.push(message);}
 await page.goto(origin+'/paper-notes/catalog/');
-const all=await page.locator('[data-entry]:visible').count();assert(all>=86,'catalog missing documents');
-await page.locator('[data-query]').fill('Astra');assert(await page.locator('[data-entry]:visible').count()===1,'catalog title filter');
+const all=await page.locator('[data-entry]:visible').count();assert(all>=89,'catalog missing documents');
+await page.locator('[data-query]').fill('Astra as Embodied Policies');assert(await page.locator('[data-entry]:visible').count()===1,'catalog title filter');
 assert((await page.locator('[data-entry]:visible a.catalog-title').first().getAttribute('href')).startsWith(expectedBase), 'catalog base URL');
 await page.screenshot({path:out+'/catalog.png'});
 await page.locator('[data-query]').fill('');await page.locator('select[data-status]').selectOption('verified');assert(await page.locator('[data-entry]:visible').count()>=1,'status filter');
 await page.goto(origin+'/topics/sensing/');assert(await page.locator('[data-entry]:visible').count()>8,'topic catalog');await page.screenshot({path:out+'/topic.png'});
 await page.goto(origin+'/paper-notes/groot/');assert(await page.locator('.research-meta').count()===1,'overview metadata');
-await page.goto(origin+'/paper-notes/astra-embodied-policy-capabilities/');
-assert(await page.locator('.paper-figure').count()===59,'paper inventory count');
-for(const img of await page.locator('.paper-figure img').all()){await img.scrollIntoViewIfNeeded();await img.evaluate(async e=>{await e.decode();});assert(await img.evaluate(e=>e.naturalWidth>0),'broken paper figure');}
-await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:out+'/paper.png'});
+for(const [slug,count] of [['astra-embodied-policy-capabilities',59],['unexpected-robot-policy',18],['gpt-policy',15],['codeactionbench',29]]){
+ await page.goto(origin+'/paper-notes/'+slug+'/');
+ assert(await page.locator('.research-meta').count()===1,`${slug}: research metadata`);
+ assert(await page.locator('.paper-figure').count()===count,`${slug}: paper inventory count`);
+ for(const img of await page.locator('.paper-figure img').all()){await img.scrollIntoViewIfNeeded();await img.evaluate(async e=>{await e.decode();});assert(await img.evaluate(e=>e.naturalWidth>0),`${slug}: broken paper figure`);}
+ await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:out+'/'+slug+'.png'});
+}
 for(const width of [1920,2560,3840]){
  const height=width*9/16;await page.setViewportSize({width,height});
  await page.goto(origin+'/seminars/t-rex/slides/?fullscreen=1&returnTo=../');

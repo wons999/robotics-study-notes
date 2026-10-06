@@ -29,6 +29,8 @@ import SectionFeedback from '../../../components/SectionFeedback.astro';
 
 범용 reasoning model이 숫자 action과 policy 보정을 만들 수 있음을 보여주지만, **유용한 task decision, 지속적인 contact control, 실제 시간 안의 실행, 성공 상태 검증은 각각 다른 능력**이라는 점을 드러내는 평가 연구다.
 
+[Unexpected Robot Policy](../unexpected-robot-policy/)는 RoboDojo의 direct EEF target과 one-shot ICL, [GPT-Policy](../gpt-policy/)는 실제 로봇의 contextual demonstration/action alignment, [CodeActionBench](../codeactionbench/)는 geometry API·program·hidden verifier를 분석한다. [네 논문의 비교](../../topics/vla/#범용-모델을-policy로-쓰는-네-논문)에서 관측·controller·sample size 차이를 먼저 확인할 수 있다. 특히 Unexpected의 ICL 하락과 GPT-Policy의 개선은 같은 조건의 상반된 결과가 아니다.
+
 ## 문제의식
 
 VLM이 로봇의 상위 계획을 만드는 것과 관측에서 직접 수치 명령을 구성하는 것은 다르다. 또 명령을 생성했다고 해서 그 모델이 grasp, 안정성, 전신 coordination을 모두 제공한 것도 아니다. 이 논문은 Astra가 무엇을 결정하고, interface·IK·PD·학습 policy·whole-body controller가 무엇을 대신하는지를 나눠 평가한다.

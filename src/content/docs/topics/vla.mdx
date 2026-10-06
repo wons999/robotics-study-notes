@@ -18,6 +18,19 @@ import ResearchCatalog from "../../../components/ResearchCatalog.astro";
 
 [Astra embodied-policy 평가](../../paper-notes/astra-embodied-policy-capabilities/)에서 Direct/Hybrid, controller 책임, 실제 지연과 성공 검증을 함께 읽습니다.
 
+## 범용 모델을 policy로 쓰는 네 논문
+
+같은 모델 이름이 등장해도 관측·action·controller·평가 표본이 다릅니다. 아래 순서는 직접 target 생성, controller 협력, contextual demonstration, program과 outcome 검증을 차례로 비교하기 위한 순서입니다.
+
+| 논문 | 핵심 질문 | 결과를 읽는 조건 |
+| --- | --- | --- |
+| 1. [An Unexpected Robot Policy](../../paper-notes/unexpected-robot-policy/) | RGB와 자기 상태에서 직접 EEF target을 만들 수 있는가? | 42-task simulation, official average SR 22.48%. one-shot ICL은 340 matched pair 평균에서 하락 |
+| 2. [Astra as Embodied Policies](../../paper-notes/astra-embodied-policy-capabilities/) | Direct·Hybrid가 여섯 로봇 영역에서 무엇을 맡는가? | 도메인마다 observation·controller·budget가 다름. 학습 policy·whole-body controller 역할을 분리 |
+| 3. [GPT-Policy](../../paper-notes/gpt-policy/) | 영상·action reference·goal·history를 inference context로 사용할 수 있는가? | 실제 로봇 10 task, condition당 3회. bottle Video+Action 3/3; 모든 context에 no-context control이 있는 것은 아님 |
+| 4. [CodeActionBench](../../paper-notes/codeactionbench/) | geometry와 program을 직접 구성하는 agent가 task를 완료하고 이를 판단하는가? | fixed 25 simulation task×3회, 9 agent configs. Astra+Codex 55/75, hidden verifier와 claim 별도 |
+
+1번의 시연 ICL 하락과 3번의 개선은 서로 다른 context 구성과 평가에 대한 결과입니다. 네 논문의 성공률을 하나의 leaderboard로 합치기보다, 제공한 정보와 실제 움직임을 담당한 구성요소를 먼저 맞춰 비교합니다.
+
 ## 비교와 후속 검증
 
 추론 유무만 비교하지 말고, 관측·action interface·추론 예산·학습 데이터가 같은지 확인합니다. 성공률과 지연을 함께 기록합니다.
