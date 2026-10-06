@@ -7,6 +7,23 @@ const origin=(process.env.CHECK_SITE_URL ?? 'http://127.0.0.1:4321').replace(/\/
 const expectedBase=new URL(origin).pathname.replace(/\/$/, '') + '/';
 const failures=[];page.on('pageerror',e=>failures.push(e.message));
 function assert(ok,message){if(!ok)failures.push(message);}
+async function checkExternalLinks(label){
+ const links=await page.locator('a[href]').evaluateAll(links=>links.filter(a=>['http:','https:'].includes(a.protocol)&&a.origin!==location.origin&&a.origin!=='https://wons999.github.io'&&!a.hasAttribute('download')).map(a=>({href:a.href,target:a.target,rel:a.rel.split(/\s+/)})));
+ assert(links.length>0,`${label}: external links missing`);
+ for(const link of links)assert(link.target==='_blank'&&link.rel.includes('noopener')&&link.rel.includes('noreferrer'),`${label}: external link policy ${link.href}`);
+}
+async function checkPopup(link,label){
+ const before=page.url();const href=await link.evaluate(a=>a.href);
+ const popupPromise=page.waitForEvent('popup');await link.click();const popup=await popupPromise;
+ await popup.waitForURL(href);assert(page.url()===before,`${label}: original page changed`);await popup.close();
+}
+await page.context().route('https://github.com/**',route=>route.fulfill({status:200,contentType:'text/html',body:'<title>External link check</title>'}));
+await page.goto(origin+'/');await checkExternalLinks('homepage');
+const github=page.locator('.social-icons a[href="https://github.com"]').first();
+assert((await github.getAttribute('rel')).split(/\s+/).includes('me'),'social rel=me lost');
+await checkPopup(github,'homepage GitHub');
+await page.locator('a[href$="/paper-notes/catalog/"]').first().click();await page.waitForURL('**/paper-notes/catalog/');
+assert(page.context().pages().length===1,'internal link opened a new tab');
 await page.goto(origin+'/paper-notes/catalog/');
 const all=await page.locator('[data-entry]:visible').count();assert(all>=89,'catalog missing documents');
 await page.locator('[data-query]').fill('Astra as Embodied Policies');assert(await page.locator('[data-entry]:visible').count()===1,'catalog title filter');
@@ -17,6 +34,8 @@ await page.goto(origin+'/topics/sensing/');assert(await page.locator('[data-entr
 await page.goto(origin+'/paper-notes/groot/');assert(await page.locator('.research-meta').count()===1,'overview metadata');
 for(const [slug,count] of [['astra-embodied-policy-capabilities',59],['unexpected-robot-policy',18],['gpt-policy',15],['codeactionbench',29]]){
  await page.goto(origin+'/paper-notes/'+slug+'/');
+ await checkExternalLinks(slug);
+ if(slug==='gpt-policy')await checkPopup(page.locator('a[href="https://github.com/cheng-haha/GPT-Policy"]').first(),'paper project');
  assert(await page.locator('.research-meta').count()===1,`${slug}: research metadata`);
  assert(await page.locator('.paper-figure').count()===count,`${slug}: paper inventory count`);
  for(const img of await page.locator('.paper-figure img').all()){await img.scrollIntoViewIfNeeded();await img.evaluate(async e=>{await e.decode();});assert(await img.evaluate(e=>e.naturalWidth>0),`${slug}: broken paper figure`);}

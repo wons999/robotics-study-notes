@@ -1,0 +1,31 @@
+---
+import Head from '@astrojs/starlight/components/Head.astro';
+---
+
+<Head {...Astro.props} />
+
+<script>
+  const siteOrigin = new URL(import.meta.env.SITE).origin;
+
+  function updateExternalLink(link: HTMLAnchorElement) {
+    if (!['http:', 'https:'].includes(link.protocol)) return;
+    if ([window.location.origin, siteOrigin].includes(link.origin)) return;
+    if (link.hasAttribute('download')) return;
+    link.target = '_blank';
+    link.relList.add('noopener', 'noreferrer');
+  }
+
+  function updateExternalLinks() {
+    document.querySelectorAll<HTMLAnchorElement>('a[href]').forEach(updateExternalLink);
+  }
+
+  updateExternalLinks();
+  document.addEventListener('astro:page-load', updateExternalLinks);
+  for (const event of ['click', 'auxclick']) {
+    document.addEventListener(event, (event) => {
+      if (!(event.target instanceof Element)) return;
+      const link = event.target.closest<HTMLAnchorElement>('a[href]');
+      if (link) updateExternalLink(link);
+    }, { capture: true });
+  }
+</script>

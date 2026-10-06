@@ -22,6 +22,7 @@ When checking user/site feedback, check issues in `wons999/robotics-study-notes-
 
 - Before adding or substantially updating material, follow the end-to-end workflow in `rules/contributing.md`; read its linked content/survey/seminar rules for the relevant work.
 - Content organization and metadata: follow `rules/content.md`.
+- External web links open a new tab/window with `target="_blank"` and `rel="noopener noreferrer"`; preserve same-tab internal navigation. Follow the shared link policy in `rules/content.md` and `src/components/SiteHead.astro`.
 - Before substantive survey or seminar work, read `rules/survey.md` and follow it strictly. Do not rely on memory of previous survey mistakes or fixes.
 - For paper survey updates, download or otherwise obtain the paper PDF when available, inspect the PDF directly, extract the paper's figures/tables as local assets when relevant, and verify the written content against the PDF figure/table inventory.
 - Before changing content based on site feedback, inspect the relevant issue in `wons999/robotics-study-notes-feedback`.

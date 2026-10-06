@@ -68,6 +68,14 @@ import SectionFeedback from '../../../components/SectionFeedback.astro';
 
 일반 Markdown 내부 링크는 source 파일 위치가 아닌 **출력 route**를 기준으로 작성한다. 예를 들어 `/paper-notes/a/`에서 다른 Survey는 `../b/`, 주제는 `../../topics/vla/`다. 기존 source 파일을 이동해 해결하기 전에 현재 URL과 `scripts/check-content.mjs`의 검사 결과를 확인한다.
 
+## 링크 열기 규칙
+
+외부 웹 페이지 링크는 `target="_blank"`와 `rel="noopener noreferrer"`로 새 탭/창에서 연다. 내부 문서·목차 이동은 현재 탭을 유지한다. 실제 탭/창 선택은 브라우저 설정에 따른다.
+
+`src/components/SiteHead.astro`가 상단 메뉴·Markdown/MDX 본문·공통 component의 외부 HTTP/HTTPS 링크에 이 규칙을 적용한다. 새 자료의 Markdown 링크마다 HTML을 작성할 필요는 없다. 현재 preview origin과 `SITE_URL`의 origin은 내부로 취급하므로, 확인용 서버에서도 공개 사이트의 절대 URL을 외부로 오인하지 않는다. fragment·메일·전화 링크와 `download` 링크는 기존 동작을 유지한다. 새 component에서 외부 링크를 직접 작성할 때도 위 속성을 명시하고, 기존 `rel` 값은 보존한다.
+
+공통 링크 처리 변경은 홈페이지 상단 링크, 논문 원문·프로젝트 링크가 새 탭으로 열리고 원래 페이지가 유지되는지 확인한다. 내부 카드·문서 링크가 현재 탭에서 이동하는지도 `npm run test:ui`로 검증한다.
+
 ## 운영
 
 파일 경로는 기존 URL을 보존한다. 논문을 주제별로 복제하거나 이동하지 않는다. 논문 목록은 `ResearchCatalog`가 공통 메타데이터에서 생성하고, `topics/`는 질문·권장 읽기 순서·비교 조건을 사람이 작성한다. 비교 표와 기술 해설은 유지하되, 단순 문서 inventory를 여러 곳에서 수동 관리하지 않는다.

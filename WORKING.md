@@ -26,6 +26,8 @@ T-Rex landing은 `/seminars/t-rex/`, 실제 slide route는 `/seminars/t-rex/slid
 - Astra embodied-policy 평가 Survey와 PDF Figure 22개·Table 37개, checksum manifest 추가.
 - Unexpected Robot Policy, GPT-Policy, CodeActionBench 상세 Survey와 62개 PDF crop 추가. 기존 Astra 글을 포함한 네 논문은 `/topics/vla/`에서 비교·연결한다.
 - README·AGENTS에서 자료 추가 절차로 진입하도록 연결하고, source version·crop manifest·수치 비교·검토 상태·preview base/갱신·작업 후 서버 유지 기준을 문서화했다.
+- 외부 웹 링크는 공통 Head에서 새 탭으로 열고, 내부 문서 이동은 유지한다. 링크 열기 규칙은 `rules/content.md`에 기록했다.
+- 링크 변경 검증: cwh에서 build(오류·경고·hint 0), 콘텐츠 검사기 테스트 5개, UI 회귀(외부 새 탭·내부 이동·논문 이미지·세미나) 통과. 운영 문서 링크 32개도 확인했다.
 
 ## 확인용 사이트
 
