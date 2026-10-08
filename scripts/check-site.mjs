@@ -29,10 +29,11 @@ const all=await page.locator('[data-entry]:visible').count();assert(all>=89,'cat
 await page.locator('[data-query]').fill('Astra as Embodied Policies');assert(await page.locator('[data-entry]:visible').count()===1,'catalog title filter');
 assert((await page.locator('[data-entry]:visible a.catalog-title').first().getAttribute('href')).startsWith(expectedBase), 'catalog base URL');
 await page.screenshot({path:out+'/catalog.png'});
+await page.locator('[data-query]').fill('LARA');assert(await page.locator('[data-entry]:visible').count()===1,'LARA catalog entry');
 await page.locator('[data-query]').fill('');await page.locator('select[data-status]').selectOption('verified');assert(await page.locator('[data-entry]:visible').count()>=1,'status filter');
 await page.goto(origin+'/topics/sensing/');assert(await page.locator('[data-entry]:visible').count()>8,'topic catalog');await page.screenshot({path:out+'/topic.png'});
 await page.goto(origin+'/paper-notes/groot/');assert(await page.locator('.research-meta').count()===1,'overview metadata');
-for(const [slug,count] of [['astra-embodied-policy-capabilities',59],['unexpected-robot-policy',18],['gpt-policy',15],['codeactionbench',29]]){
+for(const [slug,count] of [['astra-embodied-policy-capabilities',59],['unexpected-robot-policy',18],['gpt-policy',15],['codeactionbench',29],['lara-latent-action-representation-alignment',16]]){
  await page.goto(origin+'/paper-notes/'+slug+'/');
  await checkExternalLinks(slug);
  if(slug==='gpt-policy')await checkPopup(page.locator('a[href="https://github.com/cheng-haha/GPT-Policy"]').first(),'paper project');

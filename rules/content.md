@@ -29,7 +29,7 @@ research:
 - `kind`: paper / release / article / overview / map / note / foundation / system / seminar / log / index. `index`는 자료 목록에서 제외한다.
 - `topics`: vla / sensing / action / data / humanoid / foundations. 복수 선택 가능.
 - `status`: draft는 작성 중, reviewing은 재검토 필요, verified는 기록한 범위의 내용 검증 완료.
-- `reviewedAt`: 내용 검토일 YYYY-MM-DD. 미등록은 null. 이동·메타데이터 이관 날짜를 검토일로 쓰지 않는다.
+- `reviewedAt`: 내용 검토일 YYYY-MM-DD를 YAML 문자열로 작성한다(예: `'2026-10-08'`). 따옴표 없는 날짜는 Astro에서 Date 객체로 해석해 string schema 검사를 실패할 수 있다. 미등록은 null. 이동·메타데이터 이관 날짜를 검토일로 쓰지 않는다.
 - `family`: groot / pi / molmo / ecot 등 모델 계열 문서에만 기록한다.
 - `source`: 원문 URL. 새 Survey에는 반드시 기록한다.
 

@@ -163,6 +163,7 @@ frontmatter의 `title`이 페이지 H1을 생성하므로 같은 제목을 본�
 - PDF에서 crop한 figure/table asset은 원문 번호가 드러나는 파일명 또는 caption으로 추적 가능하게 한다.
 - 공식 article의 inline chart, video caption, partner/deployment claim, caveat 문장도 result 근거로 취급한다. formal table이 없더라도 숫자, task list, comparison target, 실패 조건을 빠짐없이 옮긴다.
 - 행/열 이름, metric 단위, 평균 계산 방식, task 순서, baseline 이름을 임의로 바꾸지 않는다.
+- 원문의 수식·설명·표·teaser가 서로 맞지 않으면 원문 값을 보존하고 불일치 위치와 계산 근거를 구분해 적는다. 확인되지 않은 분모·최적값을 추정하거나 원문을 조용히 수정하지 않는다. 집계의 기준으로 선택한 상세 표와 미확인 범위를 명시한다.
 - 원문 figure에서 읽은 값과 table 값이 다를 수 있으면, Survey에 사용한 출처를 명확히 확인한다.
 - 논문의 “평균”이 단순 평균인지, task별 rollout 평균인지, success/progress rubric 평균인지 확인한다.
 - main result만 쓰고 실패 사례나 약한 task를 생략하지 않는다.

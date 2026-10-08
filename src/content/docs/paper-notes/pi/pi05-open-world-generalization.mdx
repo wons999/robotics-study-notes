@@ -476,6 +476,8 @@ Public preset override도 중요하다.
 
 ## 기억할 점
 
+후속 연결: [LARA](../../lara-latent-action-representation-alignment/)는 pretrained π0.5의 action 표현에 LAM alignment를 추가한다. LIBERO 평균 96.9→97.8의 마지막-layer 개선과, L−2에서 91.2로 하락한 결과를 함께 읽는다. π0.5 전체 학습 recipe와 LARA의 후학습 변경은 구분한다.
+
 1. π0.5의 핵심은 "더 큰 robot dataset"이 아니라 "heterogeneous data를 섞어 semantic knowledge와 physical action을 동시에 유지하는 recipe"다.
 2. Fig. 10만 보면 WD 효과가 작아 보이지만, Fig. 11과 Fig. 16을 같이 보면 WD는 OOD object/language grounding에 중요하다.
 3. high-level inference는 runtime planning module을 외부에 붙인 것이 아니라, 같은 model이 semantic subtask를 먼저 만들고 그 subtask로 low-level action을 조건화하는 구조다.
