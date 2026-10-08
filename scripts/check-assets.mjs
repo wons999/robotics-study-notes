@@ -7,6 +7,10 @@ const inventories = [
   ['gpt-policy', 15],
   ['codeactionbench', 29],
   ['lara', 16],
+  ['lapa', 33],
+  ['moto', 24],
+  ['univla', 23],
+  ['laom', 25],
 ];
 let total = 0;
 for (const [directory, count] of inventories) {

@@ -1,0 +1,115 @@
+---
+title: Latent Action Model — 영상에서 제어 표현으로
+description: LAPA·Moto·UniVLA·LAOM·LARA를 latent 정의, supervision 단계, 실제 action 연결과 평가 조건으로 비교하는 읽기 안내.
+research:
+  kind: overview
+  topics: [vla, action, data, foundations]
+  status: verified
+  reviewedAt: '2026-10-08'
+  source: https://arxiv.org/abs/2410.11758v2
+---
+
+import ResearchMeta from '../../../components/ResearchMeta.astro';
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+<ResearchMeta entryId="paper-notes/latent-action-models" />
+<SectionFeedback page="Latent Action Model" section="개념과 읽기 경로" />
+
+## 무엇을 Latent Action Model이라고 부르는가?
+
+**LAM은 단일 논문 이름보다, 현재·이후 관측 사이의 변화를 latent로 표현하는 모델 계열을 가리킨다.** 로봇의 action label 없이 영상에서 동작 정보를 배우고, 이를 policy pretraining·action decoding·representation alignment에 활용하려는 흐름이다.
+
+예를 들어 영상에 컵이 왼쪽에서 오른쪽으로 이동했다면, 모델은 두 이미지 사이의 차이를 `z`에 압축한다. 현재 이미지와 `z`로 이후 장면을 재구성하게 학습한다. 이 `z`가 “EEF x축 +2cm”와 같은 실제 command인지는 별도 문제다. 카메라가 움직이거나 배경이 바뀐 정보도 들어갈 수 있다.
+
+이 안내는 네 논문의 상세 분석과 기존 LARA 노트를 연결한다. 각 개별 문서에는 main/appendix, 공식 코드, 전체 그림·표를 포함했다. 모든 최신 LAM 연구를 망라한 목록은 아니다.
+
+## 공통 구조와 학습·배포의 차이
+
+| 구성 | 역할 | 주의할 점 |
+| --- | --- | --- |
+| Inverse Dynamics Model, IDM | 현재와 future observation을 보고 latent `z` 추출 | 학습·pseudo-label 생성 때 future가 필요 |
+| Forward Dynamics Model, FDM | 현재 observation과 `z`로 이후 pixel/feature 예측 | 무엇을 몇 step 뒤에 예측하는지는 논문·코드마다 다름 |
+| Bottleneck | discrete code 또는 continuous vector로 정보 제한/구조화 | capacity가 작으면 control 정보도 사라지고 크면 nuisance도 남을 수 있음 |
+| Latent policy | 현재 image·instruction에서 `z` 또는 그 token을 예측 | 배포에서는 실제 future image를 보지 않음 |
+| Actual-action interface | latent/context→real action decoder, head replacement, 또는 action representation alignment | robot-specific label·normalization·controller 역할을 확인 |
+
+전형적 학습 관계는 `z = I(o_t, o_t+k)`와 `prediction = F(o_t, z)`다. reconstruction target은 pixel 또는 encoder feature이며 codebook/commitment 같은 항을 추가하기도 한다. 이 식만으로 모든 방법을 동일하게 정의할 수는 없다. 예를 들어 LAOM 공개 구현은 IDM에 `t+k`를 주지만 feature target은 `t+1`을 사용한다.
+
+policy 배포는 대개 `현재 observation + instruction → latent/action → controller`로 돌아간다. **실제 future observation으로 만든 latent를 inference 때 그대로 가져오는 것은 아니다.** decoder로 만든 imagined future video도 실제 robot rollout과 별도 평가다.
+
+## 가까워 보여도 다른 것
+
+| 용어 | LAM과 구분되는 지점 |
+| --- | --- |
+| Action VQ-VAE / action tokenizer | 실제 action sequence를 압축한다면 source supervision이 action labels다. 영상 transition만으로 latent를 배우는 것과 다름 |
+| Supervised IDM / VPT | 먼저 labeled action으로 inverse model을 학습하고 video를 relabel하는 경로. action-label-free tokenizer와 다름 |
+| World model | future observation/state/reward를 예측하는 더 넓은 개념. LAM은 그 안의 action representation 역할을 할 수 있음 |
+| Action chunk | policy가 한 번에 내는 실제 action sequence. latent token 수·video interval과 같은 단위가 아님 |
+| Representation alignment | action-producing hidden state와 video dynamics latent를 맞추는 학습. inference 때 LAM을 호출할 필요가 없을 수 있음 |
+
+“action label 없이 pretraining”은 pretrained vision/language knowledge, instruction annotation, target robot action adaptation까지 전부 없다는 뜻이 아니다.
+
+## 다섯 경로의 비교
+
+| 논문·상세 노트 | Latent의 학습 신호 | 실제 action으로 이어지는 경로 | 핵심 질문 |
+| --- | --- | --- | --- |
+| [LAPA](../lapa-latent-action-pretraining/) | frame-pair pixel reconstruction·NSVQ discrete token | latent prediction pretraining 후 **actual-action head로 교체** | video-only pretraining이 target-label 학습에 도움이 되는가? |
+| [Moto](../moto-latent-motion-tokens/) | pixel reconstruction·VQ motion token | motion prediction과 action loss **co-fine-tuning**, masked fast path | motion prior를 downstream에도 유지하면 어떤 이득이 있는가? |
+| [UniVLA](../univla-task-centric-latent-actions/) | DINO feature reconstruction·language-conditioned 2-stage code | task-centric token + visual/contextual decoder, LoRA adaptation | camera/background와 task dynamics를 분리할 수 있는가? |
+| [LAOM](../laom-latent-action-supervision/) | shared-encoder feature prediction·큰 continuous latent | small action supervision을 **LAM 단계부터** 추가, latent BC→decoder | distractor가 있으면 label을 어느 단계에서 쓰는 것이 좋은가? |
+| [LARA](../lara-latent-action-representation-alignment/) | LAM reconstruction + actual-action representation alignment | VLA action objective와 LAM을 joint training. inference는 action policy | frozen latent의 품질을 실제 action supervision으로 함께 개선할 수 있는가? |
+
+같은 “latent action”이라도 LAPA와 UniVLA의 runtime 역할은 다르다. LAPA의 main pipeline은 기존 latent head를 버리고, UniVLA는 latent token을 실제 deployment intermediate로 유지한다. LARA는 정렬용 LAM이 배포에 필요하지 않다.
+
+## 표현 용량을 비교할 때
+
+| 설정 | 공개 기준 표현 | 해석 |
+| --- | --- | --- |
+| LAPA robot 기본 | shared vocab8 × sequence4 | 최대 `8^4` 조합. Language Table 기본은 sequence1로 다름 |
+| Moto | vocab128 × sequence8 | 최대 `128^8` 조합. motion group과 실제 action chunk는 다름 |
+| UniVLA | task-centric vocab16 × sequence4, latent embedding128D | 최대 `16^4` 조합. task-irrelevant codebook은 별도 |
+| LAOM | continuous latent8192D, dimension ablation | 8192개 discrete action이 아니라 vector dimension |
+| LARA | quantization 이전 continuous latent를 alignment에 사용 | tokenizer codebook과 alignment representation을 나눠 확인 |
+
+조합 수는 서로 독립된 물리 action의 개수가 아니다. discrete가 항상 더 compact하거나 continuous가 항상 더 정확하다는 결론도 없다. decoder 조건, horizon, latent dimension, data, action supervision과 함께 비교해야 한다.
+
+## 결과를 같은 leaderboard로 합치면 안 되는 이유
+
+| 논문 | 대표 결과 | 먼저 확인할 조건 |
+| --- | --- | --- |
+| LAPA | OXE 실물 partial50.09%, strict35.19%; Bridge SIMPLER57.3% | 실물54 trials와 단계 credit. SIMPLER WidowX4tasks·100sim demos |
+| Moto | SIMPLER .614; CALVIN Avg.Len.3.10; 실물60% | SIMPLER Google robot·RT-1 73k labeled trajectory, 실물3tasks×10 trials |
+| UniVLA | LIBERO95.2%; 실물81.7%·score2.63; R2R oracle47.1% | target adaptation 포함, wrist-view 차이, oracle SR, raw source 불일치 |
+| LAOM | 128labels에서 normalized return 약.44; probe MSE 약8배 개선 | DCS4tasks, label비율2.56%, full-BC return 정규화. robot success가 아님 |
+| LARA | full / enhancement / refinement 세 protocol | 동일 task라도 model·target data·additional joint training budget 차이 |
+
+LAPA·UniVLA가 모두 SIMPLER를 쓴다고 Moto의 Google task와 같은 환경이 되는 것은 아니다. success, partial progress, grasp, oracle navigation success, normalized return, latent-token accuracy는 서로 다른 지표다. 원문에서 같은 이름으로 묶인 수치도 실제 집계·분모를 확인해야 한다.
+
+## 권장 읽기 순서
+
+1. **[LAPA](../lapa-latent-action-pretraining/)**: video→latent pseudo-label→VLA→actual-action head의 기본 연결을 이해한다.
+2. **[Moto](../moto-latent-motion-tokens/)**: pretraining objective를 downstream에서도 유지하는 이유와 runtime mask를 비교한다.
+3. **[LAOM](../laom-latent-action-supervision/)**: latent가 nuisance를 담는 실패와 action supervision의 위치를 확인한다.
+4. **[UniVLA](../univla-task-centric-latent-actions/)**: instruction으로 task-related dynamics를 분리하고 contextual decoder에 넘기는 선택을 읽는다.
+5. **[LARA](../lara-latent-action-representation-alignment/)**: 실제 action loss와 LAM reconstruction을 공동 정렬하는 후속 경로를 비교한다.
+
+기반 논문은 Schmidt·Jiang의 [Learning to Act without Actions / LAPO](https://arxiv.org/abs/2312.10812), ICLR2024다. 이 페이지에서는 배경 reference로 연결하며 위 네 편과 같은 수준의 개별 deep dive를 완료했다고 표시하지 않는다. observation-only IDM/FDM·latent policy의 출발점을 추적할 때 읽는다.
+
+## 구현·후속 검토에서 남겨야 하는 계약
+
+| 질문 | 기록할 항목 |
+| --- | --- |
+| Latent는 무엇을 담는가? | IDM current/future timestamp, frame gap, language conditioning, discrete/continuous·capacity |
+| 무엇을 복원하는가? | pixel/feature, FDM target timestamp, current-frame conditioning, stop-gradient/EMA |
+| Labels는 언제 쓰는가? | tokenizer/pretraining/alignment/adaptation/decoder, 같은 label subset 재사용 여부 |
+| 실제 움직임은 누가 만드는가? | head replacement/contextual decoder/chunk/controller, units·normalization·gripper convention |
+| 어느 주장이 입증되었는가? | code reconstruction·probe·imagined video·sim success·실물 progress를 분리 |
+| 데이터 증가 효과가 공정한가? | target labels, backbone pretraining, mixture·epoch·compute·view·trial count |
+
+현재 자료로 가장 설득력 있는 공통 결론은 **영상 dynamics를 배우는 것과 control-relevant action representation을 얻는 것 사이에 별도의 연결 문제가 남는다**는 것이다. reconstruction이 좋다는 사실만으로 제어가 좋다고 할 수 없다. language conditioning, actual-action supervision, contextual decoding, joint alignment는 그 문제를 해결하려는 서로 다른 방법이다.
+
+## 검토 범위와 출처
+
+2026-10-08 기준 [LAPA v2](https://arxiv.org/abs/2410.11758v2), [Moto v4](https://arxiv.org/abs/2412.04445v4), [UniVLA v3](https://arxiv.org/abs/2505.06111v3), [LAOM v5](https://arxiv.org/abs/2502.00379v5) PDF의 main/appendix와 공식 구현을 각 상세 노트에서 검토했다. 기존 [LARA v2 노트](../lara-latent-action-representation-alignment/)와 연결했다. code commit·PDF checksum·전체 figure/table inventory·미확인 사항은 각 문서에 남겼다.
+
+이 overview는 비교·읽기 안내이며 새로운 학습·robot evaluation 결과가 아니다. 문서117개·등록 이미지242개 검사와 build, 콘텐츠 검사기5개 테스트가 통과했다. 목록95개·외부 링크/내부 이동·전체 등록 이미지·세미나3해상도 UI 회귀와 새5문서 desktop1440/mobile390 폭 검사를 통과했다. 방법·비교 화면과 원문 crop도 직접 확인했다.

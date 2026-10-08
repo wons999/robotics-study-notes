@@ -36,6 +36,8 @@ import SectionFeedback from '../../../components/SectionFeedback.astro';
 
 <PaperFigure src="/lara/figure-01.png" alt="LARA의 LAM과 VLA 공동 학습 및 세 가지 활용을 소개하는 원문 Figure 1" caption="Figure 1 · PDF v2 p.1. full training, post-training enhancement, latent refinement의 세 용도를 보여준다. 오른쪽 G1 Real teaser 수치는 Table 2의 두 task 평균과 같지 않으므로, 아래 결과 분석은 상세 표를 기준으로 한다." />
 
+[Latent Action Model 안내](../latent-action-models/)에서 [LAPA](../lapa-latent-action-pretraining/)·[Moto](../moto-latent-motion-tokens/)·[UniVLA](../univla-task-centric-latent-actions/)·[LAOM](../laom-latent-action-supervision/)의 latent 정의와 supervision 위치를 비교한다. 각 상세 노트는 전체 PDF·appendix와 공식 구현을 분석한다.
+
 ## 문제의식
 
 로봇 action label은 비싸지만 영상은 상대적으로 풍부하다. LAM은 현재·미래 프레임의 차이를 latent action으로 압축하고, 그 latent로 미래 프레임을 복원하는 과정에서 motion prior를 배운다. 기존 LAPA·Moto-GPT 같은 경로에서는 이렇게 만든 latent를 VLA의 pseudo-label로 사용하거나 사전학습 신호로 넘긴다.

@@ -128,6 +128,14 @@ frontmatter의 `title`이 페이지 H1을 생성하므로 같은 제목을 본�
 - cost는 원문의 가격·token accounting·실험 시점에 대한 값으로 적고 현재 요금으로 간주하지 않는다. sim time·wall time·provider wait와 unavailable 값을 구분한다.
 - code inspection·사이트 검증·모델/시뮬레이터/실물 재현은 별도로 기록한다. `verified`에 관한 상태 계약은 [content.md](content.md)를 따른다.
 
+## Latent action·video pretraining 비교
+
+- IDM의 current/future timestamp·frame gap과 FDM의 reconstruction target timestamp를 따로 기록한다. pixel/feature target, current-frame conditioning, stop-gradient/EMA, language conditioning도 실제 코드로 대조한다.
+- discrete vocabulary·sequence 조합 수와 continuous embedding dimension을 구분한다. 가능한 token 조합을 독립된 물리 action의 개수로 표현하지 않는다.
+- action supervision이 tokenizer/pretraining/alignment/target adaptation/decoder 중 어디에 들어가는지, 같은 labeled subset을 재사용하는지 기록한다. action-label-free를 language annotation·pretrained encoder·target labels까지 없는 학습으로 해석하지 않는다.
+- head replacement, runtime latent decoder, representation alignment를 나누고 inference loop에 실제 future observation이 들어가는지 확인한다. imagined video·token accuracy·action probe·실제 completion은 다른 지표다.
+- benchmark 이름이 같아도 embodiment·task set·fine-tuning demo 수·view·metric·trial count가 다르면 headline 수치를 하나의 순위로 합치지 않는다.
+
 ## Family Overview와 Paper Deep Dive 분리
 
 - family overview 문서는 모델 계열, 버전 차이, 공개 checkpoint, 코드/데이터 공개 상태, 어떤 개별 논문을 읽어야 하는지 안내하는 index 역할을 한다.

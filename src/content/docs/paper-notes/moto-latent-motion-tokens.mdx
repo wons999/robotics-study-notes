@@ -1,0 +1,264 @@
+---
+title: Moto — Latent Motion Tokens
+description: Moto의 latent 정의, 시스템·데이터, 학습·배포 계약, 전체 결과·부록과 공식 코드 분석.
+research:
+  kind: paper
+  topics: [vla, action, data]
+  status: verified
+  reviewedAt: '2026-10-08'
+  source: https://arxiv.org/abs/2412.04445v4
+---
+
+import ResearchMeta from '../../../components/ResearchMeta.astro';
+import PaperFigure from '../../../components/PaperFigure.astro';
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+<ResearchMeta entryId="paper-notes/moto-latent-motion-tokens" />
+<SectionFeedback page="Moto" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Moto: Latent Motion Token as the Bridging Language for Learning Robot Manipulation from Videos |
+| 저자·그룹 | Yi Chen, Yuying Ge, Weiliang Tang, Yizhuo Li, Yixiao Ge, Mingyu Ding, Ying Shan, Xihui Liu. HKU, Tencent ARC Lab, CUHK, UC Berkeley |
+| 공개 | 최초 2024-12-05, 검토 v4 2025-10-16, ICCV 2025. 본문·참고문헌·추가 Sections 7–9 총 16쪽 |
+| 공식 자료 | [PDF v4](https://arxiv.org/pdf/2412.04445v4), [Project](https://chenyi99.github.io/moto/), [Code](https://github.com/TencentARC/Moto) |
+| 태그 | latent motion tokenizer, autoregressive motion prediction, co-fine-tuning, video pretraining |
+
+## 한 줄 요약
+
+**영상 변화의 discrete motion token을 언어처럼 autoregressive하게 예측하는 Moto-GPT를 학습하고, 실제 action fine-tuning에서도 motion prediction을 함께 유지해 learned motion prior를 제어로 연결한다.**
+
+<PaperFigure src="/moto/figure-01.png" alt="Moto — Latent Motion Tokens 원문 Figure 1: 영상 → motion tokenizer → next-motion prediction → 실제 action의 흐름과 benchmark 요약." caption="Figure 1 · PDF v4 p.1. 영상 → motion tokenizer → next-motion prediction → 실제 action의 흐름과 benchmark 요약." />
+
+## 문제의식
+
+video를 frame prediction target으로 쓰면 배경·appearance에 많은 연산을 사용할 수 있다. 실제 action의 robot-specific 차원을 직접 예측하면 human video를 동일하게 사용하기 어렵다. Moto는 두 프레임 사이의 변화만 적은 수의 token으로 추출해, language instruction 아래 motion sequence prediction을 pretraining objective로 삼는다.
+
+핵심은 tokenizer만 만드는 것이 아니라 **pretraining과 action fine-tuning을 연결하는 objective·attention mask**다. [LAPA](../lapa-latent-action-pretraining/)처럼 downstream에서 latent prediction head를 버리는 경로와 비교할 수 있다.
+
+## 시스템 설정
+
+| 설정 | 관측·action·평가 |
+| --- | --- |
+| 기본 입력 | instruction + RGB. 공개 예제의 frozen T5-base와 MAE ViT-L feature를 trainable GPT가 받음 |
+| SIMPLER | Google Everyday Robot. Pick Coke Can, Move Near, Open/Close Drawer. target 학습은 RT-1 실물 trajectory |
+| CALVIN ABC→D | static RGB만 사용. ABC에서 학습하고 D에서 1000개의 5-task chain 평가 |
+| 실제 로봇 | FANUC LR Mate 200iD. banana into pan, close laptop, stick disassembly. 각 10 evaluation trial |
+| Action | EEF position/rotation + gripper chunk. action query 수 RT-1 3 / CALVIN 5 |
+| Latency | motion token을 생성하는 경로와 motion attention을 완전히 mask해 action만 출력하는 fast path 구분. PDF에 공통 Hz 수치 없음 |
+
+<PaperFigure src="/moto/figure-03.png" alt="Moto — Latent Motion Tokens 원문 Figure 3: Pick-Place, laptop close, stick disassembly 세 task." caption="Figure 3 · PDF v4 p.4. Pick-Place, laptop close, stick disassembly 세 task." />
+<PaperFigure src="/moto/figure-13.png" alt="Moto — Latent Motion Tokens 원문 Figure 13: Google robot의 can/move/drawer 평가 장면. LAPA의 WidowX task와 다르다." caption="Figure 13 · PDF v4 p.13. Google robot의 can/move/drawer 평가 장면. LAPA의 WidowX task와 다르다." />
+<PaperFigure src="/moto/figure-14.png" alt="Moto — Latent Motion Tokens 원문 Figure 14: ABC 학습·D 평가의 scene split." caption="Figure 14 · PDF v4 p.13. ABC 학습·D 평가의 scene split." />
+
+## Dataset
+
+OXE의 109k video trajectory를 사용한다. RT-1, Bridge, Task-Agnostic Play, Jaco Play, Cable Routing, RoboTurk, NYU VINN, Austin VIOLA, Berkeley UR5, TOTO의 10개 출처다. tokenizer와 Moto-GPT pretraining에는 robot action label을 쓰지 않지만 language·기존 encoder 지식은 사용한다.
+
+| 구간 | 데이터·label |
+| --- | --- |
+| SIMPLER adaptation | RT-1의 약 73k action-labeled expert trajectory. LAPA의 100개 sim adaptation과 직접 비교 불가 |
+| CALVIN | ABC play data로 tokenizer 학습. language annotation 있는 약 18k trajectory(약 35%)로 pretraining·action adaptation |
+| 실물 | 3 task × 30 demo = 90. OXE에 이를 섞어 추가 pretraining 후 action fine-tuning |
+| Human 확장 | SSV2 motion 관련 105k 영상 filtering + OXE 109k. Figure 9의 Move Near 결과에 사용 |
+
+공개 loader는 LMDB에서 RGB·language·action·latent token을 읽고 episode boundary padding과 attention/loss mask를 구성한다. dataset별 fps 차이를 sampling skip으로 보정한다. video trajectory 수와 transition/token 수는 같은 단위가 아니다.
+
+## 방법론
+
+### 1. Latent Motion Tokenizer
+
+frozen ViT의 current/future patch feature를 M-Former가 받아 **8개 learned query**에 변화를 모은다. 이를 128-entry codebook의 32차원 embedding으로 quantize한다. decoder는 current image patch에 quantized motion을 조건으로 넣어 future image를 복원한다.
+
+<PaperFigure src="/moto/figure-02.png" alt="Moto — Latent Motion Tokens 원문 Figure 2: tokenizer, next-motion pretraining, action/motion co-fine-tuning과 attention mask." caption="Figure 2 · PDF v4 p.3. tokenizer, next-motion pretraining, action/motion co-fine-tuning과 attention mask." />
+
+M-Former는 4 layers·hidden 768·12 heads, ViT decoder는 12 layers·hidden 768·12 heads·patch 16이다. **8개 quantized embedding을 concatenate한 뒤 MLP로 하나의 conditioning token**을 만들고 current patch feature에 더한다. codebook 128은 128개 실제 robot action의 고정 사전을 의미하지 않으며 sequence 공간은 최대 `128^8` 조합이다.
+
+논문 objective는 future image pixel reconstruction MSE와 codebook/commitment loss다. 공개 예제는 frozen MAE ViT-L을 image encoder로 사용한다. tokenizer config에 LPIPS weight1도 있지만 `forward`에서 LPIPS를 `torch.no_grad()`로 계산해 scalar total에 더하므로, 이 항이 reconstruction으로 gradient를 보내는 perceptual training loss라고 해석하지 않는다. tokenizer 학습 이후에는 고정해 video transition에 motion pseudo-label을 만든다. future frame은 label 생성·tokenizer 학습용이며 배포 때 관측하지 않는다.
+
+<PaperFigure src="/moto/table-04.png" alt="Moto — Latent Motion Tokens 원문 Table 4: M-Former·ViT decoder·VQ codebook의 실제 layer/head/dimension." caption="Table 4 · PDF v4 p.14. M-Former·ViT decoder·VQ codebook의 실제 layer/head/dimension." />
+
+### 2. Moto-GPT pretraining
+
+language token·초기 image token 뒤에 motion sequence를 붙이고 `-sum log p(m_i | instruction, initial image, m_<i)`로 next-token CE를 학습한다. GPT backbone은 12 layers·hidden 768·12 heads, 약 98M parameters다. 이는 frozen T5·ViT까지 합친 전체 pipeline parameter 수가 아니다.
+
+훈련 sample은 초기 프레임과 두 transition까지의 짧은 영상 구조를 사용한다. 각 transition을 8 token으로 나타내면 ViT의 196 patch보다 작은 motion sequence로 이후 변화를 표현할 수 있다. 그러나 압축 비율이 그대로 실행 속도 배수로 바뀌지는 않는다.
+
+<PaperFigure src="/moto/table-06.png" alt="Moto — Latent Motion Tokens 원문 Table 6: GPT backbone과 2-layer·hidden 384 action head." caption="Table 6 · PDF v4 p.15. GPT backbone과 2-layer·hidden 384 action head." />
+
+### 3. Action·motion co-fine-tuning
+
+motion group 뒤에 learnable action query를 놓고 실제 action chunk를 병렬로 예측한다. causal mask는 action token이 motion prediction에 정보를 누출하지 않게 구성한다. action query가 motion token을 보는 attention은 학습 때 50% 확률로 mask한다.
+
+배포에는 두 가지 선택이 있다. motion을 생성하고 action query가 이를 참고하는 경로, 또는 motion 위치를 padding하고 attention을 전부 mask하여 serial motion generation 없이 action을 얻는 경로다. masked path도 pretraining된 GPT와 학습된 action head를 사용한다.
+
+paper objective는 motion CE + position/rotation SmoothL1 + gripper BCE다. Google robot의 continuous gripper는 SmoothL1을 쓴다. **공개 trainer의 total loss는 `100 * arm_loss + gripper_loss + motion_loss`**여서 paper에 표시된 단순 합과 coefficient를 구분한다.
+
+## Training Recipe
+
+| 단계 | PDF recipe |
+| --- | --- |
+| Tokenizer | OXE 350k steps, CALVIN 150k. batch 256, 4×40GB GPU, AdamW lr 1e-4·WD 1e-4, cosine, warmup 1000 |
+| Frame gap | RT-1 3 frames, 다른 robot은 FPS 보정. CALVIN 5, human SSV2 6 |
+| GPT pretraining | 10 epochs, 8×40GB GPU, batch 512, AdamW lr 1e-4·WD 1e-4, cosine, warmup 1 epoch |
+| Action fine-tuning | 4×40GB GPU. RT-1 3 epochs, CALVIN 18 epochs |
+| 실물 | tokenizer 추가 500 steps. OXE+90 demo GPT 추가 5 epochs, action fine-tuning 20 epochs |
+
+<PaperFigure src="/moto/table-05.png" alt="Moto — Latent Motion Tokens 원문 Table 5: tokenizer optimizer·batch·scheduler." caption="Table 5 · PDF v4 p.15. tokenizer optimizer·batch·scheduler." />
+<PaperFigure src="/moto/table-07.png" alt="Moto — Latent Motion Tokens 원문 Table 7: GPT optimizer·batch·scheduler." caption="Table 7 · PDF v4 p.15. GPT optimizer·batch·scheduler." />
+
+현재 공개 CALVIN fine-tuning config는 lr **2e-4·20 epochs**로 PDF의 1e-4·18 epochs와 다르다. per-device batch 16 × 4 GPU × accumulation 8은 global 512다. config의 예시 dataset/checkpoint 경로는 실행 환경에 맞게 지정해야 한다. source inspection만으로 논문 checkpoint와 config가 완전히 같다고 확정하지 않는다.
+
+## 실험과 결과
+
+### Token이 motion 정보를 보존하는가?
+
+CALVIN의 34 task semantic classifier에서 초기 frame만 쓰면 accuracy 0.292, 이를 8번 반복하면 0.283, 초기+7개 실제 future frame은 0.828, 초기+7개 latent motion chunk는 **0.797**이다. motion code가 단순 이미지 반복 이상의 task 정보를 담는다는 평가이며, 실제 로봇 success rate가 아니다.
+
+<PaperFigure src="/moto/table-01.png" alt="Moto — Latent Motion Tokens 원문 Table 1: video representation별 semantic classification accuracy." caption="Table 1 · PDF v4 p.6. video representation별 semantic classification accuracy." />
+
+<PaperFigure src="/moto/figure-04.png" alt="Moto — Latent Motion Tokens 원문 Figure 4: 같은 초기 상태에서 다른 motion code를 넣어 방향이 다른 미래 이미지를 복원한다." caption="Figure 4 · PDF v4 p.5. 같은 초기 상태에서 다른 motion code를 넣어 방향이 다른 미래 이미지를 복원한다." />
+<PaperFigure src="/moto/figure-05.png" alt="Moto — Latent Motion Tokens 원문 Figure 5: demonstration의 latent를 다른 초기 프레임에 적용한 video imitation." caption="Figure 5 · PDF v4 p.5. demonstration의 latent를 다른 초기 프레임에 적용한 video imitation." />
+<PaperFigure src="/moto/figure-15.png" alt="Moto — Latent Motion Tokens 원문 Figure 15: 실제 future image와 tokenizer reconstruction 비교." caption="Figure 15 · PDF v4 p.15. 실제 future image와 tokenizer reconstruction 비교." />
+
+### SIMPLER
+
+| 모델 | Pick 평균 | Move Near | Drawer 평균 | Overall |
+| --- | --- | --- | --- | --- |
+| RT-1-X | 0.567 | 0.317 | 0.597 | 0.534 |
+| RT-2-X | 0.787 | 0.779 | 0.250 | 0.607 |
+| OpenVLA fine-tuned | 0.363 | 0.542 | 0.231 | 0.349 |
+| Moto w/o Motion Token | 0.503 | 0.554 | 0.398 | 0.480 |
+| Moto | 0.740 | 0.604 | 0.431 | 0.614 |
+
+<PaperFigure src="/moto/table-02.png" alt="Moto — Latent Motion Tokens 원문 Table 2: can 세 orientation과 drawer open/close의 하위 지표·overall을 원문 그대로 읽는다." caption="Table 2 · PDF v4 p.7. can 세 orientation과 drawer open/close의 하위 지표·overall을 원문 그대로 읽는다." />
+
+0.614는 원문의 Overall 집계다. can 세 orientation·Move Near·drawer open/close의 여섯 subcase 평균이다. 위 세 범주만 단순 평균하면 0.592가 되므로 새 평균을 만들어 대체하지 않는다. drawer close는 Moto **0.732**, scratch baseline **0.796**으로 오히려 낮다. RT-1-X drawer 평균 0.597도 Moto 0.431보다 높다. 모든 subtask에서 최고라는 결론은 성립하지 않는다.
+
+### CALVIN과 label efficiency
+
+| 모델 | 1/2/3/4/5 tasks 연속 완료 | Avg. Len. |
+| --- | --- | --- |
+| Moto | .897 / .729 / .601 / .484 / .386 | 3.10 |
+| Moto w/o Motion Token | .779 / .555 / .380 / .256 / .167 | 2.14 |
+| GR-1 | .854 / .712 / .596 / .497 / .401 | 3.06 |
+| SuSIE | .870 / .690 / .490 / .380 / .260 | 2.69 |
+| RoboFlamingo | .824 / .619 / .466 / .331 / .235 | 2.47 |
+| MTR-3M | .529 / .234 / .105 / .043 / .018 | .93 |
+
+<PaperFigure src="/moto/table-03.png" alt="Moto — Latent Motion Tokens 원문 Table 3: 1000 chains, static RGB vs 추가 gripper camera/proprio 입력을 함께 확인한다." caption="Table 3 · PDF v4 p.7. 1000 chains, static RGB vs 추가 gripper camera/proprio 입력을 함께 확인한다." />
+
+Moto의 평균 chain length는 GR-1보다 약간 높지만 **5-task completion은 GR-1 .401 > Moto .386**이다. GR-1은 gripper camera·proprio도 사용해 입력이 같지 않다. 1% action-label로 first-task success 52.5% vs scratch 0%(Figure 11)는 다섯 task 전부의 chain success 52.5%가 아니다.
+
+<PaperFigure src="/moto/figure-11.png" alt="Moto — Latent Motion Tokens 원문 Figure 11: action-label 비율 1/5/10/50/100%의 first-task success curve." caption="Figure 11 · PDF v4 p.8. action-label 비율 1/5/10/50/100%의 first-task success curve." />
+
+### 실물·human video
+
+실물에서 Moto는 Pick/Close/Disassembly **70/70/40%**, motion 없이 학습한 모델은 **10/30/30%**, 평균 60 vs 23.33%다. 각 task 10회라 변화가 10 percentage points 단위다. distractor 조건 30 vs 10%, novel object 조건 40 vs 10%도 작은 평가이며 광범위한 robustness를 보장하지 않는다.
+
+<PaperFigure src="/moto/figure-08.png" alt="Moto — Latent Motion Tokens 원문 Figure 8: task별 성공률과 별도 distractor/novel-object 조건." caption="Figure 8 · PDF v4 p.7. task별 성공률과 별도 distractor/novel-object 조건." />
+
+Move Near는 scratch 55.4%, OXE 60.4%, OXE+105k filtered human video **78.3%**다. +17.9pp는 OXE 대비 이 **단일 task** 결과다. human 영상 전체가 모든 task에서 같은 폭으로 개선됐다는 근거로 사용하지 않는다.
+
+<PaperFigure src="/moto/figure-09.png" alt="Moto — Latent Motion Tokens 원문 Figure 9: Move Near의 세 pretraining 조건." caption="Figure 9 · PDF v4 p.7. Move Near의 세 pretraining 조건." />
+<PaperFigure src="/moto/figure-10.png" alt="Moto — Latent Motion Tokens 원문 Figure 10: human latent를 robot 영상에 조건화한 방향·크기 transfer의 qualitative 예시." caption="Figure 10 · PDF v4 p.8. human latent를 robot 영상에 조건화한 방향·크기 transfer의 qualitative 예시." />
+
+### Ablation·trajectory likelihood·imagined planning
+
+Moto-IML은 motion prediction objective를 제거하고, Moto-DM은 action fine-tuning에서 motion sequence를 버린다. 두 variant는 full co-fine-tuning보다 낮지만 일부 단계에서는 scratch보다 높다. 따라서 tokenizer·pretraining의 transfer와 fine-tuning objective 유지 효과를 따로 읽어야 한다.
+
+<PaperFigure src="/moto/figure-12.png" alt="Moto — Latent Motion Tokens 원문 Figure 12: 1–5 chain completion에서 full/IML/DM/scratch 비교." caption="Figure 12 · PDF v4 p.8. 1–5 chain completion에서 full/IML/DM/scratch 비교." />
+
+Figure 7은 98개의 success/failure/random matched triplet에서 sequence likelihood를 비교한다. successful video likelihood가 높다는 상관을 보여주며 이를 RL reward로 학습·검증한 실험은 아니다.
+
+<PaperFigure src="/moto/figure-07.png" alt="Moto — Latent Motion Tokens 원문 Figure 7: 성공·실패·random trajectory의 token log-likelihood." caption="Figure 7 · PDF v4 p.6. 성공·실패·random trajectory의 token log-likelihood." />
+
+Table 8의 top-5/10/20 motion-token accuracy는 OXE .521/.698/.853, CALVIN .298/.518/.768이다. discrete pseudo-label prediction의 accuracy와 실제 action success는 다르다. tokenizer error가 target 자체에 영향을 줄 수 있다.
+
+<PaperFigure src="/moto/table-08.png" alt="Moto — Latent Motion Tokens 원문 Table 8: 128-entry codebook의 validation top-K accuracy." caption="Table 8 · PDF v4 p.15. 128-entry codebook의 validation top-K accuracy." />
+<PaperFigure src="/moto/figure-06.png" alt="Moto — Latent Motion Tokens 원문 Figure 6: instruction에 따라 Moto-GPT token을 decoder로 펼친 generated trajectory. 물리 실행 성공과 별도." caption="Figure 6 · PDF v4 p.6. instruction에 따라 Moto-GPT token을 decoder로 펼친 generated trajectory. 물리 실행 성공과 별도." />
+<PaperFigure src="/moto/figure-16.png" alt="Moto — Latent Motion Tokens 원문 Figure 16: CALVIN rotation/stacking의 generated video 예시." caption="Figure 16 · PDF v4 p.16. CALVIN rotation/stacking의 generated video 예시." />
+
+## Appendix Notes
+
+추가 Section 7은 SIMPLER subcase·CALVIN 1000-chain·실물 평가 설정, Section 8은 tokenizer/GPT architecture와 학습 hyperparameter, Section 9는 reconstruction과 generated video·top-K accuracy를 보강한다. 위 Figure 13–16·Table 4–8을 모두 포함했다.
+
+실물 demo는 task별 30개이며 학습용 scene과 distractor/novel-object 평가 scene을 구분한다. CALVIN target의 18k language-labeled trajectory는 전체 play data와 같은 규모가 아니다. action label budget을 맞추지 않은 LAPA/UniVLA/LARA headline 비교는 의미가 제한된다.
+
+## Code-Level Check
+
+| 고정 commit 경로 | 확인 내용 |
+| --- | --- |
+| [latent_motion_tokenizer/src/models/latent_motion_tokenizer.py](https://github.com/TencentARC/Moto/blob/63244f4e25d2c32d3b4b38d96b524ac301dadb5c/latent_motion_tokenizer/src/models/latent_motion_tokenizer.py) | frozen image feature, current/future pair, M-Former·VQ·reconstruction 연결 |
+| [latent_motion_tokenizer/src/models/m_former.py](https://github.com/TencentARC/Moto/blob/63244f4e25d2c32d3b4b38d96b524ac301dadb5c/latent_motion_tokenizer/src/models/m_former.py) | 8 query를 이용한 motion aggregation |
+| [latent_motion_tokenizer/src/models/vector_quantizer.py](https://github.com/TencentARC/Moto/blob/63244f4e25d2c32d3b4b38d96b524ac301dadb5c/latent_motion_tokenizer/src/models/vector_quantizer.py) | code lookup·VQ/commitment objective |
+| [latent_motion_tokenizer/src/models/latent_motion_decoder.py](https://github.com/TencentARC/Moto/blob/63244f4e25d2c32d3b4b38d96b524ac301dadb5c/latent_motion_tokenizer/src/models/latent_motion_decoder.py) | quantized token concat→MLP 조건과 image decoder |
+| [moto_gpt/src/models/moto_gpt.py](https://github.com/TencentARC/Moto/blob/63244f4e25d2c32d3b4b38d96b524ac301dadb5c/moto_gpt/src/models/moto_gpt.py) | frozen T5/vision, GPT causal/action attention mask, motion/action head |
+| [moto_gpt/src/trainers/moto_gpt_trainer.py](https://github.com/TencentARC/Moto/blob/63244f4e25d2c32d3b4b38d96b524ac301dadb5c/moto_gpt/src/trainers/moto_gpt_trainer.py) | CE·arm/gripper loss 및 total의 arm coefficient 100 |
+| [common/data/datasets.py](https://github.com/TencentARC/Moto/blob/63244f4e25d2c32d3b4b38d96b524ac301dadb5c/common/data/datasets.py) | LMDB RGB/language/action/latent, boundary padding·mask·sampling skip |
+| [moto_gpt/src/models/moto_gpt_policy_wraper.py](https://github.com/TencentARC/Moto/blob/63244f4e25d2c32d3b4b38d96b524ac301dadb5c/moto_gpt/src/models/moto_gpt_policy_wraper.py) | padding/mask fast path, 선택적 motion generation, action buffer·temporal ensemble |
+
+공식 repository는 tokenizer, pretraining, downstream adaptation·evaluation code와 checkpoint 안내를 제공한다. 공개 config의 경로·epoch/lr를 논문 실험의 확정 config로 간주하지 않는다. checkpoint 다운로드·로봇/시뮬레이터 실행은 이 노트에서 수행하지 않았다.
+
+## 한계와 주의
+
+- latent의 motion 의미는 reconstruction·classifier·qualitative transfer에서 지지되지만 causal physical action의 유일성을 보장하지 않는다.
+- target robot action labels, frozen pretrained language/vision encoder를 사용한다.
+- masked runtime이 motion autoregression 비용을 줄일 수 있어도 모든 setting의 control Hz·GPU latency를 일반화할 수 없다.
+- drawer close·CALVIN 5-chain에서 더 강한 baseline이 남고 실물은 task당 10회다.
+- imagined video, trajectory likelihood, top-K accuracy는 실제 task completion과 서로 다른 평가다.
+
+## Citation Trail
+
+[LAPA](../lapa-latent-action-pretraining/)와 함께 video→latent pseudo-label→policy 경로를 읽되 downstream head·loss 유지 차이를 비교한다. RT-1/RT-2-X/OpenVLA는 직접 action-label pretraining baseline, SuSIE는 video-generation 기반 planning, GR-1/RoboFlamingo는 multimodal policy transfer 기준선이다.
+
+[LAOM](../laom-latent-action-supervision/)은 nuisance dynamics가 motion code에 섞일 수 있음을 검증하고, [UniVLA](../univla-task-centric-latent-actions/)는 task-centric disentangling을 시도한다. [LARA](../lara-latent-action-representation-alignment/)의 latent refinement는 Moto를 downstream 평가에 사용하지만 Fractal subset으로 수정한 protocol이므로 위 OXE 결과와 동일 실험이 아니다. [전체 안내](../latent-action-models/)에서 읽기 경로를 확인한다.
+
+## 원문·공개 구현 기준
+
+PDF SHA-256: `836e484a30b2ce0b409807c3e4a764313a93e8f5773d6e83148cfe06a157a751`. 그림·표의 page/crop/bytes/SHA-256은 `public/moto/manifest.json`에 기록했다. 공식 코드 확인 commit은 `63244f4e25d2c32d3b4b38d96b524ac301dadb5c`(2026-10-08)이며 모든 코드 링크를 이 revision에 고정했다. README의 release 안내와 실제 model/loss/training/loader/inference를 구분해 읽었다.
+
+## Figure/Table Inventory
+
+아래 모든 항목을 본문에서 실제 이미지로 첨부했다. “본문 위치”는 분석한 subsection/주제를 가리키며 번호·page·읽을 내용을 원문으로 추적할 수 있다.
+
+| 원문 | PDF page | 본문 위치 | 읽을 내용 |
+| --- | --- | --- | --- |
+| Figure 1 | 1 | 문제의식 | 영상 → motion tokenizer → next-motion prediction → 실제 action의 흐름과 benchmark 요약. |
+| Figure 3 | 4 | 실물 설정 | Pick-Place, laptop close, stick disassembly 세 task. |
+| Figure 13 | 13 | SIMPLER 설정 | Google robot의 can/move/drawer 평가 장면. LAPA의 WidowX task와 다르다. |
+| Figure 14 | 13 | CALVIN 설정 | ABC 학습·D 평가의 scene split. |
+| Figure 2 | 3 | 방법론 | tokenizer, next-motion pretraining, action/motion co-fine-tuning과 attention mask. |
+| Table 4 | 14 | 모델 구조 | M-Former·ViT decoder·VQ codebook의 실제 layer/head/dimension. |
+| Table 6 | 15 | 모델 구조 | GPT backbone과 2-layer·hidden 384 action head. |
+| Table 5 | 15 | Training Recipe | tokenizer optimizer·batch·scheduler. |
+| Table 7 | 15 | Training Recipe | GPT optimizer·batch·scheduler. |
+| Table 1 | 6 | Motion semantics | video representation별 semantic classification accuracy. |
+| Figure 4 | 5 | Motion semantics | 같은 초기 상태에서 다른 motion code를 넣어 방향이 다른 미래 이미지를 복원한다. |
+| Figure 5 | 5 | Motion semantics | demonstration의 latent를 다른 초기 프레임에 적용한 video imitation. |
+| Figure 15 | 15 | Tokenizer reconstruction | 실제 future image와 tokenizer reconstruction 비교. |
+| Table 2 | 7 | SIMPLER 결과 | can 세 orientation과 drawer open/close의 하위 지표·overall을 원문 그대로 읽는다. |
+| Table 3 | 7 | CALVIN 결과 | 1000 chains, static RGB vs 추가 gripper camera/proprio 입력을 함께 확인한다. |
+| Figure 11 | 8 | Label efficiency | action-label 비율 1/5/10/50/100%의 first-task success curve. |
+| Figure 8 | 7 | 실물 결과 | task별 성공률과 별도 distractor/novel-object 조건. |
+| Figure 9 | 7 | Human video 결과 | Move Near의 세 pretraining 조건. |
+| Figure 10 | 8 | Human video 결과 | human latent를 robot 영상에 조건화한 방향·크기 transfer의 qualitative 예시. |
+| Figure 12 | 8 | Ablation | 1–5 chain completion에서 full/IML/DM/scratch 비교. |
+| Figure 7 | 6 | Trajectory likelihood | 성공·실패·random trajectory의 token log-likelihood. |
+| Table 8 | 15 | Token prediction | 128-entry codebook의 validation top-K accuracy. |
+| Figure 6 | 6 | Imagined planning | instruction에 따라 Moto-GPT token을 decoder로 펼친 generated trajectory. 물리 실행 성공과 별도. |
+| Figure 16 | 16 | Imagined planning | CALVIN rotation/stacking의 generated video 예시. |
+
+## 검증 메모
+
+| Pass | 내용 검토 범위 |
+| --- | --- |
+| 1 · Coverage | main text·appendix와 방법/시스템/데이터/recipe/실험/한계·전체 figure/table inventory 대조 |
+| 2 · Facts | PDF result·data·architecture 수치 재대조. success/progress/return·source 내부 불일치 구분 |
+| 3 · Code | 고정 commit의 실제 model/loss/training/dataset/inference 확인. 현재 default와 paper recipe 구분 |
+| 4 · Interpretation | LAPA/Moto/UniVLA/LAOM/LARA 연결, supervision 단계와 benchmark 조건 차이 확인 |
+| 5 · Site | 내용·내부 링크·checksum 검사 및 build 통과. 목록95개·등록 이미지242개·외부 새 탭/내부 이동·세미나3해상도 UI 검사 통과. 새5문서 desktop1440/mobile390의 폭·방법/비교 화면 확인 |
+
+이 노트는 공개 자료의 내용 분석이다. checkpoint를 로드한 training, simulator 평가, 실물 로봇 재현은 수행하지 않았다.

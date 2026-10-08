@@ -25,15 +25,15 @@ await checkPopup(github,'homepage GitHub');
 await page.locator('a[href$="/paper-notes/catalog/"]').first().click();await page.waitForURL('**/paper-notes/catalog/');
 assert(page.context().pages().length===1,'internal link opened a new tab');
 await page.goto(origin+'/paper-notes/catalog/');
-const all=await page.locator('[data-entry]:visible').count();assert(all>=89,'catalog missing documents');
+const all=await page.locator('[data-entry]:visible').count();assert(all>=95,'catalog missing documents');
 await page.locator('[data-query]').fill('Astra as Embodied Policies');assert(await page.locator('[data-entry]:visible').count()===1,'catalog title filter');
 assert((await page.locator('[data-entry]:visible a.catalog-title').first().getAttribute('href')).startsWith(expectedBase), 'catalog base URL');
 await page.screenshot({path:out+'/catalog.png'});
-await page.locator('[data-query]').fill('LARA');assert(await page.locator('[data-entry]:visible').count()===1,'LARA catalog entry');
+await page.locator('[data-query]').fill('LARA');assert(await page.locator('[data-entry]:visible a.catalog-title[href$="/lara-latent-action-representation-alignment/"]').count()===1,'LARA paper found by catalog search');
 await page.locator('[data-query]').fill('');await page.locator('select[data-status]').selectOption('verified');assert(await page.locator('[data-entry]:visible').count()>=1,'status filter');
 await page.goto(origin+'/topics/sensing/');assert(await page.locator('[data-entry]:visible').count()>8,'topic catalog');await page.screenshot({path:out+'/topic.png'});
 await page.goto(origin+'/paper-notes/groot/');assert(await page.locator('.research-meta').count()===1,'overview metadata');
-for(const [slug,count] of [['astra-embodied-policy-capabilities',59],['unexpected-robot-policy',18],['gpt-policy',15],['codeactionbench',29],['lara-latent-action-representation-alignment',16]]){
+for(const [slug,count] of [['astra-embodied-policy-capabilities',59],['unexpected-robot-policy',18],['gpt-policy',15],['codeactionbench',29],['lara-latent-action-representation-alignment',16],['lapa-latent-action-pretraining',33],['moto-latent-motion-tokens',24],['univla-task-centric-latent-actions',23],['laom-latent-action-supervision',25]]){
  await page.goto(origin+'/paper-notes/'+slug+'/');
  await checkExternalLinks(slug);
  if(slug==='gpt-policy')await checkPopup(page.locator('a[href="https://github.com/cheng-haha/GPT-Policy"]').first(),'paper project');
@@ -41,6 +41,13 @@ for(const [slug,count] of [['astra-embodied-policy-capabilities',59],['unexpecte
  assert(await page.locator('.paper-figure').count()===count,`${slug}: paper inventory count`);
  for(const img of await page.locator('.paper-figure img').all()){await img.scrollIntoViewIfNeeded();await img.evaluate(async e=>{await e.decode();});assert(await img.evaluate(e=>e.naturalWidth>0),`${slug}: broken paper figure`);}
  await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:out+'/'+slug+'.png'});
+}
+for(const slug of ['latent-action-models','lapa-latent-action-pretraining','moto-latent-motion-tokens','univla-task-centric-latent-actions','laom-latent-action-supervision']){
+ for(const width of [1440,390]){
+  await page.setViewportSize({width,height:900});await page.goto(origin+'/paper-notes/'+slug+'/');
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+2),`${slug}: page overflow at ${width}`);
+  await checkExternalLinks(slug);await page.screenshot({path:`${out}/${slug}-${width}.png`});
+ }
 }
 for(const width of [1920,2560,3840]){
  const height=width*9/16;await page.setViewportSize({width,height});

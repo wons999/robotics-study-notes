@@ -1,0 +1,250 @@
+---
+title: LAOM — Distractors와 Latent Action Supervision
+description: LAOM의 latent 정의, 시스템·데이터, 학습·배포 계약, 전체 결과·부록과 공식 코드 분석.
+research:
+  kind: paper
+  topics: [action, data, foundations]
+  status: verified
+  reviewedAt: '2026-10-08'
+  source: https://arxiv.org/abs/2502.00379v5
+---
+
+import ResearchMeta from '../../../components/ResearchMeta.astro';
+import PaperFigure from '../../../components/PaperFigure.astro';
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+<ResearchMeta entryId="paper-notes/laom-latent-action-supervision" />
+<SectionFeedback page="LAOM" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Latent Action Learning Requires Supervision in the Presence of Distractors |
+| 저자 | Alexander Nikulin, Ilya Zisman, Denis Tarasov, Nikita Lyubaykin, Andrei Polubarov, Igor Kiselev, Vladislav Kurenkov |
+| 그룹 | dunnolab.ai; AIRI, MIPT, Skoltech, ISP RAS, Innopolis University, Accenture |
+| 공개 | 최초 2025-02-01, 검토 v5 2025-06-12. ICML 2025 / PMLR 267. 본문·참고문헌·Appendix A–F 총 21쪽 |
+| 공식 자료 | [PDF v5](https://arxiv.org/pdf/2502.00379v5), [PMLR](https://proceedings.mlr.press/v267/nikulin25a.html), [Project](https://laom.dunnolab.ai/), [Code](https://github.com/dunnolab/laom) |
+| 태그 | distractors, observation-only pretraining, continuous latent, semi-supervised action learning, linear probe |
+
+## 한 줄 요약
+
+**배경·색·camera 변화가 섞인 영상에서는 observation-only latent가 control에 필요한 action을 제대로 표현하지 못할 수 있으며, 소량의 실제 action supervision을 LAM 학습 때부터 넣는 것이 사후 decoder 학습만으로 쓰는 것보다 효과적이다.**
+
+<PaperFigure src="/laom/figure-01.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Figure 1: 128 labeled trajectory에서 normalized return 약0.44. task 성공률44%가 아니다." caption="Figure 1 · PDF v5 p.1. 128 labeled trajectory에서 normalized return 약0.44. task 성공률44%가 아니다." />
+
+## 문제의식
+
+IDM이 current/future observation을 보고 latent action을 추출하고 FDM이 이를 이용해 next observation을 복원하면, latent가 실제 action을 담을 것이라는 기대가 있다. 그러나 observation 변화는 배경 영상·조명·camera motion 같은 nuisance에도 설명된다. 특히 실제 action과 함께 변하는 distractor는 reconstruction loss만으로 분리하기 어렵다.
+
+이 연구는 대형 VLA·실물 manipulation 모델을 발표하는 논문이 아니다. Distracting Control Suite(DCS)의 통제된 네 환경에서 기존 LAPO pipeline의 실패, 구조 개선 LAOM, labeled supervision을 추가한 LAOM+supervision을 비교하는 진단 연구다.
+
+## 시스템 설정
+
+| 항목 | 실험 계약 |
+| --- | --- |
+| 환경 | cheetah-run, walker-run, hopper-hop, humanoid-walk. DeepMind Control 기반 continuous control |
+| Observation | 64×64 RGB, 3-frame stack. dynamics target은 pixel 또는 encoder feature |
+| Action | 환경별 continuous actuator vector. language input·EEF action·실물 controller 없음 |
+| Distractor | DAVIS background video, agent color 변화, camera shake. scale 0.1로 BC가 expert 수준을 회복할 수 있도록 조정 |
+| Offline data | task당 5000 trajectory × 1000 transition, 약5M transition |
+| Label budget | 2/4/8/16/32/64/128 trajectory. 같은 labeled subset을 LAM supervision과 마지막 action decoder에 재사용 |
+| 평가 | 기본 decoder 25 evaluation episodes, 3 training seeds. novel-background probe는 별도 50 trajectory |
+| Metric | return을 full-ground-truth-action BC return으로 나눈 normalized return. expert return·task success와 다름 |
+
+<PaperFigure src="/laom/figure-02.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Figure 2: 네 DCS task의 distractor 유무." caption="Figure 2 · PDF v5 p.2. 네 DCS task의 distractor 유무." />
+
+## Dataset
+
+expert는 proprioceptive state로 학습하며 distractor 없는 환경에서 rollout한다. cheetah/walker/hopper는 CleanRL PPO 1M steps, humanoid는 Stable Baselines SAC 약100k steps로 학습한다. 이후 같은 task dynamics에 distractor를 추가한 RGB video와 action을 저장한다. action은 observation-only pretraining에서는 loss에 쓰지 않고 정해진 small-label subset에서만 supervisory target이 된다.
+
+<PaperFigure src="/laom/table-01.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Table 1: expert rollout 평균 return과 데이터 크기: task당 약58GB. 실제 데이터 전체를 이 검토에서 다운로드하지 않았다." caption="Table 1 · PDF v5 p.15. expert rollout 평균 return과 데이터 크기: task당 약58GB. 실제 데이터 전체를 이 검토에서 다운로드하지 않았다." />
+
+dataset 파일은 trajectory별 `obs`, `actions`, `states` 및 `img_hw`·domain/task metadata를 갖는 HDF5다. loader는 history를 첫 frame으로 padding해 3-frame stack을 만들고 episode 경계 안에서 current·next·future pair를 샘플링한다. simulator state가 저장되어 있다고 image-based latent policy가 state를 입력으로 받는 것은 아니다.
+
+128/5000은 **2.56%**, 논문은 약2.5%라고 표현한다. 이 budget을 LAM과 decoder가 공유하므로 labels를 각 단계마다 새로 128개씩 더 쓴 것이 아니다. 하지만 모든 action을 쓰는 diagnostic probe로 hyperparameter를 선택한 부분은 별도의 oracle 정보 접근이며 완전한 label-blind selection과 구분해야 한다.
+
+## 방법론
+
+### 기존 LAPO의 세 단계
+
+첫째, `z = IDM(o_t, o_t+1)`와 `FDM(o_t, z)`를 reconstruction objective로 학습한다. 둘째, dataset을 latent pseudo-label로 relabel해 current observation만 보는 policy가 latent를 모방한다. 셋째, 고정된 policy representation에서 작은 labeled dataset으로 latent→real action decoder를 학습한다. 논문은 이 전체 순서를 유지하고 첫 LAM을 개선한다.
+
+<PaperFigure src="/laom/figure-03.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Figure 3: LAM 학습 → latent behavior cloning → labeled action decoding." caption="Figure 3 · PDF v5 p.2. LAM 학습 → latent behavior cloning → labeled action decoding." />
+
+### LAOM: 병목·target·augmentation을 바꾼다
+
+원래 quantized bottleneck을 제거하고 **8192-dimensional continuous latent**를 사용한다. current와 `t+k` future를 shared ResNet encoder로 표현하며 `k`를 1–10에서 샘플링해 multi-step dynamics 정보를 얻는다. pixel reconstruction 대신 encoder feature를 예측하고 stop-gradient/EMA target을 사용한다. random shift·rotation·perspective augmentation은 LAM 학습에만 적용한다.
+
+<PaperFigure src="/laom/figure-04.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Figure 4: LAPO의 분리 encoder·quantization·pixel FDM에서 shared encoder·큰 continuous latent·feature FDM으로 변화." caption="Figure 4 · PDF v5 p.3. LAPO의 분리 encoder·quantization·pixel FDM에서 shared encoder·큰 continuous latent·feature FDM으로 변화." />
+
+큰 latent는 nuisance를 완전히 제거하는 bottleneck이 아니다. 정보를 충분히 보존한 뒤 action-relevant 부분을 labeled objective로 정렬하려는 접근이다. quantization이 모든 로봇 문제에서 나쁘다는 결론도 아니다. 위 benchmark와 architecture에서 병목의 손해를 관찰한 것이다.
+
+**공식 코드의 시간 target을 주의해야 한다.** `DCSLAOMInMemoryDataset`은 `o_t`, `o_t+1`, `o_t+k`, `a_t`를 반환한다. `train_laom_labels.py`의 IDM은 current/future=`t+k`를 받지만 feature reconstruction target은 **`target_lapo.encoder(next_obs)` 즉 t+1**이다. variable future interval과 FDM prediction horizon을 같은 k라고 단정하지 않는다. latent BC의 relabel 단계는 adjacent current/next pair를 사용한다.
+
+### LAOM+supervision
+
+작은 labeled batch의 latent에 linear head를 붙여 `a_t`를 MSE로 예측한다. total은 reconstruction + lambda·action supervision이며 actual action loss gradient가 LAM에도 흐른다. 이 label은 이후 action decoder에서 사용할 동일 subset이다. diagnostic action probe의 `.detach()`와 달리 representation 자체를 action-relevant하게 바꾸는 학습 신호다.
+
+paper는 supervision weight 일반 task **0.01**, cheetah **0.001**을 사용한다. 현재 example YAML은 **0.001**이 기본값이므로 이를 모든 paper 실험값으로 대체하지 않는다. 감독되는 action은 `a_t` 한 벡터이며 k-step action chunk 전체가 아니다.
+
+## 모델 구조와 Training Recipe
+
+| 단계 | 설정 |
+| --- | --- |
+| 공통 | single H100, PyTorch bf16 AMP. ResNet 계열 image encoder·ReLU MLP; residual block 2 |
+| LAM | Adam, weight decay0, 10 epochs, batch512, lr1e-4, warmup3 epochs, encoder scale6, latent8192, IDM/FDM hidden1024, EMA tau.001·매 update |
+| Supervision | labeled batch128, linear latent→action head. lambda .01 / cheetah .001 |
+| Latent BC | AdamW, weight decay0, 10 epochs, batch512, encoder scale32, lr1e-4, augmentation 없음 |
+| Action decoder | AdamW, hidden256 MLP, batch512, 2500 updates, lr3e-4, evaluation25 episodes |
+
+공개 MLP는 latent/condition feature를 residual layer에 반복 주입한다. target encoder는 별도 projection head 없이 observation embedding을 제공한다. reconstruction은 기본 MSE이며 cosine-loss 옵션은 별도다. Appendix는 supervised setting에서 stop-gradient만으로 충분하다고 논의하지만 공개 script/YAML에는 target encoder·EMA 옵션도 남아 있다.
+
+논문 Appendix D의 cosine warmup schedule 설명과 달리 공개 training script는 `linear_annealing_with_warmup`을 호출한다. `src/scheduler.py`의 실제 함수는 warmup 후 **linear decay**이므로 이름만 보고 cosine으로 기술하지 않는다.
+
+<PaperFigure src="/laom/table-05.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Table 5: LAPO baseline의 세 단계 hyperparameter. published adaptation의 latent8192/offset10을 원래 LAPO default와 구분한다." caption="Table 5 · PDF v5 p.17. LAPO baseline의 세 단계 hyperparameter. published adaptation의 latent8192/offset10을 원래 LAPO default와 구분한다." />
+<PaperFigure src="/laom/table-06.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Table 6: LAOM의 shared feature target·EMA·multi-step·dimension 설정." caption="Table 6 · PDF v5 p.18. LAOM의 shared feature target·EMA·multi-step·dimension 설정." />
+<PaperFigure src="/laom/table-07.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Table 7: LAOM+supervision의 labeled batch·loss coefficient와 downstream recipe." caption="Table 7 · PDF v5 p.19. LAOM+supervision의 labeled batch·loss coefficient와 downstream recipe." />
+<PaperFigure src="/laom/table-08.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Table 8: IDM supervision baseline과 그 latent BC/action decoding." caption="Table 8 · PDF v5 p.20. IDM supervision baseline과 그 latent BC/action decoding." />
+<PaperFigure src="/laom/table-09.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Table 9: small-label direct BC baseline." caption="Table 9 · PDF v5 p.20. small-label direct BC baseline." />
+<PaperFigure src="/laom/table-10.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Table 10: full-label BC normalizer 학습 설정." caption="Table 10 · PDF v5 p.21. full-label BC normalizer 학습 설정." />
+
+Table 2의 runtime은 학습 세 단계와 online evaluation을 합친 값이다. LAPO 약7h38m, LAOM6h43m, supervised7h6m, BC1h10m, IDM5h30m이다. 같은 parameter 수·stage 수의 pure-training throughput 비교가 아니다. Table 4는 pipeline configuration별 parameter 총수를 제시한다: 211847849 / 192307136 / 192479189 / 107541504 / 192258965. 이를 VLA backbone parameter나 모든 실험 비용으로 옮겨 쓰지 않는다.
+
+<PaperFigure src="/laom/table-02.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Table 2: 모든 단계·evaluation 포함한 시간 비교." caption="Table 2 · PDF v5 p.15. 모든 단계·evaluation 포함한 시간 비교." />
+<PaperFigure src="/laom/table-04.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Table 4: 각 pipeline configuration의 total parameters." caption="Table 4 · PDF v5 p.16. 각 pipeline configuration의 total parameters." />
+
+## 실험과 결과
+
+### Quantization·multi-step·augmentation: 8배의 의미
+
+Figure 5에서 action linear-probe median MSE는 quantized LAPO distractor 있음/없음 **29.17/16.41**, quantization 제거 **22.09/2.55**다. nuisance가 없을 때도 이 bottleneck의 손해가 크지만, 제거만으로 distractor 문제를 해결하지 못한다.
+
+<PaperFigure src="/laom/figure-05.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Figure 5: FSQ 유무·distractor 유무의 action-probe MSE. 낮을수록 좋다." caption="Figure 5 · PDF v5 p.4. FSQ 유무·distractor 유무의 action-probe MSE. 낮을수록 좋다." />
+
+Figure 6의 누적 변경은 **22.09 → 9.54(multi-step) → 3.89(latent8192) → 5.22(feature FDM) → 2.74(augmentation)**다. feature prediction만 추가한 단계는 probe MSE가 오히려 악화한다. 최종 22.09/2.74≈8.06이 “8배 개선”이며 **reward나 task success 8배가 아니다**. distractor 없는 결과는 2.55→1.93이다.
+
+<PaperFigure src="/laom/figure-06.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Figure 6: 각 변경의 누적 probe MSE와 8배 계산의 분모·분자." caption="Figure 6 · PDF v5 p.5. 각 변경의 누적 probe MSE와 8배 계산의 분모·분자." />
+
+### Return과 action label의 위치
+
+LAOM은 distractor 있는 control return에서 LAPO를 대략 두 배 개선하지만 small-label BC나 supervised IDM보다 항상 좋지 않다. action을 마지막 decoder에서만 주는 기존 경로와 LAM부터 주는 경로 사이에 차이가 남는다.
+
+<PaperFigure src="/laom/figure-07.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Figure 7: distractor 유무의 normalized return vs label budget." caption="Figure 7 · PDF v5 p.5. distractor 유무의 normalized return vs label budget." />
+<PaperFigure src="/laom/figure-08.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Figure 8: 네 task의 LAOM+supervision / LAOM / LAPO / IDM / BC curve." caption="Figure 8 · PDF v5 p.6. 네 task의 LAOM+supervision / LAOM / LAPO / IDM / BC curve." />
+
+128 labels에서 LAOM+supervision은 평균 normalized return 약**0.44**다. full-action BC를 1로 정규화했으므로 BC 수준의 약44%를 회복한 것이며 “44%의 task를 성공”했다는 뜻이 아니다. abstract는 downstream 개선을 **4.2배**, 본문은 **4.3배**로 기술한다. 동일한 underlying comparison의 표현 차이를 남기고 임의의 새 정밀값을 만들지 않는다.
+
+<PaperFigure src="/laom/table-03.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Table 3: full-action BC return: distractor 있음 cheetah823/walker749/hopper253/humanoid428. expert return이 normalizer가 아니다." caption="Table 3 · PDF v5 p.16. full-action BC return: distractor 있음 cheetah823/walker749/hopper253/humanoid428. expert return이 normalizer가 아니다." />
+
+Table 1 expert return과 Table 3 normalizer는 서로 다르다. 예를 들어 humanoid expert dataset 평균은 617.22지만 distractor full-BC normalizer는 428이다. 큰 normalized return이 expert-level 성공을 뜻한다고 읽으면 안 된다.
+
+### New distractor·dimension·cross-embodiment
+
+Figure 9(a)의 new-background action probe에서는 supervised LAOM이 IDM보다 낮은 MSE를 보인다. (b/c)는 latent 8192→64로 줄일 때 unsupervised LAOM return이 상대적으로 **63.1% 감소**, supervised는 **16.2% 감소**함을 보인다. 64는 continuous representation dimension이며 discrete vocabulary 64개가 아니다.
+
+<PaperFigure src="/laom/figure-09.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Figure 9: novel-background probe, latent dimension별 MSE·relative return 감소." caption="Figure 9 · PDF v5 p.6. novel-background probe, latent dimension별 MSE·relative return 감소." />
+
+cross-embodiment 실험은 세 DCS domain에서 각1666개 trajectory를 pretrain하고 남은 domain의 labels로 adaptation하는 leave-one-out이다. supervised pretraining이 latent baseline을 개선하지만 scratch BC와 비슷하거나 더 낮은 조건도 남는다. 네 continuous-control task 간 transfer를 robot/human embodiment 전이 성공으로 바꿔 말하지 않는다.
+
+<PaperFigure src="/laom/figure-10.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Figure 10: held-out domain adaptation과 scratch BC 비교." caption="Figure 10 · PDF v5 p.7. held-out domain adaptation과 scratch BC 비교." />
+<PaperFigure src="/laom/figure-14.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Figure 14: 네 domain별 결과. caption의 Figure14 자기참조는 원문 오류이며 실험 설명은 Figure10과 연결한다." caption="Figure 14 · PDF v5 p.13. 네 domain별 결과. caption의 Figure14 자기참조는 원문 오류이며 실험 설명은 Figure10과 연결한다." />
+
+### Representation probe와 추가 appendix 실험
+
+Figure 11은 representation에서 원래 observation을 복원하는 probe다. LAOM과 supervised LAOM 모두 background nuisance가 남고, action-supervised IDM은 robot 관련 정보에 더 집중하는 예시를 보인다. 따라서 supervised objective가 도움이 되어도 모든 nuisance를 제거했다는 보장은 없다.
+
+<PaperFigure src="/laom/figure-11.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Figure 11: True/LAOM/supervised/IDM representation의 observation reconstruction." caption="Figure 11 · PDF v5 p.8. True/LAOM/supervised/IDM representation의 observation reconstruction." />
+
+Figure 12(a/b)는 observation embedding과 action latent의 probe를 비교한다. 작은 latent에서는 observation embedding이 더 나은 경우가 있고 action supervision으로 latent가 개선된다. (c)의 FSQ 추가는 supervised LAOM에도 control 성능 손해를 남긴다. dimension/bottleneck별 정보 분배가 달라진다.
+
+<PaperFigure src="/laom/figure-12.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Figure 12: observation-vs-latent probe와 FSQ 추가의 control 결과." caption="Figure 12 · PDF v5 p.13. observation-vs-latent probe와 FSQ 추가의 control 결과." />
+
+Figure 13·15의 no-distractor 조건에서도 supervision이 도움이 되지만 모든 방법의 return이 더 높다. 그래서 “영상에는 어떤 distractor가 있든 supervision만 있으면 해결” 또는 “distractor 없으면 action label은 필요 없다”는 일반 법칙으로 해석하지 않는다.
+
+<PaperFigure src="/laom/figure-13.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Figure 13: 네 task의 label budget별 성능." caption="Figure 13 · PDF v5 p.13. 네 task의 label budget별 성능." />
+<PaperFigure src="/laom/figure-15.png" alt="LAOM — Distractors와 Latent Action Supervision 원문 Figure 15: Figure13의 평균 normalized return." caption="Figure 15 · PDF v5 p.14. Figure13의 평균 normalized return." />
+
+## Appendix Notes
+
+Appendix A/B는 related-work·추가 representation/bottleneck/transfer 실험, C는 expert dataset 생성, D는 구현·runtime, E는 evaluation normalizer, F는 모든 method hyperparameter를 제공한다. 위 15개 그림·10개 표에 각각 연결했다.
+
+LAPO 원래 논문의 discrete minimal-action setting과 이번 continuous-control adaptation을 구분한다. 공개 baseline config도 latent8192·future offset10을 사용하므로 단순히 원래 Procgen LAPO 그대로라고 설명할 수 없다. ground-truth probe를 이용한 tuning과 같은 subset의 supervision/decoder 재사용도 각각 별도로 기록한다.
+
+## Code-Level Check
+
+| 고정 commit 경로 | 직접 확인한 동작 |
+| --- | --- |
+| [src/nn.py](https://github.com/dunnolab/laom/blob/e13319533e7b3d5fd974a8a46f4c4892547f30ec/src/nn.py) | shared observation encoder, residual IDM/FDM, `LAOMWithLabels` linear true-action head, action decoder; diagnostic `.detach()` probe와 supervised gradient 차이 |
+| [src/utils.py](https://github.com/dunnolab/laom/blob/e13319533e7b3d5fd974a8a46f4c4892547f30ec/src/utils.py) | HDF5 schema·frame-stack padding·episode-bounded k sampling, t+1/t+k/action을 구분해 반환 |
+| [train_laom_labels.py](https://github.com/dunnolab/laom/blob/e13319533e7b3d5fd974a8a46f4c4892547f30ec/train_laom_labels.py) | future_obs 입력의 LAM, next_obs feature target, small labeled batch MSE, latent BC와 decoder evaluation |
+| [train_laom.py](https://github.com/dunnolab/laom/blob/e13319533e7b3d5fd974a8a46f4c4892547f30ec/train_laom.py) | unsupervised continuous-LAM pipeline |
+| [train_lapo.py](https://github.com/dunnolab/laom/blob/e13319533e7b3d5fd974a8a46f4c4892547f30ec/train_lapo.py) | quantized baseline adaptation·pixel prediction·downstream BC |
+| [train_idm.py](https://github.com/dunnolab/laom/blob/e13319533e7b3d5fd974a8a46f4c4892547f30ec/train_idm.py) | action-supervised inverse model baseline |
+| [configs/laom-labels.yaml](https://github.com/dunnolab/laom/blob/e13319533e7b3d5fd974a8a46f4c4892547f30ec/configs/laom-labels.yaml) | d8192, offset10, tau.001, label batch128, sample supervision coefficient .001 |
+| [src/scheduler.py](https://github.com/dunnolab/laom/blob/e13319533e7b3d5fd974a8a46f4c4892547f30ec/src/scheduler.py) | 실제 linear warmup/linear decay 함수 |
+| [src/augmentations.py](https://github.com/dunnolab/laom/blob/e13319533e7b3d5fd974a8a46f4c4892547f30ec/src/augmentations.py) | image shift·rotation·perspective augmentation |
+
+공식 repository에 method script·config·DCS wrapper와 실험 로그 안내가 공개되어 있다. HDF5·DAVIS 경로를 지정해야 하며 실제 dataset/checkpoint를 로드해 학습·return을 재현하지 않았다. encoder target timestamp를 확인한 source inspection과 모델 성능 검증을 분리한다.
+
+## 한계와 주의
+
+- DCS 네 task·조정된 noise scale·expert-generated video의 결론이며 실제 인터넷 영상 전체에 대한 정리는 아니다.
+- 큰 continuous latent가 universal optimum이라는 결론이나 quantization의 보편적 실패 주장은 없다.
+- 소량 label의 단계별 재사용은 공정하지만 full-label diagnostic tuning은 additional information access다.
+- return·probe MSE·relative decrease는 task success와 다른 단위다.
+- action supervision의 경험적 중요성을 보여주며 모든 distractor에서 supervision이 필수라는 수학적 impossibility theorem은 아니다.
+
+## Citation Trail
+
+[LAPO(Learning to Act without Actions)](https://arxiv.org/abs/2312.10812)는 기반 observation-only IDM/FDM→latent BC→action decoder pipeline이다. VPT는 먼저 labeled IDM으로 video에 action pseudo-label을 만드는 다른 경로다. Genie-style model은 controllable world-model 방향으로 연결되며, video prediction을 control representation과 동일시하지 않아야 한다.
+
+[LAPA](../lapa-latent-action-pretraining/)·[Moto](../moto-latent-motion-tokens/)의 frozen tokenizer와 [UniVLA](../univla-task-centric-latent-actions/)의 task-conditioned 분리는 nuisance에 대응하는 서로 다른 선택이다. [LARA](../lara-latent-action-representation-alignment/)는 실제 action objective와 LAM을 공동 정렬하는 방향으로 연결된다. [전체 안내](../latent-action-models/)에서 supervision이 어느 단계에 들어가는지 비교한다.
+
+## 원문·공개 구현 기준
+
+PDF SHA-256: `64fa33e70d07451d8238526c633ab7a6fc833d7451064899d11f152f48dfcc0c`. 그림·표의 page/crop/bytes/SHA-256은 `public/laom/manifest.json`에 기록했다. 공식 코드 확인 commit은 `e13319533e7b3d5fd974a8a46f4c4892547f30ec`(2026-10-08)이며 모든 코드 링크를 이 revision에 고정했다. README의 release 안내와 실제 model/loss/training/loader/inference를 구분해 읽었다.
+
+## Figure/Table Inventory
+
+아래 모든 항목을 본문에서 실제 이미지로 첨부했다. “본문 위치”는 분석한 subsection/주제를 가리키며 번호·page·읽을 내용을 원문으로 추적할 수 있다.
+
+| 원문 | PDF page | 본문 위치 | 읽을 내용 |
+| --- | --- | --- | --- |
+| Figure 1 | 1 | 핵심 결과 | 128 labeled trajectory에서 normalized return 약0.44. task 성공률44%가 아니다. |
+| Figure 2 | 2 | 시스템 설정 | 네 DCS task의 distractor 유무. |
+| Table 1 | 15 | Dataset | expert rollout 평균 return과 데이터 크기: task당 약58GB. 실제 데이터 전체를 이 검토에서 다운로드하지 않았다. |
+| Figure 3 | 2 | 방법론 | LAM 학습 → latent behavior cloning → labeled action decoding. |
+| Figure 4 | 3 | 모델 구조 | LAPO의 분리 encoder·quantization·pixel FDM에서 shared encoder·큰 continuous latent·feature FDM으로 변화. |
+| Table 5 | 17 | Training Recipe | LAPO baseline의 세 단계 hyperparameter. published adaptation의 latent8192/offset10을 원래 LAPO default와 구분한다. |
+| Table 6 | 18 | Training Recipe | LAOM의 shared feature target·EMA·multi-step·dimension 설정. |
+| Table 7 | 19 | Training Recipe | LAOM+supervision의 labeled batch·loss coefficient와 downstream recipe. |
+| Table 8 | 20 | Training Recipe | IDM supervision baseline과 그 latent BC/action decoding. |
+| Table 9 | 20 | Training Recipe | small-label direct BC baseline. |
+| Table 10 | 21 | Training Recipe | full-label BC normalizer 학습 설정. |
+| Table 2 | 15 | Compute | 모든 단계·evaluation 포함한 시간 비교. |
+| Table 4 | 16 | Compute | 각 pipeline configuration의 total parameters. |
+| Figure 5 | 4 | Quantization 분석 | FSQ 유무·distractor 유무의 action-probe MSE. 낮을수록 좋다. |
+| Figure 6 | 5 | 구조 ablation | 각 변경의 누적 probe MSE와 8배 계산의 분모·분자. |
+| Figure 7 | 5 | Control 결과 | distractor 유무의 normalized return vs label budget. |
+| Figure 8 | 6 | 환경별 결과 | 네 task의 LAOM+supervision / LAOM / LAPO / IDM / BC curve. |
+| Table 3 | 16 | Metric 정의 | full-action BC return: distractor 있음 cheetah823/walker749/hopper253/humanoid428. expert return이 normalizer가 아니다. |
+| Figure 9 | 6 | Generalization·dimension | novel-background probe, latent dimension별 MSE·relative return 감소. |
+| Figure 10 | 7 | Cross-embodiment | held-out domain adaptation과 scratch BC 비교. |
+| Figure 14 | 13 | Cross-embodiment | 네 domain별 결과. caption의 Figure14 자기참조는 원문 오류이며 실험 설명은 Figure10과 연결한다. |
+| Figure 11 | 8 | Representation 분석 | True/LAOM/supervised/IDM representation의 observation reconstruction. |
+| Figure 12 | 13 | 추가 ablation | observation-vs-latent probe와 FSQ 추가의 control 결과. |
+| Figure 13 | 13 | No-distractor 추가 결과 | 네 task의 label budget별 성능. |
+| Figure 15 | 14 | No-distractor 집계 | Figure13의 평균 normalized return. |
+
+## 검증 메모
+
+| Pass | 내용 검토 범위 |
+| --- | --- |
+| 1 · Coverage | main text·appendix와 방법/시스템/데이터/recipe/실험/한계·전체 figure/table inventory 대조 |
+| 2 · Facts | PDF result·data·architecture 수치 재대조. success/progress/return·source 내부 불일치 구분 |
+| 3 · Code | 고정 commit의 실제 model/loss/training/dataset/inference 확인. 현재 default와 paper recipe 구분 |
+| 4 · Interpretation | LAPA/Moto/UniVLA/LAOM/LARA 연결, supervision 단계와 benchmark 조건 차이 확인 |
+| 5 · Site | 내용·내부 링크·checksum 검사 및 build 통과. 목록95개·등록 이미지242개·외부 새 탭/내부 이동·세미나3해상도 UI 검사 통과. 새5문서 desktop1440/mobile390의 폭·방법/비교 화면 확인 |
+
+이 노트는 공개 자료의 내용 분석이다. checkpoint를 로드한 training, simulator 평가, 실물 로봇 재현은 수행하지 않았다.

@@ -31,6 +31,10 @@ import ResearchCatalog from "../../../components/ResearchCatalog.astro";
 
 1번의 시연 ICL 하락과 3번의 개선은 서로 다른 context 구성과 평가에 대한 결과입니다. 네 논문의 성공률을 하나의 leaderboard로 합치기보다, 제공한 정보와 실제 움직임을 담당한 구성요소를 먼저 맞춰 비교합니다.
 
+## 영상에서 action 표현을 배우는 경로
+
+[Latent Action Model 읽기 안내](../../paper-notes/latent-action-models/)에서 LAPA·Moto·LAOM·UniVLA와 LARA를 연결합니다. frozen 모델의 inference reasoning과 영상 기반 representation 학습을 구분하고, action labels가 들어가는 단계·runtime action decoder를 비교합니다.
+
 ## 비교와 후속 검증
 
 [LARA](../../paper-notes/lara-latent-action-representation-alignment/)는 학습 중 LAM의 시각 동역학과 VLA의 action 표현을 공동 정렬하는 연구입니다. frozen 범용 모델을 inference context로 사용하는 위 네 논문과 학습 계약이 다릅니다. [GR00T N1.6](../../paper-notes/groot/n1-6-release/)·[π0.5](../../paper-notes/pi/pi05-open-world-generalization/)의 후학습 개선과 layer 선택에 따른 성능 하락을 함께 비교합니다.

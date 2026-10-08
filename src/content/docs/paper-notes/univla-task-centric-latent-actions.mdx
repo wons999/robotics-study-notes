@@ -1,0 +1,275 @@
+---
+title: UniVLA — Task-centric Latent Actions
+description: UniVLA의 latent 정의, 시스템·데이터, 학습·배포 계약, 전체 결과·부록과 공식 코드 분석.
+research:
+  kind: paper
+  topics: [vla, action, data]
+  status: verified
+  reviewedAt: '2026-10-08'
+  source: https://arxiv.org/abs/2505.06111v3
+---
+
+import ResearchMeta from '../../../components/ResearchMeta.astro';
+import PaperFigure from '../../../components/PaperFigure.astro';
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+<ResearchMeta entryId="paper-notes/univla-task-centric-latent-actions" />
+<SectionFeedback page="UniVLA" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | UniVLA: Learning to Act Anywhere with Task-centric Latent Actions. PDF 표제는 Learning to Act Anywhere with Task-centric Latent Actions |
+| 저자·그룹 | Qingwen Bu, Yanting Yang, Jisong Cai, Shenyuan Gao, Guanghui Ren, Maoqing Yao, Ping Luo, Hongyang Li. HKU, OpenDriveLab, AgiBot |
+| 공개 | 최초 2025-05-09, 검토 v3 2025-11-03, RSS 2025. 본문·참고문헌·Appendix A–C 총 18쪽 |
+| 공식 자료 | [PDF v3](https://arxiv.org/pdf/2505.06111v3), [Code·model 안내](https://github.com/OpenDriveLab/UniVLA) |
+| 태그 | task-centric latent action, language-conditioned disentangling, cross-embodiment, contextual decoder |
+
+## 한 줄 요약
+
+**영상 변화 중 task와 무관한 부분을 먼저 codebook에 모으고, 나머지 task-centric latent를 robot·navigation·human video의 공통 policy target으로 사용한다.** target embodiment에 맞춘 action decoder와 labeled adaptation은 여전히 필요하다.
+
+<PaperFigure src="/univla/figure-01.png" alt="UniVLA — Task-centric Latent Actions 원문 Figure 1: robot manipulation·navigation·human video를 공통 latent로 연결하는 overview." caption="Figure 1 · PDF v3 p.1. robot manipulation·navigation·human video를 공통 latent로 연결하는 overview." />
+
+## 문제의식
+
+영상 변화에는 robot action 외에 camera·배경·조명·사람의 다른 움직임이 섞여 있다. task instruction은 원하는 변화를 설명하지만 나머지 dynamics까지 설명하지 않는다. UniVLA는 language를 이용해 residual dynamics를 분리하고 task-centric code만 policy가 예측하게 한다.
+
+“Act Anywhere”는 새로운 robot에 시연 없이 그대로 실행한다는 보장이 아니다. task-centric pretraining 후 해당 observation/action interface에서 LoRA와 decoder adaptation을 수행한다. human demonstration으로 새로운 skill을 inference 때 즉시 실행하는 경로는 future work로 제시된다.
+
+## 시스템 설정
+
+| 설정 | observation / action / evaluation |
+| --- | --- |
+| Backbone | Prismatic 7B: DINOv2 + SigLIP image features, LLaMA-2 language model |
+| Policy 입력 | third-view RGB + instruction + 직전 latent-action token history. full image history를 입력하는 방식과 다름 |
+| Policy 출력 | 16-entry task-centric vocabulary의 4 token → contextual action decoder → embodiment별 action |
+| LIBERO | Spatial/Object/Goal/Long. suite별 10 tasks·task당 50 demo, failed trajectory 제거. 평가 suite당 500 trials, 3 seeds 평균 |
+| CALVIN | ABC→D, 1000개의 5-task chain, single third-view RGB |
+| R2R | VLN-CE navigation, instruction + 현재 RGB. oracle success는 경로 중 goal 3m 이내 도달 여부 |
+| 실물 | AgileX PiPER, Orbbec DABAI RGB-D에서 RGB 사용. real decoder에 7D proprio를 추가하고 12-step·7D action chunk 생성 |
+| 실물 시간 | RTX 4090에서 policy 약 10 Hz. action horizon 12를 곱해 physical servo 120 Hz라고 해석하지 않음 |
+
+<PaperFigure src="/univla/figure-03.png" alt="UniVLA — Task-centric Latent Actions 원문 Figure 3: VLM은 latent code를 예측하고 contextual decoder가 실제 action space로 변환한다." caption="Figure 3 · PDF v3 p.5. VLM은 latent code를 예측하고 contextual decoder가 실제 action space로 변환한다." />
+<PaperFigure src="/univla/figure-04.png" alt="UniVLA — Task-centric Latent Actions 원문 Figure 4: layout/object/goal/long-horizon variation의 네 suite." caption="Figure 4 · PDF v3 p.6. layout/object/goal/long-horizon variation의 네 suite." />
+
+## Dataset
+
+pretraining은 Open-X single-arm EEF robot video, GNM indoor/outdoor navigation video, Ego4D human daily-activity video를 섞는다. robot action/proprio label은 이 구간의 policy target으로 쓰지 않는다. image·instruction과 기존 DINOv2/T5/VLM 지식이 supervision을 제공하므로 “무감독”을 지식·annotation이 전혀 없다는 뜻으로 읽으면 안 된다.
+
+Table A-I는 30개 출처의 weighted mixture를 제시한다. Fractal 13.9%, BC-Z 8.8%, FMB 8.4%, Bridge 6.8%, Kuka 6.3% 등의 robot data와 RECON 8.9%, CoryHall 2.3%, SACSoN 3.5%의 navigation, Ego4D 3.0%가 함께 있다. 이 비율은 episode/frame 총수를 나타내지 않으며 별도 대규모 dataset을 이번 검토에서 내려받지 않았다.
+
+<PaperFigure src="/univla/table-a-i.png" alt="UniVLA — Task-centric Latent Actions 원문 Table A-I: OXE·GNM·Ego4D 출처와 training mixture 비율 전체." caption="Table A-I · PDF v3 p.16. OXE·GNM·Ego4D 출처와 training mixture 비율 전체." />
+
+LIBERO/CALVIN/R2R target dataset은 pretraining mixture에 포함하지 않았다고 설명한다. 반면 SIMPLER Bridge task는 Bridge pretraining과 분포가 겹치므로 완전히 held-out embodiment benchmark라고 보기 어렵다. R2R train 10819 / val-unseen 1839 episode이며 LLaVA-Nav 비교 수치는 100-episode subset 조건이라는 입력·분모 차이도 남는다.
+
+## 방법론
+
+### 1. Task-irrelevant latent를 먼저 학습
+
+DINOv2 patch feature의 current/future 쌍과 T5 instruction embedding을 encoder·decoder에 준다. language가 task 관련 변화를 설명하고 작은 codebook이 남은 dynamics를 압축하도록 유도한다. pixel 대신 frozen DINO feature reconstruction MSE + VQ/commitment objective를 사용한다.
+
+### 2. Task-centric codebook을 추가
+
+stage 1 codebook을 가져와 고정하고 language conditioning을 제거한다. 새 query·codebook을 추가해 task 관련 dynamics를 담당하게 한다. 기존 task-irrelevant token과 새 task-centric token을 함께 decoder에 전달한다. policy pretraining에는 **새 task-centric token만** 사용한다.
+
+<PaperFigure src="/univla/figure-02.png" alt="UniVLA — Task-centric Latent Actions 원문 Figure 2: language-conditioned stage 1과 language를 제거한 stage 2. task-irrelevant codebook과 새 codebook을 구분한다." caption="Figure 2 · PDF v3 p.4. language-conditioned stage 1과 language를 제거한 stage 2. task-irrelevant codebook과 새 codebook을 구분한다." />
+
+이 설계는 disentangling을 유도하지만 task-irrelevant / task-centric이라는 이름 자체가 독립적인 인과 변수임을 증명하지는 않는다. old codebook을 freeze하는 것과 전체 encoder/decoder를 freeze하는 것은 다르다. 공개 stage 2는 old VQ의 gradient만 freeze하고 공통 encoder·decoder를 계속 학습한다. 다만 `code_restart=True`와 epoch-end `random_restart()`가 남아 있어 unused old code는 gradient 없이도 교체될 수 있다. 따라서 공개 구현의 old codebook을 완전히 불변인 dictionary로 단정하지 않는다.
+
+**원문과 구현의 차이:** Section III-A의 prose는 decoder가 historical frame 없이 quantized token만 받는다고 설명하지만, Figure 2·수식과 공식 `lam.py`는 **current DINO feature를 decoder 조건으로 함께 사용**한다. 이를 조용히 하나의 설명으로 통일하지 않고 실제 공개 구현 기준을 명시한다.
+
+### 3. Latent policy와 contextual action decoding
+
+VLM vocabulary에 `<ACT_1>`–`<ACT_16>`을 추가하고 4개의 task-centric token CE를 학습한다. policy pretraining은 visual encoder·language model·head를 함께 optimize한다. LAM 내부 frozen DINO/T5와 policy의 trainable visual encoder를 구분한다. 표현 가능한 token 조합은 `16^4 = 65536`이며 이는 물리적으로 구별되는 control command 개수가 아니다. OpenVLA의 7개 action dimension별 256-bin tokenization과 공간 구조가 다르다.
+
+target adaptation은 LoRA와 contextual decoder를 학습한다. decoder는 latent token hidden state와 현재 visual feature를 각각 attention pooling해 실제 action을 출력하며, 실물 설정은 proprio projection도 더한다. CE와 실제 action L1을 함께 사용한다. 직전 4-token group을 prompt history에 추가해 장기 task를 보강한다.
+
+배포 loop는 현재 RGB·instruction·직전 code → 4-token autoregression → contextual decoder → normalization 복원·gripper convention 변환 → action 실행이다. 실제 future RGB는 이 loop에 들어가지 않는다. 처음 보는 action space는 decoder와 target label이 필요하다.
+
+## 모델 구조와 Training Recipe
+
+| 구성·구간 | 논문 또는 공개 config |
+| --- | --- |
+| LAM 공개 config | image 224 / DINOv2 ViT-B/14-reg 256 patch, frozen T5-base. hidden 768, encoder/decoder 각 12 layers·12 heads |
+| Latent | code dim 128, codebook 16, query 4. 두 stage의 old/new codebook은 서로 별도 |
+| LAM 공개 학습 | AdamW lr 1e-4·WD 1e-2, batch 64/device × 8 = 512, 20 epochs, mixed precision 16, clip 0.1, commitment beta .25 |
+| Full policy pretraining | 32 A100, global batch 1024(32/device), constant lr 2e-5, 20k steps·약 30시간 |
+| Human/Bridge subset | PDF는 8 GPU·batch 258·약 200 A100 GPU-hours로 기록. 258을 임의로 256으로 수정하지 않음 |
+| LIBERO adaptation | batch 128, 보통 30k steps, Long 40k. suite별 action labels |
+| CALVIN adaptation | 100k steps, batch 128, 처음 80k lr 1.5e-4 이후 1.5e-5. OpenVLA 비교는 chunk 8·200k steps |
+| Real decoder | 8-head attention pooling·hidden 512, proprio 7→512 MLP, 12×7 action chunk |
+
+<PaperFigure src="/univla/table-a-vi.png" alt="UniVLA — Task-centric Latent Actions 원문 Table A-VI: 실물 decoder의 pooling·projection·12.6M parameter 설정." caption="Table A-VI · PDF v3 p.18. 실물 decoder의 pooling·projection·12.6M parameter 설정." />
+
+introduction의 decoder **10.8M**과 실물 Table A-VI의 **12.6M**, trainable LoRA 포함 **123M**은 서로 다른 범위로 기록한다. 작은 decoder만의 parameter 수로 전체 target training 규모를 대신하지 않는다. “1/20 compute” claim은 기존 VLM pretraining이나 모든 tokenizer 학습 비용까지 맞춘 전체 생애주기 비용 비교가 아니다.
+
+## 실험과 결과
+
+### LIBERO: 95.2%의 조건
+
+| 모델 | Spatial | Object | Goal | Long | Avg. |
+| --- | --- | --- | --- | --- | --- |
+| LAPA* | 73.8 | 74.6 | 58.8 | 55.4 | 65.7 |
+| Diffusion Policy | 78.3 | 92.5 | 68.3 | 50.5 | 72.4 |
+| Octo | 78.9 | 85.7 | 84.6 | 51.1 | 75.1 |
+| MDT | 78.5 | 87.5 | 73.5 | 64.8 | 76.1 |
+| OpenVLA | 84.7 | 88.4 | 79.2 | 53.7 | 76.5 |
+| MaIL | 74.3 | 90.1 | 81.8 | 78.6 | 83.5 |
+| UniVLA Human | 91.2 | 94.2 | 90.2 | 79.4 | 88.7 |
+| UniVLA Bridge | 95.2 | 95.4 | 91.9 | 87.5 | 92.5 |
+| UniVLA Full | 96.5 | 96.8 | 95.6 | 92.0 | 95.2 |
+
+<PaperFigure src="/univla/table-i.png" alt="UniVLA — Task-centric Latent Actions 원문 Table I: LAPA*는 Prismatic backbone으로 재구현한 baseline. 원래 LWM 기반 LAPA 논문 수치가 아니다." caption="Table I · PDF v3 p.6. LAPA*는 Prismatic backbone으로 재구현한 baseline. 원래 LWM 기반 LAPA 논문 수치가 아니다." />
+
+MaIL/MDT는 추가 wrist view를 사용한다. Table I의 차이는 UniVLA–OpenVLA **18.7pp**, UniVLA–LAPA* **29.5pp**다. introduction의 18.5pp와 다르므로 상세 표의 산술값을 기준으로 쓴다. 비교 backbone·view·adaptation recipe가 모두 동일한 단일 controlled experiment는 아니다. MaIL 행은 네 값의 산술 평균이 81.2%지만 원문 Avg.는 83.5%다. 이 행도 원문 값을 보존하며 discrepancy를 기록한다.
+
+### Task-centric latent·decoder·history ablation
+
+Table III에서 Ego4D pretraining의 naive Genie-style latent 평균 82.3%, task-irrelevant 56.5%, task-centric 88.7%다. task-irrelevant Long은 **0.2%**로 매우 낮고 task-centric은 79.4%다. language-conditioned 두 단계 분리가 해당 데이터·pipeline에서 도움이 된다는 근거다.
+
+<PaperFigure src="/univla/table-iii.png" alt="UniVLA — Task-centric Latent Actions 원문 Table III: latent 종류별 네 LIBERO suite." caption="Table III · PDF v3 p.10. latent 종류별 네 LIBERO suite." />
+
+Table IV에서 autoregressive actual-action decoder 73.6%, visual feature 없는 contextual decoder 92.5%, full 95.2%다. Table V의 history는 Goal 95.0→95.6%, Long 88.1→92.0%, R2R oracle SR 30.6→47.1%다. navigation의 +16.5pp와 manipulation의 작은 개선을 같은 효과 크기로 묶지 않는다.
+
+<PaperFigure src="/univla/table-iv.png" alt="UniVLA — Task-centric Latent Actions 원문 Table IV: auto-regressive / no-visual / full contextual decoder." caption="Table IV · PDF v3 p.10. auto-regressive / no-visual / full contextual decoder." />
+<PaperFigure src="/univla/table-v.png" alt="UniVLA — Task-centric Latent Actions 원문 Table V: 직전 latent action history의 manipulation·navigation 효과." caption="Table V · PDF v3 p.10. 직전 latent action history의 manipulation·navigation 효과." />
+
+본문이 visual decoder 개선을 2.2pp, Long의 autoregressive 대비 개선을 42.1pp로 설명하지만 Table IV 산술은 각각 **95.2−92.5=2.7pp**, **92−49=43pp**다. 위 표 값을 우선하며 서로 다른 실험이나 version 차이인지 공개 자료로 확정하지 못했다.
+
+### R2R·CALVIN·SIMPLER
+
+R2R Figure 6의 oracle SR은 Seq2Seq 8.1, CMA 10.8, LLaVA-Nav 14.0, OpenVLA 17.5, NaVid **49.1**, UniVLA **47.1%**다. UniVLA는 OpenVLA보다 높지만 NaVid보다 낮다. NaVid의 full visual history와 UniVLA의 single image + latent history는 입력도 다르다. oracle SR을 최종 stop 위치의 표준 success로 바꿔 부르지 않는다.
+
+<PaperFigure src="/univla/figure-06.png" alt="UniVLA — Task-centric Latent Actions 원문 Figure 6: R2R oracle success rate와 비교 모델." caption="Figure 6 · PDF v3 p.7. R2R oracle success rate와 비교 모델." />
+
+CALVIN Table A-II의 평균 chain length는 UniVLA 3.80, RoboDual 3.66, CLOVER 3.53, OpenVLA* 3.27이다. UniVLA의 1–5 chain 완료는 95.5/85.8/75.4/66.9/56.5%다. 본문이 특정 baseline만 강조해도 현재 표의 모든 baseline을 함께 비교한다.
+
+<PaperFigure src="/univla/table-a-ii.png" alt="UniVLA — Task-centric Latent Actions 원문 Table A-II: 1000-chain completion과 평균 length." caption="Table A-II · PDF v3 p.16. 1000-chain completion과 평균 length." />
+
+SIMPLER Table A-III에서 full 평균 **47.9%**, decoder-only 35.4%, RoboVLM 31.3%, Octo-Small 30.0%, Octo-Base 16.0%, OpenVLA 1.0%다. full task 순서는 Spoon 52.8 / Carrot 55.6 / Stack 2.8 / Eggplant 80.6%다. **Stack는 decoder-only 4.2%보다도 낮다.** fine-grained grasp·stacking 병목을 평균이 가린다.
+
+<PaperFigure src="/univla/table-a-iii.png" alt="UniVLA — Task-centric Latent Actions 원문 Table A-III: task success와 grasp를 나누고 decoder-only/full을 비교한다." caption="Table A-III · PDF v3 p.17. task success와 grasp를 나누고 decoder-only/full을 비교한다." />
+
+본문의 평균 **42.7%**는 이 상세 표의 47.9%와 다르다. 본문은 fine-tuning 후 grasp가 약해진다고 설명하지만 표의 네 full grasp 수치는 decoder-only보다 모두 높다. 이 불일치는 기록하며 원인을 추정하지 않는다.
+
+### 실물과 일반화
+
+원문 Table A-IV는 네 task 각각 3단계·최대 3점의 rubric을 정의한다. Screwdriver는 pick/place/door close, Cleaning은 broom pick·sweep·모든 item 처리, Towel은 목표 edge·첫 fold·두 번째 fold, Hanoi는 올바른 block 선택·medium-on-large·small-on-medium이다. task당 20–80 demonstration을 사용한다.
+
+<PaperFigure src="/univla/table-a-iv.png" alt="UniVLA — Task-centric Latent Actions 원문 Table A-IV: task별 세 sub-goal과 최대 score 3." caption="Table A-IV · PDF v3 p.18. task별 세 sub-goal과 최대 score 3." />
+<PaperFigure src="/univla/figure-05.png" alt="UniVLA — Task-centric Latent Actions 원문 Figure 5: 네 task의 success/score와 baseline. average score teaser는 상세 Table A-V와 대조한다." caption="Figure 5 · PDF v3 p.7. 네 task의 success/score와 baseline. average score teaser는 상세 Table A-V와 대조한다." />
+<PaperFigure src="/univla/table-a-v.png" alt="UniVLA — Task-centric Latent Actions 원문 Table A-V: Bridge/OXE/Full pretraining 조건, success와 score 전체." caption="Table A-V · PDF v3 p.18. Bridge/OXE/Full pretraining 조건, success와 score 전체." />
+
+| 모델·pretraining | 평균 success(%) | 평균 score / 3 |
+| --- | --- | --- |
+| Diffusion Policy | 33.3 | 1.45 |
+| OpenVLA | 38.3 | 1.63 |
+| LAPA OXE | 45.0 | 1.95 |
+| UniVLA Bridge | 55.0 | 2.05 |
+| UniVLA OXE | 63.3 | 2.35 |
+| UniVLA Full | 81.7 | 2.63 |
+
+Full의 task별 success는 Screw 93.3 / Clean 100 / Towel 46.7 / Hanoi 86.7%다. Towel은 Diffusion Policy **53.3%**가 더 높다. Clean success 100%와 평균 score **2.33/3**은 모든 subgoal을 완료했을 때 score 3이라는 해석과 맞지 않으므로 raw 값을 유지하고 success와 rubric 사이의 관계를 **확인 필요**로 남긴다. 정확한 real evaluation trial count는 PDF에 명확히 적혀 있지 않아 6.7pp 간격에서 분모를 추정하지 않는다.
+
+Screw task의 lighting/distractor/novel-object generalization은 Full 66.7/53.3/86.7%, 평균 68.9%, 평균 score 2.49다. LAPA는 평균 28.9/score1.36, OpenVLA 20.0/.98, DP 24.4/.69다. novel object는 screwdriver를 marker로 교체하고 instruction도 맞추므로 모든 입력을 그대로 둔 robustness 실험이 아니다.
+
+<PaperFigure src="/univla/figure-07.png" alt="UniVLA — Task-centric Latent Actions 원문 Figure 7: 조명 방향·table distractor·marker 교체 조건." caption="Figure 7 · PDF v3 p.8. 조명 방향·table distractor·marker 교체 조건." />
+<PaperFigure src="/univla/table-ii.png" alt="UniVLA — Task-centric Latent Actions 원문 Table II: 각 조건 success와 partial score." caption="Table II · PDF v3 p.8. 각 조건 success와 partial score." />
+
+### Data efficiency·latent 분석
+
+Figure 10에서 Goal은 10% target demo로 86.3%, full 95.6%; Long은 10%로 62.4%, 50%로 87.0%, full 92.0%다. 이 수치를 네 suite 전체나 실물의 10% demo 결과로 확대하지 않는다.
+
+<PaperFigure src="/univla/figure-10.png" alt="UniVLA — Task-centric Latent Actions 원문 Figure 10: Goal/Long의 target demo 비율별 success." caption="Figure 10 · PDF v3 p.10. Goal/Long의 target demo 비율별 success." />
+
+Figure 8·A-1은 different embodiment에서 같은 code로 relabel된 pick/place/move 예시다. A-2의 attention은 end-effector·target에 집중하는 모습을 보여주지만 이것만으로 task-irrelevant 정보가 완전히 제거되었다고 증명하지는 않는다.
+
+<PaperFigure src="/univla/figure-08.png" alt="UniVLA — Task-centric Latent Actions 원문 Figure 8: robot·navigation·human의 pick/place/move code 대응 예시." caption="Figure 8 · PDF v3 p.9. robot·navigation·human의 pick/place/move code 대응 예시." />
+<PaperFigure src="/univla/figure-a-1.png" alt="UniVLA — Task-centric Latent Actions 원문 Figure A-1: move up/down/forward 등의 추가 code 예시." caption="Figure A-1 · PDF v3 p.17. move up/down/forward 등의 추가 code 예시." />
+<PaperFigure src="/univla/figure-a-2.png" alt="UniVLA — Task-centric Latent Actions 원문 Figure A-2: patch attention이 target object와 robot 주변에 집중하는 qualitative heatmap." caption="Figure A-2 · PDF v3 p.17. patch attention이 target object와 robot 주변에 집중하는 qualitative heatmap." />
+<PaperFigure src="/univla/figure-09.png" alt="UniVLA — Task-centric Latent Actions 원문 Figure 9: Bridge→manipulation/navigation→human 추가의 radar plot. R2R 49와 real2.64는 상세 결과47.1/2.63과 다르다." caption="Figure 9 · PDF v3 p.9. Bridge→manipulation/navigation→human 추가의 radar plot. R2R 49와 real2.64는 상세 결과47.1/2.63과 다르다." />
+
+Figure 9의 R2R **49**, real score **2.64**는 Figure 6/Table A-V의 **47.1/2.63**과 다르다. teaser/radar는 추세 참고로 쓰고 집계는 상세 결과를 기준으로 한다. human/navigation의 순차 추가가 dataset scale·분포·학습 조건을 모두 바꿀 수 있어 각각의 causal gain을 이 radar만으로 분리하기 어렵다.
+
+## Appendix Notes
+
+Appendix는 30-source mixture, CALVIN과 SIMPLER의 추가 결과, latent visualization, 네 실물 task rubric·trial 결과·12.6M decoder 구조를 제공한다. 그 결과는 본문에 모두 배치했다. coarse instruction과 약 1초 frame pair는 미세한 contact dynamics를 놓칠 수 있고 dexterous/bimanual control에는 더 세밀한 표현이 필요하다는 한계가 남는다.
+
+## Code-Level Check
+
+| 고정 commit 경로 | 직접 확인한 동작 |
+| --- | --- |
+| [latent_action_model/genie/modules/lam.py](https://github.com/OpenDriveLab/UniVLA/blob/0ab9e9dd3074ffa14fdd1a00aa2aa84e4f8e1352/latent_action_model/genie/modules/lam.py) | `UncontrolledDINOLatentActionModel` stage 1, `ControllableDINOLatentActionModel` stage 2. frozen DINO/T5, hardcoded 4 query·두 VQ, decoder current-frame conditioning |
+| [latent_action_model/genie/model.py](https://github.com/OpenDriveLab/UniVLA/blob/0ab9e9dd3074ffa14fdd1a00aa2aa84e4f8e1352/latent_action_model/genie/model.py) | feature reconstruction MSE·VQ/commitment, stage 1 weight copy, old VQ freeze |
+| [latent_action_model/genie/dataset.py](https://github.com/OpenDriveLab/UniVLA/blob/0ab9e9dd3074ffa14fdd1a00aa2aa84e4f8e1352/latent_action_model/genie/dataset.py) | RLDS current/future image와 language field. 실제 encoder는 frame pair를 사용 |
+| [vla-scripts/finetune_realworld.py](https://github.com/OpenDriveLab/UniVLA/blob/0ab9e9dd3074ffa14fdd1a00aa2aa84e4f8e1352/vla-scripts/finetune_realworld.py) | latent/visual attention pool, 7D proprio projection, action chunk, CE+L1 |
+| [prismatic/extern/hf/modeling_prismatic.py](https://github.com/OpenDriveLab/UniVLA/blob/0ab9e9dd3074ffa14fdd1a00aa2aa84e4f8e1352/prismatic/extern/hf/modeling_prismatic.py) | `predict_latent_action`가 정확히 4 token 생성, visual feature와 마지막 hidden state 전달 |
+| [experiments/robot/libero/run_libero_eval.py](https://github.com/OpenDriveLab/UniVLA/blob/0ab9e9dd3074ffa14fdd1a00aa2aa84e4f8e1352/experiments/robot/libero/run_libero_eval.py) | 직전 latent history, action stats q01/q99 복원, gripper convention 변환 후 env step |
+| [experiments/robot/simpler-bridge/policies/univla/univla_model.py](https://github.com/OpenDriveLab/UniVLA/blob/0ab9e9dd3074ffa14fdd1a00aa2aa84e4f8e1352/experiments/robot/simpler-bridge/policies/univla/univla_model.py) | Bridge evaluation wrapper와 action decoder 연결 |
+| [vla-scripts/real_world_deployment.py](https://github.com/OpenDriveLab/UniVLA/blob/0ab9e9dd3074ffa14fdd1a00aa2aa84e4f8e1352/vla-scripts/real_world_deployment.py) | real robot observation·proprio·chunk deployment interface |
+
+[VQ 구현](https://github.com/OpenDriveLab/UniVLA/blob/0ab9e9dd3074ffa14fdd1a00aa2aa84e4f8e1352/latent_action_model/genie/modules/blocks.py)의 dead-code restart와 `model.py` epoch-end callback도 직접 확인했다. 위 조건에서 codebook 값이 실제로 얼마나 바뀌는지는 학습을 실행해 측정하지 않았다.
+
+model/checkpoint 안내는 공식 README에서 확인했다. LAM 두 stage와 7B/target checkpoint가 공개되어 있으나 본 검토에서는 weight loading·성공률 재현을 수행하지 않았다. 논문의 task-centric 명칭보다 실제 decoder 조건·data schema·loss·target adaptation을 확인하는 것이 구현에 더 중요하다.
+
+## 한계와 주의
+
+- task-centric code는 실험적 분리이며 causal disentanglement의 보장은 아니다.
+- novel embodiment의 action decoder·LoRA에는 target action-label supervision이 필요하다.
+- coarse video interval·language granularity가 미세 manipulation을 제한하고 SIMPLER stacking이 약하다.
+- navigation oracle SR, manipulation SR, 실물 partial score를 하나의 평균으로 합칠 수 없다.
+- paper prose/table/teaser 간 여러 수치·architecture 불일치를 위에 보존했다. unknown trial denominator를 추정하지 않았다.
+
+## Citation Trail
+
+Genie-style latent는 Table III의 naive observation-change baseline, [LAPA](../lapa-latent-action-pretraining/)는 Prismatic으로 재구현한 비교 경로, OpenVLA는 실제 action vocabulary를 예측하는 VLM baseline이다. DINOv2/T5/Prismatic은 representation·language conditioning·backbone 기반 방법이다.
+
+[Moto](../moto-latent-motion-tokens/)의 co-fine-tuning, [LAOM](../laom-latent-action-supervision/)의 distractor 진단, [LARA](../lara-latent-action-representation-alignment/)의 실제 action 표현과 joint alignment를 함께 읽으면 “좋은 latent”를 어떤 supervision으로 만들지 비교할 수 있다. [전체 안내](../latent-action-models/)에 공통 계약과 읽기 순서를 정리했다.
+
+## 원문·공개 구현 기준
+
+PDF SHA-256: `1b8551db322a0e31514601d9d84879f85a5c391e4911e40752ea9df7567196f5`. 그림·표의 page/crop/bytes/SHA-256은 `public/univla/manifest.json`에 기록했다. 공식 코드 확인 commit은 `0ab9e9dd3074ffa14fdd1a00aa2aa84e4f8e1352`(2026-10-08)이며 모든 코드 링크를 이 revision에 고정했다. README의 release 안내와 실제 model/loss/training/loader/inference를 구분해 읽었다.
+
+## Figure/Table Inventory
+
+아래 모든 항목을 본문에서 실제 이미지로 첨부했다. “본문 위치”는 분석한 subsection/주제를 가리키며 번호·page·읽을 내용을 원문으로 추적할 수 있다.
+
+| 원문 | PDF page | 본문 위치 | 읽을 내용 |
+| --- | --- | --- | --- |
+| Figure 1 | 1 | 문제의식 | robot manipulation·navigation·human video를 공통 latent로 연결하는 overview. |
+| Figure 3 | 5 | 모델 구조 | VLM은 latent code를 예측하고 contextual decoder가 실제 action space로 변환한다. |
+| Figure 4 | 6 | LIBERO 설정 | layout/object/goal/long-horizon variation의 네 suite. |
+| Table A-I | 16 | Dataset | OXE·GNM·Ego4D 출처와 training mixture 비율 전체. |
+| Figure 2 | 4 | 방법론 | language-conditioned stage 1과 language를 제거한 stage 2. task-irrelevant codebook과 새 codebook을 구분한다. |
+| Table A-VI | 18 | 모델 구조 | 실물 decoder의 pooling·projection·12.6M parameter 설정. |
+| Table I | 6 | LIBERO 결과 | LAPA*는 Prismatic backbone으로 재구현한 baseline. 원래 LWM 기반 LAPA 논문 수치가 아니다. |
+| Table III | 10 | Task-centric ablation | latent 종류별 네 LIBERO suite. |
+| Table IV | 10 | Decoder ablation | auto-regressive / no-visual / full contextual decoder. |
+| Table V | 10 | History ablation | 직전 latent action history의 manipulation·navigation 효과. |
+| Figure 6 | 7 | Navigation 결과 | R2R oracle success rate와 비교 모델. |
+| Table A-II | 16 | CALVIN 결과 | 1000-chain completion과 평균 length. |
+| Table A-III | 17 | SIMPLER 결과 | task success와 grasp를 나누고 decoder-only/full을 비교한다. |
+| Table A-IV | 18 | 실물 평가 정의 | task별 세 sub-goal과 최대 score 3. |
+| Figure 5 | 7 | 실물 결과 | 네 task의 success/score와 baseline. average score teaser는 상세 Table A-V와 대조한다. |
+| Table A-V | 18 | 실물 결과 | Bridge/OXE/Full pretraining 조건, success와 score 전체. |
+| Figure 7 | 8 | 실물 일반화 설정 | 조명 방향·table distractor·marker 교체 조건. |
+| Table II | 8 | 실물 일반화 결과 | 각 조건 success와 partial score. |
+| Figure 10 | 10 | Data efficiency | Goal/Long의 target demo 비율별 success. |
+| Figure 8 | 9 | Latent 분석 | robot·navigation·human의 pick/place/move code 대응 예시. |
+| Figure A-1 | 17 | Latent 분석 | move up/down/forward 등의 추가 code 예시. |
+| Figure A-2 | 17 | Latent 분석 | patch attention이 target object와 robot 주변에 집중하는 qualitative heatmap. |
+| Figure 9 | 9 | Dataset scaling | Bridge→manipulation/navigation→human 추가의 radar plot. R2R 49와 real2.64는 상세 결과47.1/2.63과 다르다. |
+
+## 검증 메모
+
+| Pass | 내용 검토 범위 |
+| --- | --- |
+| 1 · Coverage | main text·appendix와 방법/시스템/데이터/recipe/실험/한계·전체 figure/table inventory 대조 |
+| 2 · Facts | PDF result·data·architecture 수치 재대조. success/progress/return·source 내부 불일치 구분 |
+| 3 · Code | 고정 commit의 실제 model/loss/training/dataset/inference 확인. 현재 default와 paper recipe 구분 |
+| 4 · Interpretation | LAPA/Moto/UniVLA/LAOM/LARA 연결, supervision 단계와 benchmark 조건 차이 확인 |
+| 5 · Site | 내용·내부 링크·checksum 검사 및 build 통과. 목록95개·등록 이미지242개·외부 새 탭/내부 이동·세미나3해상도 UI 검사 통과. 새5문서 desktop1440/mobile390의 폭·방법/비교 화면 확인 |
+
+이 노트는 공개 자료의 내용 분석이다. checkpoint를 로드한 training, simulator 평가, 실물 로봇 재현은 수행하지 않았다.

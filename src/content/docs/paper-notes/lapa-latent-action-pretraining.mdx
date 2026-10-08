@@ -1,0 +1,288 @@
+---
+title: LAPA — Latent Action Pretraining
+description: LAPA의 latent 정의, 시스템·데이터, 학습·배포 계약, 전체 결과·부록과 공식 코드 분석.
+research:
+  kind: paper
+  topics: [vla, action, data]
+  status: verified
+  reviewedAt: '2026-10-08'
+  source: https://arxiv.org/abs/2410.11758v2
+---
+
+import ResearchMeta from '../../../components/ResearchMeta.astro';
+import PaperFigure from '../../../components/PaperFigure.astro';
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+<ResearchMeta entryId="paper-notes/lapa-latent-action-pretraining" />
+<SectionFeedback page="LAPA" section="메타데이터" />
+
+## 메타데이터
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Latent Action Pretraining from Videos |
+| 저자 | Seonghyeon Ye, Joel Jang(공동 제1저자), Byeongguk Jeon, Sejune Joo, Jianwei Yang, Baolin Peng, Ajay Mandlekar, Reuben Tan, Yu-Wei Chao, Yuchen Lin, Lars Liden, Kimin Lee, Jianfeng Gao, Luke Zettlemoyer, Dieter Fox, Minjoon Seo |
+| 그룹 | KAIST, University of Washington, Microsoft Research, NVIDIA, Allen Institute for AI |
+| 공개 | 최초 2024-10-15, 검토 PDF v2 2025-05-15, ICLR 2025. 본문·참고문헌·Appendix A–G 총 27쪽 |
+| 공식 자료 | [PDF v2](https://arxiv.org/pdf/2410.11758v2), [Project](https://latentactionpretraining.github.io/), [Code](https://github.com/LatentActionPretraining/LAPA), [Checkpoint](https://huggingface.co/LatentActionPretraining/LAPA-7B-openx) |
+| 태그 | action-label-free pretraining, inverse dynamics, NSVQ, human video, VLA adaptation |
+
+## 한 줄 요약
+
+**영상 사이의 변화를 discrete latent action으로 압축하고 이를 예측하도록 VLM을 사전학습한 뒤, target robot의 실제 action head로 교체해 적은 시연으로 제어를 학습한다.** latent code를 그대로 고정된 로봇 명령 사전에 넣는 배포 방식과 구분해야 한다.
+
+<PaperFigure src="/lapa/figure-01.png" alt="LAPA — Latent Action Pretraining 원문 Figure 1: 영상은 풍부하지만 로봇 action label은 제한된다는 학습 데이터의 병목. 인간 영상에도 instruction이 필요하다." caption="Figure 1 · PDF v2 p.2. 영상은 풍부하지만 로봇 action label은 제한된다는 학습 데이터의 병목. 인간 영상에도 instruction이 필요하다." />
+
+## 문제의식
+
+로봇마다 joint·end-effector action 형식이 다르고 teleoperation 데이터 수집은 비싸다. LAPA는 영상의 현재 상태와 이후 상태가 보여주는 변화로 공통 pretraining target을 만든다. VPT처럼 먼저 action-label 데이터로 IDM을 학습하는 방식과 달리, 첫 tokenizer 학습에는 실제 action label을 쓰지 않는다.
+
+그러나 action-label-free는 모든 supervision이 없다는 뜻이 아니다. policy pretraining에 image와 language instruction을 사용하고, LWM의 기존 multimodal pretraining을 출발점으로 삼으며, target fine-tuning에서는 실제 robot action label이 필요하다.
+
+<PaperFigure src="/lapa/figure-02.png" alt="LAPA — Latent Action Pretraining 원문 Figure 2: LAQ 학습 → latent prediction pretraining → 실제 action fine-tuning의 세 단계. 미래 프레임은 첫 단계와 pseudo-label 생성에만 제공된다." caption="Figure 2 · PDF v2 p.3. LAQ 학습 → latent prediction pretraining → 실제 action fine-tuning의 세 단계. 미래 프레임은 첫 단계와 pseudo-label 생성에만 제공된다." />
+
+## 시스템 설정
+
+| 항목 | 관측·출력·평가 계약 |
+| --- | --- |
+| Policy | 현재 RGB + 자연어 instruction → 실제 action token. fine-tuning 이후 7차원 EEF delta pose·gripper로 변환 |
+| Language Table | 2D block pushing, 5개 task. RGB·instruction에서 language direction(예: move up)을 먼저 생성한 뒤 실제2D action을 출력. seen/unseen object 색·모양·조합과 pretrain/fine-tune의 task·environment 구성 구분. 세부 결과 표마다 task당50회·총250 rollout |
+| SIMPLER | WidowX: Stack Green on Yellow, Put Carrot on Plate, Put Spoon on Towel, Put Eggplant in Basket. task당 24 rollout |
+| 실물 | Franka + RGB, POLYMETIS teleoperation. Knock/Cover/Pick-and-Place 세 task |
+| 실물 평가 | task × 세 evaluation type × 여섯 trial = 모델당 54 rollout. 비교 모델은 초기 object position을 맞추고 번갈아 실행 |
+| 시간 | Bridge 영상 5 Hz에서 3-frame window는 약 0.6초. human 영상 설정은 약 2.4초. 이 간격은 policy inference Hz가 아님 |
+
+<PaperFigure src="/lapa/figure-09.png" alt="LAPA — Latent Action Pretraining 원문 Figure 9: Language Table, SIMPLER의 네 task, 실물 Franka의 세 task를 각각 구분한다." caption="Figure 9 · PDF v2 p.16. Language Table, SIMPLER의 네 task, 실물 Franka의 세 task를 각각 구분한다." />
+
+## Dataset
+
+| 데이터 | Pretraining / adaptation |
+| --- | --- |
+| Language Table simulation | 181k trajectory. in-domain은 5-task multi-task 1k로 fine-tuning |
+| Language Table cross-task | 전체 5-task 181k pretraining 후 Separate-only 7k로 adaptation. 나머지 task 유지 능력을 평가하며 1k 조건과 budget이 다름 |
+| Language Table real → sim | 본문 약 440k, Table 3은 442k. sim 1k로 adaptation |
+| Bridge v2 | 60k robot trajectory. 영상·instruction 사용 |
+| Open X-Embodiment | Table 3의 970k trajectory. 실제 action label은 latent pretraining objective에서 제외 |
+| Something-Something v2 | Table 3은 200k, 본문 dataset 규모는 220k로 설명. selection/rounding 관계는 명확히 제시되지 않음 |
+| SIMPLER adaptation | 네 task의 성공 sim rollout 각 25개, 총 100개. held-out 초기 위치·회전으로 평가 |
+| 실물 adaptation | 세 task 각 150 demo, 총 450. 15종 물체. seen combination / unseen object / unseen semantic instruction 평가 |
+
+<PaperFigure src="/lapa/table-03.png" alt="LAPA — Latent Action Pretraining 원문 Table 3: pretraining과 fine-tuning 데이터의 출처·trajectory 수·MT/MI 구성을 함께 읽는다." caption="Table 3 · PDF v2 p.16. pretraining과 fine-tuning 데이터의 출처·trajectory 수·MT/MI 구성을 함께 읽는다." />
+
+Cross-task는 pretraining에 없던 task를 zero-shot으로 실행하는 설정이 아니라, 다섯 task로 pretrain한 모델을 Separate 하나에 fine-tuning한 뒤 나머지 task 능력이 남는지 평가한다.
+
+SIMPLER의 100개는 실물 teleoperation 100개가 아니다. 인간 영상만 쓰는 실험도 robot label이 없는 pretraining 이후에는 target robot의 labeled demonstration을 사용한다. Separate cross-task adaptation은 다른 조건보다 더 많은 시연을 사용하므로 숫자만으로 동일 budget 전이를 비교하면 안 된다.
+
+## 방법론
+
+### 1. Latent Action Quantization
+
+현재·미래 프레임을 `x1, x2`라고 하자. C-ViViT 계열 spatial encoder와 causal temporal encoder에서 변화 표현을 얻고, discrete codebook으로 quantize한 `z`를 만든다. decoder는 현재 프레임과 `z`를 받아 미래 프레임을 MSE로 복원한다. 정보 병목을 두어 미래 이미지 전체를 latent에 그대로 복사하기 어렵게 하는 설계다.
+
+NSVQ는 가장 가까운 code `q`와 원래 embedding `d`의 거리로 Gaussian noise 크기를 정한다. 학습 시 `d_hat = d + (||d-q|| / ||v||) v`를 사용하고 inference에서는 code lookup을 사용한다. 일반 VQ-VAE의 straight-through/commitment recipe와 같은 것으로 설명하지 않는다.
+
+<PaperFigure src="/lapa/figure-08.png" alt="LAPA — Latent Action Pretraining 원문 Figure 8: C-ViViT encoder, discrete latent, NSVQ와 현재 프레임을 조건으로 하는 spatial decoder의 연결." caption="Figure 8 · PDF v2 p.15. C-ViViT encoder, discrete latent, NSVQ와 현재 프레임을 조건으로 하는 spatial decoder의 연결." />
+
+공식 LAQ config는 image 256, patch 32, hidden 1024, spatial/temporal depth 각각 8, 16 heads·head dim 64, code dim 32, shared codebook 8, latent sequence 4다. 따라서 한 transition은 **8개 후보 중 선택한 token 네 개**로 표현되어 가능한 조합은 `8^4 = 4096`이다. 서로 독립된 실제 action 4096개를 의미하지 않는다. Language Table 기본 설정은 sequence 1·vocab 8이며 같은 용량으로 일반화할 수 없다.
+
+### 2. Latent pretraining
+
+LAQ를 고정하고 robot/human video를 latent pseudo-label로 relabel한다. LWM-Chat-1M 7B가 현재 image·instruction에서 latent sequence를 cross-entropy로 예측한다. vision encoder는 고정하고 language model을 학습한다. human data에서 로봇 action label을 제거했다고 language annotation까지 제거한 것은 아니다.
+
+### 3. 실제 action adaptation과 inference
+
+latent head를 버리고 실제 EEF action head를 새로 붙인다. continuous action의 각 차원을 equal-frequency bin으로 discretize하고 action-label target dataset에서 fine-tuning한다. 7D manipulation 배포 때 현재 RGB·instruction → action token → bin 중간값을 통한 EEF delta·gripper → robot controller 순서로 실행한다. Language Table은 2D action이며 direction language를 먼저 출력하는 별도 recipe를 사용한다. 7D 실험에서는 그 이득이 inference 비용보다 작아 language direction을 생성하지 않았다고 Appendix B가 설명한다.
+
+이 경로에는 실제 미래 RGB가 없다. Appendix의 latent decoder를 계속 쓰는 대안은 성능이 더 낮았으며, 주 결과는 **head replacement**다. 예측된 미래 이미지를 다시 policy에 넣는 qualitative rollout은 배포 control loop와 별도다.
+
+## Training Recipe
+
+| 단계 | 논문·공식 공개 recipe |
+| --- | --- |
+| LAQ 공개 script | batch 64, Adam 계열 lr 1e-4, 100005 steps, frame offset 30 설정. 데이터 FPS·논문 실험과 동일한 조건이라고 자동 간주하지 않음 |
+| 7B pretraining 논문 | 8 H100, batch 128, 약 34시간, 1 epoch |
+| 현재 Open-X script | AdamW lr 2e-5 constant, weight decay 0, warmup 0, max sequence 384, global batch 256. 논문의 batch 128과 다름 |
+| target fine-tuning script | real global batch 128, lr 2e-5, image augmentation. action vocab real 256 / SIMPLER 245 설정 |
+| 비교 계산량 | LAPA 약 272 H100-hours vs OpenVLA 21500 A100-hours. 저자의 30–40배 추정은 H100/A100 성능 환산 가정에 의존 |
+
+34시간은 기존 LWM backbone 학습 비용을 포함한 전체 생애주기 비용이 아니다. ActionVLA는 같은 LWM 기반의 action-supervised baseline이며 OpenVLA의 backbone·학습 epoch와 모두 같지 않다. token accuracy 학습 curve에서 LAPA 1 epoch, ActionVLA 3 epoch, OpenVLA 30 epoch를 직접 동일 실험으로 해석하지 않는다.
+
+## 실험과 결과
+
+### Language Table: 직접 제어 label baseline의 우위도 남는다
+
+Table 1의 success rate(%)는 다음과 같다. 원문 표에 standard error가 함께 있다.
+
+| 모델 | In-domain seen / unseen | Cross-task seen / unseen | Cross-environment seen / unseen |
+| --- | --- | --- | --- |
+| Scratch | 15.6 / 15.2 | 27.2 / 22.4 | 15.6 / 15.2 |
+| UniPi | 22.0 / 13.2 | 20.8 / 16.0 | 13.6 / 12.0 |
+| VPT | 44.0 / 32.8 | 72.0 / 60.8 | 18.0 / 18.4 |
+| LAPA | 62.0 / 49.6 | 73.2 / 54.8 | 33.6 / 29.6 |
+| ActionVLA | 77.0 / 58.8 | 77.0 / 58.8 | 64.8 / 54.0 |
+
+<PaperFigure src="/lapa/table-01.png" alt="LAPA — Latent Action Pretraining 원문 Table 1: 세 pretrain/fine-tune 조합과 seen/unseen을 비교한다. cross-task는 7k fine-tuning으로 조건이 다르다." caption="Table 1 · PDF v2 p.6. 세 pretrain/fine-tune 조합과 seen/unseen을 비교한다. cross-task는 7k fine-tuning으로 조건이 다르다." />
+
+LAPA는 여러 video-based baseline을 개선하지만 ActionVLA를 일관되게 능가하지 않는다. cross-task unseen에서도 VPT 60.8%가 LAPA 54.8%보다 높다. Appendix Tables 5–10은 다섯 task별 결과를 보여주며, Separate가 상대적으로 높고 세밀한 block-relative task는 어려운 경우가 남는다. Table 5의 ActionVLA 평균 76.8과 본문의 77.0 등 일부 집계/반올림 차이는 표의 원값을 보존했다.
+
+<PaperFigure src="/lapa/table-05.png" alt="LAPA — Latent Action Pretraining 원문 Table 5: in-domain seen task별 성공률." caption="Table 5 · PDF v2 p.20. in-domain seen task별 성공률." />
+<PaperFigure src="/lapa/table-06.png" alt="LAPA — Latent Action Pretraining 원문 Table 6: in-domain unseen object 조건 결과." caption="Table 6 · PDF v2 p.20. in-domain unseen object 조건 결과." />
+<PaperFigure src="/lapa/table-07.png" alt="LAPA — Latent Action Pretraining 원문 Table 7: cross-task seen 조건." caption="Table 7 · PDF v2 p.20. cross-task seen 조건." />
+<PaperFigure src="/lapa/table-08.png" alt="LAPA — Latent Action Pretraining 원문 Table 8: cross-task unseen: VPT가 LAPA보다 높은 평균을 갖는다." caption="Table 8 · PDF v2 p.20. cross-task unseen: VPT가 LAPA보다 높은 평균을 갖는다." />
+<PaperFigure src="/lapa/table-09.png" alt="LAPA — Latent Action Pretraining 원문 Table 9: real-video pretraining에서 sim으로 전이한 seen 조건." caption="Table 9 · PDF v2 p.20. real-video pretraining에서 sim으로 전이한 seen 조건." />
+<PaperFigure src="/lapa/table-10.png" alt="LAPA — Latent Action Pretraining 원문 Table 10: cross-environment unseen 조건에서도 action-label baseline과의 격차가 남는다." caption="Table 10 · PDF v2 p.21. cross-environment unseen 조건에서도 action-label baseline과의 격차가 남는다." />
+
+### SIMPLER: grasp·move와 task success를 구분
+
+Bridge pretraining LAPA는 평균 task success **57.3%**, ActionVLA 63.5%, OpenVLA 36.4%, VPT 51.0%, Scratch 34.4%, UniPi 1.3%다(Table 11). LAPA의 task 순서는 Stack 54.2, Carrot 45.8, Spoon 70.8, Eggplant 58.3%다. grasp 71.9%, move 77.1%는 중간 동작 지표이며 최종 성공률이 아니다.
+
+<PaperFigure src="/lapa/table-11.png" alt="LAPA — Latent Action Pretraining 원문 Table 11: 최종 task success, grasping, moving을 별도 블록으로 보존한다." caption="Table 11 · PDF v2 p.21. 최종 task success, grasping, moving을 별도 블록으로 보존한다." />
+
+human-only pretraining은 평균 **52.1%**, VPT 45.8%, UniPi 0.7%다. SSV2 10%를 사용한 LAPA는 50.0%로 full data보다 낮지만 차이가 작다. 이는 해당 네 task와 100개 fine-tuning demo 조건의 결과이며, 모든 human video 규모에서 단조롭게 성능이 증가한다는 증거는 아니다.
+
+<PaperFigure src="/lapa/table-12.png" alt="LAPA — Latent Action Pretraining 원문 Table 12: SSV2 full/10%의 task·grasp·move 지표." caption="Table 12 · PDF v2 p.22. SSV2 full/10%의 task·grasp·move 지표." />
+<PaperFigure src="/lapa/figure-04.png" alt="LAPA — Latent Action Pretraining 원문 Figure 4: human-only pretraining의 sim 전이와 실물 task별 partial score를 함께 보여준다." caption="Figure 4 · PDF v2 p.8. human-only pretraining의 sim 전이와 실물 task별 partial score를 함께 보여준다." />
+
+### 실물: partial score 50.09%, strict success 35.19%
+
+Figure 3·Table 16의 headline “success”는 부분 진행 credit을 평균한 점수다. Knock는 도달 0.5·완료 1, Cover는 집기/부분 덮기/완료 약 0.33/0.66/1, Pick-and-Place는 도달/집기/이동/놓기 0.25/0.5/0.75/1이다. 엄격한 완료율은 별도 행이다.
+
+| 모델·pretraining | 부분 진행 평균(%) | Strict 완료율(%) |
+| --- | --- | --- |
+| OpenVLA / OXE | 43.87 | 27.78 |
+| LAPA / OXE | 50.09 | 35.19 |
+| OpenVLA / Bridge | 30.76 | 12.96 |
+| LAPA / Bridge | 36.83 | 22.22 |
+| ActionVLA / Bridge | 32.61 | 16.67 |
+| Scratch | 21.22 | 7.41 |
+| LAPA / human | 34.02 | 20.37 |
+
+<PaperFigure src="/lapa/figure-03.png" alt="LAPA — Latent Action Pretraining 원문 Figure 3: 세 task별 부분 진행 평균과 pretraining 출처. Pick-and-Place에서는 OpenVLA OXE가 더 높다." caption="Figure 3 · PDF v2 p.7. 세 task별 부분 진행 평균과 pretraining 출처. Pick-and-Place에서는 OpenVLA OXE가 더 높다." />
+<PaperFigure src="/lapa/table-16.png" alt="LAPA — Latent Action Pretraining 원문 Table 16: headline partial success와 strict success를 나누는 최종 집계 표." caption="Table 16 · PDF v2 p.27. headline partial success와 strict success를 나누는 최종 집계 표." />
+
+OXE LAPA는 Knock 52.78 vs OpenVLA 38.89%, Cover 51.67 vs 38.56%를 개선하지만 Pick-and-Place는 **45.83 vs 54.17%로 낮다**. 반면 pick task의 reaching은 83.33 vs 66.67%로 더 높아, 도달과 안정적 grasp 이후의 완료가 같은 능력이 아님을 보여준다.
+
+Table 2의 LAPA OXE는 unseen combination 57.8, unseen object 43.9, unseen instruction 48.5%, OpenVLA OXE는 46.2/42.1/43.4%다. 새로운 instruction 의미 해석과 새로운 물체 조합의 일반화이며, 시연 없는 새로운 control skill 전체를 검증한 것은 아니다.
+
+<PaperFigure src="/lapa/table-02.png" alt="LAPA — Latent Action Pretraining 원문 Table 2: object combination, unseen object, semantic instruction의 세 평가 타입." caption="Table 2 · PDF v2 p.7. object combination, unseen object, semantic instruction의 세 평가 타입." />
+<PaperFigure src="/lapa/figure-10.png" alt="LAPA — Latent Action Pretraining 원문 Figure 10: 세 task와 seen/unseen evaluation type별 물체·instruction 예시." caption="Figure 10 · PDF v2 p.23. 세 task와 seen/unseen evaluation type별 물체·instruction 예시." />
+<PaperFigure src="/lapa/table-13.png" alt="LAPA — Latent Action Pretraining 원문 Table 13: Knock의 trial-level credit·strict completion·reaching을 분리한다." caption="Table 13 · PDF v2 p.22. Knock의 trial-level credit·strict completion·reaching을 분리한다." />
+<PaperFigure src="/lapa/table-14.png" alt="LAPA — Latent Action Pretraining 원문 Table 14: Cover의 세 단계 credit과 strict completion." caption="Table 14 · PDF v2 p.26. Cover의 세 단계 credit과 strict completion." />
+<PaperFigure src="/lapa/table-15.png" alt="LAPA — Latent Action Pretraining 원문 Table 15: Pick-and-Place의 네 단계 credit과 reaching." caption="Table 15 · PDF v2 p.27. Pick-and-Place의 네 단계 credit과 reaching." />
+
+54 matched rollout pair에서 ties 51.9%, LAPA win 31.5%, OpenVLA win 16.7%다. tie를 제외한 LAPA win 65.4%는 **전체 54회 중 65.4%라는 뜻이 아니다**. 작은 paired 표본이며 통계적 우월성의 일반적 보장으로 확대하지 않는다.
+
+<PaperFigure src="/lapa/figure-11.png" alt="LAPA — Latent Action Pretraining 원문 Figure 11: tie 포함/제외 분모를 따로 읽는다." caption="Figure 11 · PDF v2 p.24. tie 포함/제외 분모를 따로 읽는다." />
+
+### Scaling·representation·failure
+
+Figure 5는 tokenizer 30→300M, 데이터 10→100%, sequence length, vocabulary를 바꾼 결과다. token 수는 4 부근에서 일부 이득이 포화한다. Appendix Figure 15에서 window 3 부근이 유리하고 10으로 늘리면 떨어진다. 긴 시간 간격은 항상 더 좋은 action abstraction을 만드는 것이 아니다.
+
+<PaperFigure src="/lapa/figure-05.png" alt="LAPA — Latent Action Pretraining 원문 Figure 5: model/data/latent sequence/vocab sweep. task와 설정을 고정한 범위에서만 해석한다." caption="Figure 5 · PDF v2 p.9. model/data/latent sequence/vocab sweep. task와 설정을 고정한 범위에서만 해석한다." />
+<PaperFigure src="/lapa/figure-15.png" alt="LAPA — Latent Action Pretraining 원문 Figure 15: window size와 target fine-tuning data size." caption="Figure 15 · PDF v2 p.25. window size와 target fine-tuning data size." />
+<PaperFigure src="/lapa/figure-16.png" alt="LAPA — Latent Action Pretraining 원문 Figure 16: sequence·vocab를 늘린 Language Table 설정의 별도 결과." caption="Figure 16 · PDF v2 p.25. sequence·vocab를 늘린 Language Table 설정의 별도 결과." />
+
+Figure 6·12에서 같은 latent를 현재 이미지에 조건화했을 때 비슷한 방향의 움직임이 보인다. Figure 13의 실제 2D action과 latent의 clustering은 대응 가능성을 보여주지만 embodiment를 넘는 유일한 물리 action 사전을 입증하지 않는다. Figure 14에서는 camera view 변화도 latent에 들어간다. nuisance dynamics 문제는 [LAOM](../laom-latent-action-supervision/)·[UniVLA](../univla-task-centric-latent-actions/)와 연결된다.
+
+<PaperFigure src="/lapa/figure-06.png" alt="LAPA — Latent Action Pretraining 원문 Figure 6: Bridge·human 영상에서 latent-conditioned reconstruction의 방향성을 비교한다." caption="Figure 6 · PDF v2 p.10. Bridge·human 영상에서 latent-conditioned reconstruction의 방향성을 비교한다." />
+<PaperFigure src="/lapa/figure-12.png" alt="LAPA — Latent Action Pretraining 원문 Figure 12: Language Table 8개 token의 여러 초기 상태 조건부 영상." caption="Figure 12 · PDF v2 p.24. Language Table 8개 token의 여러 초기 상태 조건부 영상." />
+<PaperFigure src="/lapa/figure-13.png" alt="LAPA — Latent Action Pretraining 원문 Figure 13: latent와 ground-truth 2D action의 상관·군집화." caption="Figure 13 · PDF v2 p.24. latent와 ground-truth 2D action의 상관·군집화." />
+<PaperFigure src="/lapa/figure-14.png" alt="LAPA — Latent Action Pretraining 원문 Figure 14: human video의 camera motion도 code로 표현된다." caption="Figure 14 · PDF v2 p.25. human video의 camera motion도 code로 표현된다." />
+<PaperFigure src="/lapa/figure-07.png" alt="LAPA — Latent Action Pretraining 원문 Figure 7: latent decoder로 만든 imagined rollout. 이미지 물체가 사라지는 예시는 실제 closed-loop 물리 성공이 아니다." caption="Figure 7 · PDF v2 p.10. latent decoder로 만든 imagined rollout. 이미지 물체가 사라지는 예시는 실제 closed-loop 물리 성공이 아니다." />
+<PaperFigure src="/lapa/figure-17.png" alt="LAPA — Latent Action Pretraining 원문 Figure 17: UniPi의 올바른/잘못된 video plan. video 생성 품질과 action 실행 품질을 구분한다." caption="Figure 17 · PDF v2 p.25. UniPi의 올바른/잘못된 video plan. video 생성 품질과 action 실행 품질을 구분한다." />
+
+Table 4의 lexical count는 pretraining task distribution을 설명한다. Knock 관련 trajectory는 Bridge 2/OXE 7969/SSV2 6655, Pick-and-Place는 10892/911166/3272다. 언어 문자열 기반 count와 성공률의 관계는 가능한 해석이며, task coverage가 원인이라는 controlled ablation은 아니다.
+
+<PaperFigure src="/lapa/table-04.png" alt="LAPA — Latent Action Pretraining 원문 Table 4: task별 데이터 수의 차이를 pretraining 출처와 연결한다." caption="Table 4 · PDF v2 p.18. task별 데이터 수의 차이를 pretraining 출처와 연결한다." />
+
+## Appendix Notes
+
+Appendix A는 LAQ architecture·NSVQ, B는 데이터·환경, C는 baseline adaptation, D는 distribution·paired 비교, E는 latent 분석, F는 추가 ablation, G는 task별 sim/real 결과을 보강한다. 위 본문에 전체 표·그림을 배치했다. UniPi는 video planner를 action으로 연결하고 VPT는 action-supervised inverse model의 pseudo-label을 사용한다. ActionVLA는 LWM backbone을 맞춘 직접 action pretraining 기준선이라 OpenVLA와 동일 이름의 baseline이 아니다.
+
+실물 per-trial 표는 partial credit·strict·reaching을 모두 남기며 “spicy object” 같은 instruction은 기존 task의 semantic variation이다. long-window 악화, grasp/placement 병목, camera-motion latent가 이 논문의 다음 질문을 만든다.
+
+## Code-Level Check
+
+아래 링크는 확인 commit에 고정했다. 코드 읽기는 모델 재현 실행과 구분한다.
+
+| 경로 | 직접 확인한 동작 |
+| --- | --- |
+| [laq/laq_model/latent_action_quantization.py](https://github.com/LatentActionPretraining/LAPA/blob/46aca51d7faebcec02d7d323bbb3820c2df07bc6/laq/laq_model/latent_action_quantization.py) | `forward`에서 first-frame token을 detach해 decoder 조건으로 쓰고 NSVQ latent로 미래 pixel MSE 계산 |
+| [laq/laq_model/nsvq.py](https://github.com/LatentActionPretraining/LAPA/blob/46aca51d7faebcec02d7d323bbb3820c2df07bc6/laq/laq_model/nsvq.py) | nearest code assignment, norm-scaled noise substitution, 초기 low-use code replacement |
+| [laq/laq_model/data.py](https://github.com/LatentActionPretraining/LAPA/blob/46aca51d7faebcec02d7d323bbb3820c2df07bc6/laq/laq_model/data.py) | video pair의 frame offset·resize/crop, tokenizer 데이터 접근 |
+| [latent_pretraining/data.py](https://github.com/LatentActionPretraining/LAPA/blob/46aca51d7faebcec02d7d323bbb3820c2df07bc6/latent_pretraining/data.py) | JSON field별 image/language/delta/action target mask·augmentation |
+| [latent_pretraining/train.py](https://github.com/LatentActionPretraining/LAPA/blob/46aca51d7faebcec02d7d323bbb3820c2df07bc6/latent_pretraining/train.py) | JAX/Flax policy loss와 fine-tuning 모드. delta loss를 계산하는 분기도 total action loss와 별도이므로 Moto의 co-fine-tuning과 같지 않음 |
+| [scripts/latent_pretrain_openx.sh](https://github.com/LatentActionPretraining/LAPA/blob/46aca51d7faebcec02d7d323bbb3820c2df07bc6/scripts/latent_pretrain_openx.sh) | 현재 global batch 256·constant lr. 본문 recipe와 구분 |
+| [latent_pretraining/deploy.py](https://github.com/LatentActionPretraining/LAPA/blob/46aca51d7faebcec02d7d323bbb3820c2df07bc6/latent_pretraining/deploy.py) | `/act`가 instruction과 image 경로를 읽고 action token을 quantile-bin 중간값으로 복호화 |
+
+README에 LAQ/latent policy/action policy checkpoint와 data 변환 절차가 공개되어 있다. weight 파일을 로드해 논문 성공률을 다시 측정하지는 않았다. robot controller·normalization stats·dataset field 계약을 맞춰야 하며, codebook 값만으로 실제 torque/EEF action 단위를 유추할 수 없다.
+
+## 한계와 주의
+
+- video-only pretraining 이후에도 target action labels와 기존 VLM 지식이 필요하다.
+- task·embodiment 전이와 동일 로봇의 unseen instruction 일반화는 다른 실험이다.
+- 실물 54회는 partial score와 strict success가 다르며 Pick-and-Place에서는 강한 action-label baseline이 우세하다.
+- camera/background nuisance, 낮은 code capacity, grasp 정밀도 문제는 사전학습 규모만 늘려 해결되었다고 보기 어렵다.
+- 공개 recipe와 paper recipe가 완전히 같지 않고, GPU-hours 비교도 동일 hardware/총비용 비교가 아니다.
+
+## Citation Trail
+
+VPT는 action-supervised IDM으로 video를 relabel하는 비교 경로, UniPi는 language-conditioned video planning, ActionVLA/OpenVLA는 실제 action label 기반 pretraining의 기준선이다. [LAPO](https://arxiv.org/abs/2312.10812)는 observation transition에서 inverse/forward dynamics를 학습하는 기반 흐름이다.
+
+후속 [Moto](../moto-latent-motion-tokens/)는 motion prediction loss를 action fine-tuning에도 유지한다. [UniVLA](../univla-task-centric-latent-actions/)는 task-centric code와 contextual decoder를 사용하고, [LAOM](../laom-latent-action-supervision/)은 nuisance·action supervision의 역할을 분석한다. [LARA](../lara-latent-action-representation-alignment/)는 frozen pseudo-label 단계를 넘어 LAM과 VLA representation을 공동 정렬한다. 전체 연결은 [Latent Action Model 안내](../latent-action-models/)에서 비교한다.
+
+## 원문·공개 구현 기준
+
+PDF SHA-256: `efab4f379e1a30ef7be36c87885c2c509d880ee9578f4cfdcc20d9321c93dce9`. 그림·표의 page/crop/bytes/SHA-256은 `public/lapa/manifest.json`에 기록했다. 공식 코드 확인 commit은 `46aca51d7faebcec02d7d323bbb3820c2df07bc6`(2026-10-08)이며 모든 코드 링크를 이 revision에 고정했다. README의 release 안내와 실제 model/loss/training/loader/inference를 구분해 읽었다.
+
+## Figure/Table Inventory
+
+아래 모든 항목을 본문에서 실제 이미지로 첨부했다. “본문 위치”는 분석한 subsection/주제를 가리키며 번호·page·읽을 내용을 원문으로 추적할 수 있다.
+
+| 원문 | PDF page | 본문 위치 | 읽을 내용 |
+| --- | --- | --- | --- |
+| Figure 1 | 2 | 문제의식 | 영상은 풍부하지만 로봇 action label은 제한된다는 학습 데이터의 병목. 인간 영상에도 instruction이 필요하다. |
+| Figure 2 | 3 | 방법론 | LAQ 학습 → latent prediction pretraining → 실제 action fine-tuning의 세 단계. 미래 프레임은 첫 단계와 pseudo-label 생성에만 제공된다. |
+| Figure 9 | 16 | 시스템 설정 | Language Table, SIMPLER의 네 task, 실물 Franka의 세 task를 각각 구분한다. |
+| Table 3 | 16 | Dataset | pretraining과 fine-tuning 데이터의 출처·trajectory 수·MT/MI 구성을 함께 읽는다. |
+| Figure 8 | 15 | 모델 구조 | C-ViViT encoder, discrete latent, NSVQ와 현재 프레임을 조건으로 하는 spatial decoder의 연결. |
+| Table 1 | 6 | Language Table 결과 | 세 pretrain/fine-tune 조합과 seen/unseen을 비교한다. cross-task는 7k fine-tuning으로 조건이 다르다. |
+| Table 5 | 20 | Language Table 세부 결과 | in-domain seen task별 성공률. |
+| Table 6 | 20 | Language Table 세부 결과 | in-domain unseen object 조건 결과. |
+| Table 7 | 20 | Language Table 세부 결과 | cross-task seen 조건. |
+| Table 8 | 20 | Language Table 세부 결과 | cross-task unseen: VPT가 LAPA보다 높은 평균을 갖는다. |
+| Table 9 | 20 | Language Table 세부 결과 | real-video pretraining에서 sim으로 전이한 seen 조건. |
+| Table 10 | 21 | Language Table 세부 결과 | cross-environment unseen 조건에서도 action-label baseline과의 격차가 남는다. |
+| Table 11 | 21 | SIMPLER 결과 | 최종 task success, grasping, moving을 별도 블록으로 보존한다. |
+| Table 12 | 22 | Human video 결과 | SSV2 full/10%의 task·grasp·move 지표. |
+| Figure 4 | 8 | Human video 결과 | human-only pretraining의 sim 전이와 실물 task별 partial score를 함께 보여준다. |
+| Figure 3 | 7 | 실물 결과 | 세 task별 부분 진행 평균과 pretraining 출처. Pick-and-Place에서는 OpenVLA OXE가 더 높다. |
+| Table 16 | 27 | 실물 결과 | headline partial success와 strict success를 나누는 최종 집계 표. |
+| Table 2 | 7 | 실물 일반화 | object combination, unseen object, semantic instruction의 세 평가 타입. |
+| Figure 10 | 23 | 실물 평가 예시 | 세 task와 seen/unseen evaluation type별 물체·instruction 예시. |
+| Table 13 | 22 | 실물 개별 trial | Knock의 trial-level credit·strict completion·reaching을 분리한다. |
+| Table 14 | 26 | 실물 개별 trial | Cover의 세 단계 credit과 strict completion. |
+| Table 15 | 27 | 실물 개별 trial | Pick-and-Place의 네 단계 credit과 reaching. |
+| Figure 11 | 24 | 실물 paired 비교 | tie 포함/제외 분모를 따로 읽는다. |
+| Figure 5 | 9 | Scaling | model/data/latent sequence/vocab sweep. task와 설정을 고정한 범위에서만 해석한다. |
+| Figure 15 | 25 | 추가 ablation | window size와 target fine-tuning data size. |
+| Figure 16 | 25 | Language Table ablation | sequence·vocab를 늘린 Language Table 설정의 별도 결과. |
+| Figure 6 | 10 | Latent 해석 | Bridge·human 영상에서 latent-conditioned reconstruction의 방향성을 비교한다. |
+| Figure 12 | 24 | Latent 해석 | Language Table 8개 token의 여러 초기 상태 조건부 영상. |
+| Figure 13 | 24 | Latent 해석 | latent와 ground-truth 2D action의 상관·군집화. |
+| Figure 14 | 25 | Latent 해석 | human video의 camera motion도 code로 표현된다. |
+| Figure 7 | 10 | 생성 예시 | latent decoder로 만든 imagined rollout. 이미지 물체가 사라지는 예시는 실제 closed-loop 물리 성공이 아니다. |
+| Figure 17 | 25 | Baseline failure | UniPi의 올바른/잘못된 video plan. video 생성 품질과 action 실행 품질을 구분한다. |
+| Table 4 | 18 | Dataset bias | task별 데이터 수의 차이를 pretraining 출처와 연결한다. |
+
+## 검증 메모
+
+| Pass | 내용 검토 범위 |
+| --- | --- |
+| 1 · Coverage | main text·appendix와 방법/시스템/데이터/recipe/실험/한계·전체 figure/table inventory 대조 |
+| 2 · Facts | PDF result·data·architecture 수치 재대조. success/progress/return·source 내부 불일치 구분 |
+| 3 · Code | 고정 commit의 실제 model/loss/training/dataset/inference 확인. 현재 default와 paper recipe 구분 |
+| 4 · Interpretation | LAPA/Moto/UniVLA/LAOM/LARA 연결, supervision 단계와 benchmark 조건 차이 확인 |
+| 5 · Site | 내용·내부 링크·checksum 검사 및 build 통과. 목록95개·등록 이미지242개·외부 새 탭/내부 이동·세미나3해상도 UI 검사 통과. 새5문서 desktop1440/mobile390의 폭·방법/비교 화면 확인 |
+
+이 노트는 공개 자료의 내용 분석이다. checkpoint를 로드한 training, simulator 평가, 실물 로봇 재현은 수행하지 않았다.
