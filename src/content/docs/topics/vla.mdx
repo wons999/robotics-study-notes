@@ -35,6 +35,10 @@ import ResearchCatalog from "../../../components/ResearchCatalog.astro";
 
 [Latent Action Model 읽기 안내](../../paper-notes/latent-action-models/)에서 LAPA·Moto·LAOM·UniVLA와 LARA를 연결합니다. frozen 모델의 inference reasoning과 영상 기반 representation 학습을 구분하고, action labels가 들어가는 단계·runtime action decoder를 비교합니다.
 
+## 실물 경험으로 VLA를 후학습하는 두 연구
+
+[LWD와 ALOE 비교](../../paper-notes/lwd-aloe-vla-post-training/)는 fleet의 공유 policy 개선과 current-policy action-value 평가를 한 페이지에서 연결합니다. 같은 flow VLA를 써도 학습 reward·value bootstrap·actor update·interaction budget·평가 rubric이 다릅니다.
+
 ## 비교와 후속 검증
 
 [LARA](../../paper-notes/lara-latent-action-representation-alignment/)는 학습 중 LAM의 시각 동역학과 VLA의 action 표현을 공동 정렬하는 연구입니다. frozen 범용 모델을 inference context로 사용하는 위 네 논문과 학습 계약이 다릅니다. [GR00T N1.6](../../paper-notes/groot/n1-6-release/)·[π0.5](../../paper-notes/pi/pi05-open-world-generalization/)의 후학습 개선과 layer 선택에 따른 성능 하락을 함께 비교합니다.

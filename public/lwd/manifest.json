@@ -1,0 +1,230 @@
+{
+  "source": "https://arxiv.org/pdf/2605.00416v4",
+  "sourceSha256": "d89f2d800baec4baea1b65651919430ebfca565c5d3d3c1cc4f091591a27a8c3",
+  "assets": [
+    {
+      "type": "figure",
+      "number": 1,
+      "page": 1,
+      "file": "figure-01.png",
+      "crop": [
+        310,
+        240,
+        565,
+        562
+      ],
+      "bytes": 246001,
+      "sha256": "c95bacbb2c3f3f0a091108784892604da4991e318a622a38cbe3c6bb947da000"
+    },
+    {
+      "type": "figure",
+      "number": 2,
+      "page": 5,
+      "file": "figure-02.png",
+      "crop": [
+        47,
+        54,
+        565,
+        415
+      ],
+      "bytes": 272169,
+      "sha256": "a08a9e1315ddf64b2fb0e081ef99a22d638c9891390a794907a4ceb2ce9dd098"
+    },
+    {
+      "type": "figure",
+      "number": 3,
+      "page": 9,
+      "file": "figure-03.png",
+      "crop": [
+        47,
+        54,
+        565,
+        518
+      ],
+      "bytes": 1490746,
+      "sha256": "4784536d5aa7f138d8c7955b76aabd0b13de58261e359d74e8ea9e29d5ba78f8"
+    },
+    {
+      "type": "figure",
+      "number": 4,
+      "page": 9,
+      "file": "figure-04.png",
+      "crop": [
+        47,
+        536,
+        302,
+        724
+      ],
+      "bytes": 490609,
+      "sha256": "15bc6e47330427f7f28fbdda9be8bd9b3d75027d1583290caab791305dc4afa3"
+    },
+    {
+      "type": "figure",
+      "number": 5,
+      "page": 10,
+      "file": "figure-05.png",
+      "crop": [
+        47,
+        52,
+        565,
+        335
+      ],
+      "bytes": 99512,
+      "sha256": "e0685ff0cd5c661e4db93bbbcd80301d04b9e425a3cb64e9ab4bdf7b77c3385c"
+    },
+    {
+      "type": "table",
+      "number": "I",
+      "page": 10,
+      "file": "table-i.png",
+      "crop": [
+        47,
+        343,
+        565,
+        497
+      ],
+      "bytes": 101364,
+      "sha256": "57d9f329a8ed61fcec373d92773a44128af90b2bfd7dcbf8c70e1cc58b0ac333"
+    },
+    {
+      "type": "figure",
+      "number": 6,
+      "page": 11,
+      "file": "figure-06.png",
+      "crop": [
+        47,
+        54,
+        565,
+        231
+      ],
+      "bytes": 401260,
+      "sha256": "cb438509602dc51606d20dce40ead684bcb7854d333f796e2cbd07ff0c42666b"
+    },
+    {
+      "type": "table",
+      "number": "II",
+      "page": 11,
+      "file": "table-ii.png",
+      "crop": [
+        47,
+        248,
+        304,
+        341
+      ],
+      "bytes": 34497,
+      "sha256": "edd37bdeea92c045b2340679cb0ab0d3301d99d12e081d6c75b9aaff9b6554de"
+    },
+    {
+      "type": "table",
+      "number": "III",
+      "page": 12,
+      "file": "table-iii.png",
+      "crop": [
+        47,
+        53,
+        567,
+        154
+      ],
+      "bytes": 64406,
+      "sha256": "f89e0bfdfc4cedef9d7f68546dabb3891a0216a0ef536b1592f8c29aac4c7695"
+    },
+    {
+      "type": "table",
+      "number": "IV",
+      "page": 16,
+      "file": "table-iv.png",
+      "crop": [
+        47,
+        53,
+        565,
+        227
+      ],
+      "bytes": 85800,
+      "sha256": "b858c55990842ac89a21481ab54e3ae21d9fb463dfb143b77fd09253100d5c33"
+    },
+    {
+      "type": "figure",
+      "number": 7,
+      "page": 16,
+      "file": "figure-07.png",
+      "crop": [
+        47,
+        230,
+        565,
+        510
+      ],
+      "bytes": 154587,
+      "sha256": "bb03c5c6c6df44352be48f464cfa13168d49e3934db201da17d455b662ad45ec"
+    },
+    {
+      "type": "figure",
+      "number": 8,
+      "page": 17,
+      "file": "figure-08.png",
+      "crop": [
+        47,
+        52,
+        302,
+        298
+      ],
+      "bytes": 76743,
+      "sha256": "71ec576b9f8d8a6cce4d03dc1b4b9e7a1d7dd7cc974fb716adde725b8bf47e93"
+    },
+    {
+      "type": "figure",
+      "number": 9,
+      "page": 17,
+      "file": "figure-09.png",
+      "crop": [
+        47,
+        305,
+        302,
+        491
+      ],
+      "bytes": 147748,
+      "sha256": "da88a803048655ad73e036ef1ea03ce28e5ec2cb12660e81014a43dc674e838e"
+    },
+    {
+      "type": "figure",
+      "number": 10,
+      "page": 17,
+      "file": "figure-10.png",
+      "crop": [
+        310,
+        52,
+        565,
+        298
+      ],
+      "bytes": 98624,
+      "sha256": "fdc7704b616ed188eed8e4b4f3abeb37e10411a431a62b3ac2eb3a66c706382c"
+    },
+    {
+      "type": "table",
+      "number": "V",
+      "page": 18,
+      "file": "table-v.png",
+      "crop": [
+        47,
+        53,
+        565,
+        196
+      ],
+      "bytes": 84116,
+      "sha256": "99447ccec27707494a615e3f6e1944ae3bebce39e7a524aa91ae5edd1bc22eec"
+    },
+    {
+      "type": "table",
+      "number": "VI",
+      "page": 18,
+      "file": "table-vi.png",
+      "crop": [
+        47,
+        213,
+        302,
+        323
+      ],
+      "bytes": 41844,
+      "sha256": "5b39c0f8a50d517c8cca35f1c1bfda2af6e1a0d804f59342e693d8d150938741"
+    }
+  ]
+}

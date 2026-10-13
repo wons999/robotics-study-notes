@@ -1,0 +1,525 @@
+---
+title: LWD와 ALOE — 실물 VLA 후학습
+description: Learning While Deploying과 ALOE의 전체 방법·실험·부록을 한 페이지에서 분석하고, value target·flow policy 개선·실물 데이터 수집과 평가의 연관성을 비교한다.
+research:
+  kind: paper
+  topics: [vla, action, data]
+  status: verified
+  reviewedAt: '2026-10-13'
+  source: https://arxiv.org/abs/2605.00416v4
+---
+
+import ResearchMeta from '../../../components/ResearchMeta.astro';
+import PaperFigure from '../../../components/PaperFigure.astro';
+import SectionFeedback from '../../../components/SectionFeedback.astro';
+
+<ResearchMeta entryId="paper-notes/lwd-aloe-vla-post-training" />
+<SectionFeedback page="LWD와 ALOE" section="논문 정리와 비교" />
+
+## 먼저 보는 비교
+
+**두 논문은 실제 로봇에서 모은 실패·성공·사람의 교정 경험으로 flow-based VLA를 개선한다. LWD는 여러 로봇의 공유 경험으로 하나의 generalist policy를 계속 갱신하는 시스템, ALOE는 현재 policy의 action을 제대로 평가하는 critic에 초점을 둔다.** LWD의 DIVL은 replay action-value 분포에서 optimistic quantile을 뽑고, ALOE는 현재 actor가 생성한 다음 action chunk로 TD bootstrap한다.
+
+요청에 따라 두 논문을 이 페이지에 함께 정리했다. 앞의 안내와 뒤의 비교만 읽어도 차이를 파악할 수 있고, 각 논문 섹션에는 원문 방법·수식·데이터·recipe·모든 실험과 appendix를 포함했다. 두 논문의 Figure/Table 번호는 별도이므로 caption과 inventory에 항상 논문 이름을 붙였다.
+
+| 질문 | LWD | ALOE |
+| --- | --- | --- |
+| 주요 문제 | heterogeneous fleet replay에서 안정적인 generalist RL과 deployment loop | replay의 과거 행동 가치와 현재 policy의 action 가치가 다름 |
+| Value target | dataset action의 scalar Q 분포 → entropy-adaptive quantile | 현재 actor의 다음 chunk → current-policy Q의 TD target |
+| Policy 개선 | fixed BC flow reference + critic action gradient의 QAM | replay action의 clipped advantage-weighted flow-matching |
+| 수집 방식 | 16 actor의 비동기 수집·central learner·checkpoint redeploy | task별 human-in-the-loop collect → critic → actor의 iteration |
+| 대표 결과 | 8-task 평균 score .95. grocery binary SR + long-task partial score의 혼합 | Phone/Laundry/Sorting/Assembly SR 80/58.7/87/95% |
+| 관계 | offline-to-online implicit improvement와 fleet infrastructure | mixed replay에서 current-policy evaluation·action-level credit |
+
+**LWD의 .95와 ALOE의 95%는 같은 지표가 아니다.** ALOE 95%는 Phone Assembly 한 task의 완료율이고, LWD .95는 서로 다른 rubric을 적용한 여덟 task의 평균이다. 두 논문 사이의 직접 head-to-head benchmark도 없다.
+
+## LWD — Learning While Deploying
+
+### 메타데이터와 문제 설정
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | Learning While Deploying: Fleet-Scale Reinforcement Learning for Generalist Robot Policies |
+| 저자 | Yi Wang, Xinchen Li, Pengwei Xie, Pu Yang, Buqing Nie, Yunuo Cai, Qinglin Zhang, Chendi Qu, Jeffrey Wu, Jianheng Song, Xinlin Ren, Jingshun Huang, Mingjie Pan, Siyuan Feng, Zhi Chen, Jianlan Luo |
+| 그룹 | Shanghai Innovation Institute, AGIBOT Finch, Columbia University. Jianlan Luo corresponding author |
+| 공개·검토본 | 최초 2026-05-01, v4 2026-09-16. arXiv preprint, main/reference/Appendix A–D 총18쪽 |
+| 원문·공식 자료 | [arXiv v4](https://arxiv.org/abs/2605.00416v4), [PDF v4](https://arxiv.org/pdf/2605.00416v4), [Project·실물 영상](https://learning-while-deploying.github.io/) |
+| 핵심 구성 | Distributional Implicit Value Learning(DIVL), Q-learning with Adjoint Matching(QAM), distributed replay |
+
+offline demonstration만으로는 deployment의 긴 작업·rare failure·다양한 물체와 reset 조건을 충분히 다루기 어렵다. LWD는 배포를 고정 policy의 마지막 시험이 아니라 **새로운 경험을 학습 데이터로 돌려보내는 과정**으로 만든다. 성공 demonstration을 필터링해 재모방하는 것보다 실패·play·recovery의 outcome을 value learning에 활용하려는 연구다.
+
+<PaperFigure src="/lwd/figure-01.png" alt="LWD Figure 1: offline 초기화 → fleet experience → shared policy update → redeployment의 flywheel." caption="LWD Figure 1 · PDF v4 p.1. offline 초기화 → fleet experience → shared policy update → redeployment의 flywheel." />
+
+### 시스템과 로봇 설정
+
+| 항목 | 논문 계약 |
+| --- | --- |
+| 로봇 | AgiBot G1 dual-arm, 각 팔7 DoF·parallel-jaw gripper |
+| 관측 | head RGB + 두 wrist RGB, proprio, 짧은 task instruction |
+| Action·시간 | joint-position control 30Hz, action horizon H=30. control sample rate와 model 호출·학습·checkpoint 배포 주기는 별도 |
+| Fleet 배치 | grocery에4대, 네 long task에각3대, 총16대 |
+| Online budget | method당4시간 wall-clock, fleet 합계 약60 robot-hours로 설명 |
+| Sync | learner50 training steps마다 최신 policy publish, actor는 episode boundary에서 reload |
+| 수집·학습 | complete episode upload, shared offline/online replay, central learner. critic/value는 learner에 남고 policy만 actor에 배포 |
+
+<PaperFigure src="/lwd/figure-04.png" alt="LWD Figure 4: 16대의 동시 rollout 수집 장면. robot 수와 learner GPU 수는 같은 값이 아니다." caption="LWD Figure 4 · PDF v4 p.9. 16대의 동시 rollout 수집 장면. robot 수와 learner GPU 수는 같은 값이 아니다." />
+<PaperFigure src="/lwd/figure-03.png" alt="LWD Figure 3: Cocktail/Tea/Juice/Shoebox와 네 grocery scenario의 task sequence." caption="LWD Figure 3 · PDF v4 p.9. Cocktail/Tea/Juice/Shoebox와 네 grocery scenario의 task sequence." />
+
+grocery task는 Restocking, Correction, Freezer, Open-Cooler다. 물체 지정 instruction과 clutter·shelf/container layout을 변화시킨다. long task는 Gongfu Tea, Fruit Juice, Cocktail, Shoebox로 episode가 보통3–5분, 5–8 annotated subtask로 구성된다. tea preparation·pouring·fruit/tool handling·box packing에서 초기 오차가 뒤 단계까지 이어지는 설정이다.
+
+### Dataset와 reward
+
+static offline buffer는 **652.5 robot-hours**다. 성공 demonstration336.6h, 과거 policy의 성공 rollout88.8h, 실패 rollout39.2h, 인간이 failure mode를 탐색한 play187.9h다. play는 이 연구에서 unsuccessful data로 취급한다. demo+successful rollout은65.2%, fail rollout+play는34.8%다.
+
+| Task group | 시간 | 해석 |
+| --- | --- | --- |
+| Grocery | 122.7h | 네 task의 합. 전체18.8% |
+| Long-horizon | 529.8h | 전체81.2%; 긴 episode가 시간 비율을 지배 |
+| Reference SFT | demo336.6h | pretrained π0.5에서 BC checkpoint를 만드는 데이터 |
+| Offline RL | 전체652.5h | reward·outcome이 있는 성공/실패/play를 포함 |
+| Online RL | growing replay + static replay | mini-batch 약1:1. 실제 corrective action도 일반 replay transition으로 저장 |
+
+<PaperFigure src="/lwd/table-iv.png" alt="LWD Table IV: task별 demo/successful rollout/failed rollout/play 시간. 소수 한 자리 집계는 일부 행합과 subtotal에0.1h 차이가 있다." caption="LWD Table IV · PDF v4 p.16. task별 demo/successful rollout/failed rollout/play 시간. 소수 한 자리 집계는 일부 행합과 subtotal에0.1h 차이가 있다." />
+<PaperFigure src="/lwd/figure-07.png" alt="LWD Figure 7: 시간 기준 task/source/outcome 분포. episode 수나 sampling probability와 같지 않다." caption="LWD Figure 7 · PDF v4 p.16. 시간 기준 task/source/outcome 분포. episode 수나 sampling probability와 같지 않다." />
+
+각 episode는 success/failure/timeout label을 갖고, 학습 reward는 **성공 terminal에서1, 그 외0**이다. action chunk 안의 per-step reward를 discount해 chunk reward `r̄_t`로 만든다. 이후 TD는 step-count에 맞춰 `γ^H`를 사용한다. evaluation의 단계별0/0.5/1 credit은 training reward와 다른 계약이다.
+
+공개 논문이 보장하는 transition은 `(s_t, a_t:t+H, r̄_t, s_t+H)`이며 state는 image/proprio/instruction, action은 실제 실행한 chunk다. 원시 파일 key·정확한 joint/gripper 순서·단위·normalization stats·episode filtering 구현은 공개 학습 코드로 확인할 수 없다. operator가 필요한 correction을 판단하는 human-in-the-loop 수집이지, 모든 reset·reward·교정이 자동이라는 뜻은 아니다.
+
+### Method: DIVL이 무엇의 분포를 배우는가?
+
+IQL은 dataset action들의 Q를 높은 **expectile**에 맞춰 scalar V를 학습한다. DIVL은 같은 상태에서 replay action에 부여된 **scalar Q의 분포**를 categorical V로 학습하고 그 분포의 **quantile**을 bootstrap 값으로 선택한다.
+
+```text
+pψ(v | s) = distribution of Q̄(s, a), for a ~ D(· | s)
+V loss = E_D[-log pψ(Q̄(s, a) | s)]
+y_Q = r̄_t + γ^H Quantτ(Vψ(s_t+H))
+Q loss = E_D[(Q(s_t, a_t:t+H) - y_Q)^2]
+```
+
+<PaperFigure src="/lwd/figure-02.png" alt="LWD Figure 2: offline/online의 공통 DIVL+QAM objective, actor와 공유 V/Q backbone, 온라인 replay1:1." caption="LWD Figure 2 · PDF v4 p.5. offline/online의 공통 DIVL+QAM objective, actor와 공유 V/Q backbone, 온라인 replay1:1." />
+
+여기서 distributional V는 current-policy action을 샘플링한 평균 Vπ와 다르다. 확률적 rollout return 전체 `Zπ(s,a)`를 직접 학습하는 것도 아니다. 원문의 Eq.11은 **replay 행동 분포를 scalar critic Q로 보낸 pushforward distribution**이다. TD target은 explicit `max_a Q`나 현재 actor의 OOD candidate를 조회하지 않고 data-supported 높은 quantile을 선택한다.
+
+Appendix A.1은201개 atom을[-0.1,1.1]에 놓는다. EMA Q target을 support에 clip하고 C51 방식으로 인접한 두 atom에 선형 배분해 cross-entropy를 계산한다. quantile은 cumulative probability가τ 이상인 첫 atom이다. Q critic은 scalar double-Q이며 categorical output은 state-value head V에 있다.
+
+**Optimism은 entropy로 조절한다.** normalized entropy `Hnorm = -sum p_c log p_c / log C`에 대해 `τ(s)=clip(τbase - α·Hnorm(s), τmin, τmax)`를 사용한다. distribution이 퍼지면τ를 낮추고, 집중되면 더 높은 bootstrap 값을 선택한다. TD target의 τ는 stop-gradient로 취급한다. 이 entropy는 학습된 분포의 분산/혼합성을 나타내는 heuristic이며 calibrated epistemic uncertainty의 보장은 아니다.
+
+Appendix A.2의 Proposition1은 이상적인 capacity·충분히 세밀한 discretization에서 **분포를 학습한 뒤 특정 asymmetric statistic을 추출하는 방법**과 **같은 asymmetric loss를 직접 최소화하는 방법**의 최적 scalar가 같음을 보인다. p=2는 expectile, p=1은 quantile이다. 동일τ에서 expectile과 quantile이 서로 같거나 finite201-atom 구현의 정확한 equality·online 안정성이 증명된 것은 아니다.
+
+### Method: chunk backup과 QAM policy extraction
+
+offline long task에는10-step **chunk-level** TD를 사용한다. H=30이므로 최대300 control step의 reward를 한 backup에서 전달한다. grocery는1-step chunk TD다. terminal이 window 안에 있으면 bootstrap을 제거한다.
+
+online에서는 모든 task에1-step chunk TD를 사용한다. 인간 intervention이 끼어드는 heterogeneous trajectory에서 긴 backup이 한 policy의 연속 실행을 대표하지 않을 수 있다는 저자의 설명이다. 이는 관찰에 기반한 설계 이유이며 intervention crossing이 원인임을 분리한 별도 ablation은 아니다.
+
+QAM의 개선 목표는 fixed BC reference `πβ`를 기반으로 `π*(a|s) ∝ πβ(a|s) exp(Q(s,a)/λ)`를 만든다는 KL-regularized 형태다. flow를 끝까지 unroll해 actor parameter로 역전파하면 비용·수치 불안정이 크므로, reference trajectory endpoint에서 **action gradient**를 구하고 adjoint dynamics로 local regression target을 만든다.
+
+```text
+Fixed reference: fβ = demonstration-BC flow before offline RL
+Terminal adjoint: g̃_1 = -∇_a[Q(s, a_1) / λ]
+Local actor objective: integrate ||2(fθ-fβ)/σ_w + σ_w g̃_w||² over flow time w
+```
+
+λ=2이며 reference fβ는 offline/online 전반에 고정한다. DIVL은 replay-supported bootstrap을 사용하지만 QAM은 **reference-generated endpoint의 critic gradient**를 조회한다. 따라서 LWD가 어떤 단계에서도 생성 action의 critic을 전혀 query하지 않는다고 설명하면 안 된다.
+
+Algorithm1의 runtime은 BC reference 초기화 → offline learner update → actor rollout/intervention 저장 → offline/online 혼합 learner update →50-step publish다. Algorithm2는 V target fit → quantile TD → Q update·EMA → reference flow rollout·endpoint gradient → adjoint regression 순서다. Algorithm2 line7의 endpoint 표기 `a¹_t=a_t`는 reference 생성 action과 replay action의 변수 구분을 충분히 드러내지 않는다. source code가 없어 그 assignment의 실제 구현은 확인하지 못했다.
+
+### Model Architecture와 Training Recipe
+
+| 구성·학습 | 확인된 설정 |
+| --- | --- |
+| Actor | π0.5-style PaliGemma: Gemma2B + SigLIP, Gemma300M action expert |
+| Value/critic backbone | shared Gemma3-270M-IT + SigLIP-So400M, readout-token state representation |
+| V head | 201 categorical atoms[-.1,1.1], Q target의 C51 projection |
+| Q head | action temporal attention pooling + state feature → 두 scalar head, clipped double-Q의 minimum |
+| Offline RL | actor와 value/critic 모두 fine-tuning |
+| Online RL | actor의 VLM 고정·action expert만 update. value/critic은 계속 전체 fine-tuning |
+| Policy optimizer | AdamW, base lr2e-5, cosine decay |
+| Value/Q optimizer | Adam, base lr5e-4, cosine decay |
+| TD | γ=.9999; offline long n=10/grocery n=1, online n=1 |
+| Adaptiveτ | offline τbase=.6, online .9, α=.3. τmin/max 구체값은 Appendix B2에서 미명시 |
+| Replay·EMA | offline/online 약1:1, EMA rate .005로 설명 |
+| 공개되지 않은 recipe | batch, warmup, training GPU 수, 정확한 전체 gradient budget·normalization 구현 |
+
+Figure8은 offline 약40k·online 약5k step 구간의 illustrative curve다. 이를 모든 baseline/실험의 확정 step budget으로 대체하지 않는다. Algorithm2의 `Q̄ ← ρ Q̄ +(1-ρ)Q`와 Appendix의 EMA rate .005는 rate를 old/new weight 중 어디에 쓰는지 구현 대조가 필요하다.
+
+<PaperFigure src="/lwd/figure-08.png" alt="LWD Figure 8: offline/online entropy 감소와τ 증가의 smoothed curve. 각각의τbase가 다르다." caption="LWD Figure 8 · PDF v4 p.17. offline/online entropy 감소와τ 증가의 smoothed curve. 각각의τbase가 다르다." />
+
+### Main results: .95는 mixed task score
+
+grocery는 time limit 안에 instruction을 따르고 task를 끝낸 **binary completion**이다. long task는 trained human evaluator가 각 sub-step을1(자율 성공),0.5(작은 불완전함/한 번 retry 성공),0(여러 시도 후 실패)로 평가한 평균이다. 따라서 long score .91는91% episode가 완전히 끝났다는 뜻이 아니다.
+
+| Method | Restock | Correct | Freezer | Cooler | Tea | Juice | Cocktail | Shoes | Avg. |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SFT | .70 | .88 | .83 | .95 | .64 | .66 | .70 | .70 | .76 |
+| RECAP | .95 | .96 | .94 | .95 | .84 | .82 | .71 | .70 | .85 |
+| HG-DAgger | 1.00 | .92 | .92 | 1.00 | .60 | .66 | .76 | .90 | .85 |
+| LWD Offline | 1.00 | 1.00 | .92 | .95 | .72 | .74 | .83 | .86 | .88 |
+| LWD Online | 1.00 | 1.00 | .97 | .98 | .89 | .90 | .93 | .92 | .95 |
+
+<PaperFigure src="/lwd/table-i.png" alt="LWD Table I: 각 task의 원값·mixed average. long task는 step-wise score, grocery는 binary SR." caption="LWD Table I · PDF v4 p.10. 각 task의 원값·mixed average. long task는 step-wise score, grocery는 binary SR." />
+<PaperFigure src="/lwd/figure-05.png" alt="LWD Figure 5: headline bar와 cycle time. 상세 task 값은 Table I를 기준으로 읽는다." caption="LWD Figure 5 · PDF v4 p.10. headline bar와 cycle time. 상세 task 값은 Table I를 기준으로 읽는다." />
+
+long-task 평균은 SFT.68 → Offline.79 → Online.91이고, RECAP.77/HG-DAgger.73이다. grocery 평균은 Online 약.99로 포화하지만 Open-Cooler에서는 HG-DAgger1.00 > LWD.98다. “모든 task에서 유일한 최고”는 아니다.
+
+LWD의 cycle time은 성공·실패 시도 모두 포함하며 실패는 task-specific timeout에 clip한다. 저자는 SFT 대비 네 long task의 평균23.75초 감소를 보고한다. 이 시간을 reset·fleet training·인간 노동까지 포함한 end-to-end 생산성으로 확대하지 않는다.
+
+평가 trial/seed 수와 세부 step rubric의 완전한 목록은 명확히 공개되지 않았다. Table I만으로 n/total·confidence interval을 복원하지 않는다. 여러 task를 하나의 policy로 유지했다는 결과는 이 여덟 task에 관한 evidence이며 모든 pretraining 능력의 무손실 유지 증거는 아니다.
+
+### Baseline budget·ablation·value diagnostics
+
+SFT는336.6h demo만 학습하고 LWD는 전체652.5h의 실패/play를 활용한다. RECAP은 같은 value backbone의 state-value head로 lookahead advantage를 만들어 top30% positive와 human correction을 advantage condition에 사용한다. HG-DAgger는 demo와 online correction/rollout을 모방한다. policy optimizer·schedule을 맞췄지만 학습 신호와 활용 데이터는 다르다.
+
+본문은 각 online method에4h·약60 robot-hours를 배정했다고 설명한다. Appendix C의 RECAP recipe는 **두 rollout round에 각각 약60 robot-hours**라고 기록한다. 이 관계가 불명확하므로 모든 baseline의 interaction budget이 정확히 같다고 단정하지 않는다.
+
+scalar expectile → DIVL의 long-score는 offline .72→.79, online .78→.91다. Table II의 **+9.7%/+16.7%는 relative improvement**이며 absolute는+7/+13 percentage points다. Table V의 task별 결과에서는 모든 cell이 개선된 것은 아니다. 예를 들어 Freezer offline 1.00→.92, online .92→.97이다.
+
+<PaperFigure src="/lwd/table-ii.png" alt="LWD Table II: short/long·offline/online의 평균과 relative gain." caption="LWD Table II · PDF v4 p.11. short/long·offline/online의 평균과 relative gain." />
+<PaperFigure src="/lwd/table-v.png" alt="LWD Table V: 모든 task cell. average gain이 각 task의 일관된 우위를 뜻하지 않는다." caption="LWD Table V · PDF v4 p.18. 모든 task cell. average gain이 각 task의 일관된 우위를 뜻하지 않는다." />
+
+adaptiveτ는 offline 평균.84→.88이다. constantτ=.52는 adaptive run의 관측 평균으로 설정했다. Shoes는 constant.90 > adaptive.86, Juice는 .76>.74, Freezer는 .94>.92로 trade-off가 있다. “모든 task에서 adaptive 우세”라고 표현하지 않는다.
+
+<PaperFigure src="/lwd/table-iii.png" alt="LWD Table III: constant/adaptive의 task별 결과와 전체 평균." caption="LWD Table III · PDF v4 p.12. constant/adaptive의 task별 결과와 전체 평균." />
+
+Figure6의 successful/failed Tea trace와 Figure9의 categorical distributions는 progress를 구분하는 qualitative evidence다. successful mode가 약.4→1, failure는 약.5→.6에 머무른다. 전체 episode의 calibration error·counterfactual ranking·OOD lower bound를 측정한 결과와는 구분한다.
+
+<PaperFigure src="/lwd/figure-06.png" alt="LWD Figure 6: 선택된 성공/실패 Tea episode의 quantile value curve." caption="LWD Figure 6 · PDF v4 p.11. 선택된 성공/실패 Tea episode의 quantile value curve." />
+<PaperFigure src="/lwd/figure-09.png" alt="LWD Figure 9: 동일 episode의 categorical value 분포. 잘 되는 trajectory에서 mode가 이동한다." caption="LWD Figure 9 · PDF v4 p.17. 동일 episode의 categorical value 분포. 잘 되는 trajectory에서 mode가 이동한다." />
+
+### Appendix: 분산 데이터·재현 범위·한계
+
+Appendix A는 C51 projection·asymmetric statistic 정리·flow full-unroll sensitivity matrix를, B는 data와 recipe를, C는 baseline·추가 value 결과를, D는 fleet data infrastructure를 보강한다. 알고리즘 proof와 실제 finite-model/online guarantee를 구분해 위에 반영했다.
+
+actor는 episode 단위로 object storage에 payload를 upload하고 durable message queue로 event를 보낸다. Coordinator가 증가하는 snapshot version을 commit하며, multi-host SPMD JAX learner의 DRB Reader는 cross-host barrier로 같은 snapshot을 읽는다. node별 prefetcher subprocess가 data를 받고, publish-subscribe로 policy를 fanout한다. 이는 각 robot에 critic을 배포하는 구조가 아니다.
+
+<PaperFigure src="/lwd/figure-10.png" alt="LWD Figure 10: actor upload·event, Coordinator/versioned snapshot, DRB Reader·multi-host learner, policy fanout." caption="LWD Figure 10 · PDF v4 p.17. actor upload·event, Coordinator/versioned snapshot, DRB Reader·multi-host learner, policy fanout." />
+<PaperFigure src="/lwd/table-vi.png" alt="LWD Table VI: 별도8-hour·16-actor profile의 P50/P99. training task evaluation의4-hour budget과 구분한다." caption="LWD Table VI · PDF v4 p.18. 별도8-hour·16-actor profile의 P50/P99. training task evaluation의4-hour budget과 구분한다." />
+
+8-hour·16-actor profile에서는1604 episode가 steady state에서 pipeline을 완료했다. at-least-once delivery·atomic commit·retry를 설명하며 exactly-once 또는 무한 기간의 무손실 보장은 아니다. episode→learner latency P50/P99 **41/148초**, model publish→actor **38/55초**다. network bandwidth·contention에 따라 달라지고 robot control30Hz와 다른 시간축이다.
+
+공식 프로젝트/PDF에서 model·loss·training·loader·deployment의 공개 학습 repository나 weight/data release는 확인되지 않았다(2026-10-13). 위 구현 설명은 **논문 Figure2/Algorithm1–2/Appendix** 근거이며 source-code trace가 아니다. 정확한τ clip 범위·EMA convention·schema·device config는 재현에 남는 빈칸이다.
+
+저자는 online update schedule의 장기 scaling, 짧은 instruction만 사용하는 long-task reasoning, explicit execution-safety objective 부재를 한계로 제시한다. human correction과 제한된 여덟 task의 경험을 이용한 결과이므로 완전 자율 대규모 deployment·safe continual learning이 검증되었다고 확대하지 않는다.
+
+## ALOE — Action-Level Off-Policy Evaluation
+
+### 메타데이터와 문제 설정
+
+| 항목 | 내용 |
+| --- | --- |
+| 논문 | ALOE: Action-Level Off-Policy Evaluation for Vision-Language-Action Model Post-Training |
+| 저자 | Rushuai Yang, Hecheng Wang, Zhichao Wu, Chiming Liu(앞4명 equal contribution), Xiaohan Yan, Xuan Du, Shuoyu Yue, Chuheng Zhang, Yunlong Wang, Yongcheng Liu, Lizhe Qi, Yi Chen, Wei Shan, Maoqing Yao |
+| 그룹 | AgiBot, HKUST, Fudan University, Nanjing University, Independent Researcher. Chiming Liu corresponding author |
+| 공개·검토본 | 최초 2026-02-13, v3 2026-06-20. arXiv preprint, main/reference/Appendix8.1–8.7 총22쪽 |
+| 원문·공식 자료 | [arXiv v3](https://arxiv.org/abs/2602.12691v3), [PDF v3](https://arxiv.org/pdf/2602.12691v3), [Project·영상](https://rooshy-yang.github.io/aloe/), [웹페이지 소스](https://github.com/AgibotTech/aloe) |
+| 공개 code 기준 | 홈페이지 commit `aafb7e81cf344a29557c116b0b196e565c5e69c7`; algorithm 학습 코드와 별도 |
+
+replay는 과거 checkpoint, current rollout, human demonstration/correction을 섞는다. 그 episode return으로 V를 학습하면 “과거/인간이 이어서 했을 때의 결과”를 맞출 수 있지만, 현재 robot policy가 그 state에서 같은 결과를 낼지는 다르다. **ALOE는 first chunk의 실제 action을 조건으로 주고, 이후 current policy가 행동할 때의 Qπ를 평가**하려 한다.
+
+<PaperFigure src="/aloe/figure-01.png" alt="ALOE Figure 1: flow actor, action-conditioned ensemble critic, collect/evaluate/improve loop와 네 실물 task." caption="ALOE Figure 1 · PDF v3 p.2. flow actor, action-conditioned ensemble critic, collect/evaluate/improve loop와 네 실물 task." />
+
+### 시스템·task와 Dataset
+
+두 AgiBot robotic setup을 설명하며 dual7-DoF arm, mobile base/adjustable waist, standard gripper 또는 modular dexterous hand를 지원한다. front/head와 양쪽 wrist의 RGB를 사용한다. 동시 actor 수·fleet parallel training budget은 명시되지 않아 이를 “16대 fleet”과 동일하게 비교하지 않는다.
+
+inference는 single RTX4090, joint/gripper output, control30Hz·asynchronous control로 설명한다. 각 task의 action space는14D지만 정확한 joint/gripper index·unit·normalization schema는 공개 학습 코드로 확인하지 못했다.
+
+<PaperFigure src="/aloe/figure-02.png" alt="ALOE Figure 2: phone packing, laundry, sorting, phone assembly의 stage와 두 setup." caption="ALOE Figure 2 · PDF v3 p.3. phone packing, laundry, sorting, phone assembly의 stage와 두 setup." />
+
+| Task | Demo | Proprio | Max steps | Predicted chunk / executed prefix | Reset·변화 |
+| --- | --- | --- | --- | --- | --- |
+| Pack Smart Phone | 50 | 32D | 2000 | 50 / 25 | human reset, x/y3cm 범위 |
+| Folding Laundry | 150 | 32D | 10000 | 50 / 5 | human reset, 바구니 안 옷의 임의 배치 |
+| Product Sorting | 50 | 32D | 10000 | 50 / 5 | human reset, bin의 object 배치 변화 |
+| Phone Assembly | 150 | 14D | 10000 | 50 / 5 | x/y1cm. task table에 reset 항목은 생략 |
+
+<PaperFigure src="/aloe/table-02.png" alt="ALOE Table 2: phone packing의 demo·observation·action/execute horizon·max length." caption="ALOE Table 2 · PDF v3 p.16. phone packing의 demo·observation·action/execute horizon·max length." />
+<PaperFigure src="/aloe/table-03.png" alt="ALOE Table 3: laundry의 긴 episode,150 demo와5-step executed prefix." caption="ALOE Table 3 · PDF v3 p.17. laundry의 긴 episode,150 demo와5-step executed prefix." />
+<PaperFigure src="/aloe/table-04.png" alt="ALOE Table 4: sorting의 two-bin cleanup와50 demo." caption="ALOE Table 4 · PDF v3 p.18. sorting의 two-bin cleanup와50 demo." />
+<PaperFigure src="/aloe/table-05.png" alt="ALOE Table 5: assembly의14D proprio·150 demo·5-step prefix." caption="ALOE Table 5 · PDF v3 p.18. assembly의14D proprio·150 demo·5-step prefix." />
+
+Phone은 container에 넣고 lid를 닫는 정밀 task, Laundry는 basket→펴기→접기, Sorting은 두 bin의 물체를 conveyor로 옮기되 각 arm이 자신의 bin만 처리, Assembly는 case/manual/cable/plug 네 accessory를 지정 위치에 놓는 약80초 task다. 각 task의 성공 조건·failure trigger를 동일한 “pick-place”로 뭉뚱그리지 않는다.
+
+<PaperFigure src="/aloe/figure-12.png" alt="ALOE Figure 12: seen/unseen sorting object와 phone accessories." caption="ALOE Figure 12 · PDF v3 p.17. seen/unseen sorting object와 phone accessories." />
+
+매 round 보통50개의 successful trajectory, Assembly는약100개를 확보한 뒤 재학습한다. recoverable mistake는 failure 지점에서 teleoperation으로 완성하고, unrecoverable mistake는 종료·reset한다. autonomous 성공/실패 fragment와 human corrective action을 **모두** 저장한다. human correction으로 끝난 successful trajectory도 포함하므로 round 목표 수를 autonomous success 수와 동일하게 읽지 않는다.
+
+공개 transition 계약은 `(s_t,a_t,r_t,s_t+1,d_t,language)`이며 training record의 실제 file key·chunk boundary/termination 구현은 미공개다. “fixed amount of data per iteration”은 successful trajectory quota에 관한 설명이다. 전체 시도 수·총 raw step·수집 wall-clock은 policy에 따라 달라질 수 있어 동일한50회 interaction이라는 뜻이 아니다.
+
+### Reward: terminal success0, intermediate-1
+
+네 task 모두 성공 terminal은0, intermediate는-1, 실패는 `-Cfail`이다. `Cfail`은 task의 평균 trajectory length로 설정해 실패 penalty를 통상 unsuccessful rollout 길이에 맞춘다. 이는 LWD의 sparse binary0/1 terminal reward와 다르며 **성공 여부뿐 아니라 시간 비용**도 학습 신호에 들어간다.
+
+failure trigger에는 empty grasp·object drop·insert/placement error·collision·timeout이 있다. Laundry는 충분히 펴지 않은 채 접기·여러 layer grasp·반복 shaking·다시 펼치기도 failure로 분류한다. 성공/실패 판정은 사람의 감독과 task 규칙을 사용하며 learned policy가 자동 safety certificate를 갖는다는 뜻은 아니다.
+
+### Method: data-policy value와 current-policy Q
+
+MC state-value는 replay episode return을 맞추고, replay next-action을 쓰는 SARSA-style TD는 implicit mixture behavior `πD`의 가치를 맞춘다. πD에는 사람과 여러 old checkpoint가 섞여 실제 하나의 executable checkpoint가 아닐 수 있다.
+
+ALOE는 replay의 state/action/transition을 사용하되, **다음 action을 current actor πθ에서 다시 생성**한다. chunked action-value는 지금부터 h개의 control step 동안 정확히 주어진 action sequence를 실행하고, 그 뒤 current policy를 따르는 return을 목표로 한다.
+
+```text
+A_t = [a_t, ..., a_t+h-1]
+y_t = sum(k=0..h-1) γ^k r_t+k
+      + γ^h (1-d_t+h-1) E_A'~πθ(·|s_t+h,ℓ)[Q_target(s_t+h,A',ℓ)]
+Lcritic = mean_i E_D[(Q_i(s_t,A_t,ℓ)-y_t)^2]
+Q_pess(s,A,ℓ) = min_i Q_i(s,A,ℓ)
+```
+
+chunk 내부 action은 실제 실행한 segment에서 가져오고, 그 다음 bootstrap action은 current actor에서 가져온다. `A'`를 buffer의 과거 next action으로 바꾸면 다른 target이 된다. Q-chunking은 중간 reward와 전체 실행 action sequence를 함께 조건화한다. ordinary one-step state-value의 시간 간격만 늘리는 방법과 구분해야 한다.
+
+h=50, critic 기본 K=2다. minimum aggregation은 policy extraction에서 명시적으로 사용하며, weakly covered/OOD action의 과대평가를 줄이려는 선택이다. Eq.4는 target을 `Qϕ−`로 표시하지만 bootstrap에서 ensemble을 정확히 어떻게 조합하는지, 기대값에 몇 개의 actor sample을 쓰는지까지 공개하지 않는다. minimum은 보수적 heuristic이며 모든 state에서 보장된 lower confidence bound는 아니다.
+
+### Method: clipped advantage와 weighted flow loss
+
+current-policy baseline은 **동일 state**에서 current actor의 action chunk를 샘플링하고 pessimistic Q를 평균한 것이다. 별도의 MC progress value와 다르다.
+
+```text
+Vπ(s,ℓ) = E_A'~πθ[Q_pess(s,A',ℓ)]
+Aπ(s,A,ℓ) = Q_pess(s,A,ℓ) - stopgrad(Vπ(s,ℓ))
+w = exp(clip(Aπ/β, -εclip, εclip))
+Actor update = replay action에 대한 weighted flow-matching regression
+```
+
+β=.5다. replay action의 상대적인 품질로 weight를 바꾸므로 실패 trajectory를 통째로 버리는 학습이 아니다. weight clipping은 특정 sample의 영향력을 제한한다. PPO의 policy-ratio clipping과 같은 연산이 아니고, 매 update의 KL radius를 직접 측정한 것도 아니다.
+
+continuous flow policy의 exact log-likelihood를 계산하기 어려워 negative flow-matching objective를 proxy로 사용한다. 원문 Eq.7의 noised action은 `ã=ηA+(1-η)ε`, loss는 `w·||ε-A-fθ(ã,s,ℓ)||²`다. η는 uniform time, ε는 Gaussian noise다. 여기서는 원문 target 부호를 유지했다. 실제 time axis/reverse-flow convention과 time embedding은 공개 코드로 확인하지 못했다. **weighted flow loss는 surrogate이며 exact weighted log-likelihood를 수치 계산한 결과가 아니다.**
+
+critic과 actor는 이전 iteration의 weights에서 계속 fine-tuning한다. Algorithm1은 round마다 collect/human-correct → critic 10000 updates → actor 5000 updates → 새 policy로 다음 round 순서다. 매 actor gradient step마다 critic을 새로 학습하는 것은 이 알고리즘에 없다. 따라서 current-policy Q는 critic의 추정 목표이며, actor의 모든 update 순간에 이미 완벽하게 갱신된 Qπ가 있다는 보장은 아니다.
+
+### Model Architecture와 Training Recipe
+
+| 구성 | 논문·부록 기준 |
+| --- | --- |
+| Actor | π0.5 flow VLA. Appendix8.3.1은 약3B로 기술 |
+| Actor trainable | vision encoder를 제외한 full-parameter fine-tuning. main의 end-to-end 설명과 함께 읽음 |
+| Critic vision | frozen SigLIP. actor와 같은 camera/proprio 사용 |
+| Critic tokens | K Q readout token + proprio token +50 action token +3 camera embedding. K=2이면56 tokens |
+| Critic encoder | hidden256, 6 Transformer layers, 8 heads, independent scalar Q-head |
+| Critic optimizer | AdamW β1=.9/β2=.95, cosine peak3e-5·warmup100, batch256, grad clip1 |
+| TD·target | γ=.99, target Polyak new-weight coefficient.005, 기본 K=2/h=50 |
+| Actor weight | β=.5. εclip 구체값은 미명시 |
+| Iteration updates | NQ=10000, Nπ=5000. optimizer state/reset·target sampling 수 등은 공개 구현 미확인 |
+| Deployment | single RTX4090, 30Hz control, task별 executed prefix25 또는5 |
+| 미확인 recipe | actor별 optimizer/batch 전체 설정, training GPU 수, clip bound·sampling 수, data boundary/normalization 구현 |
+
+Figure1의 actor diagram은 Gemma4B+action expert860M으로 표시하지만 Appendix8.3.1은 약3B라고 쓴다. 확인 가능한 config/checkpoint가 없어 두 설명의 관계를 확정하지 못했다. diagram의 critic Transformer 약5M·Q head 약.2M은 frozen SigLIP400M과 별도 범위다.
+
+AWR baseline도 **256-bin distributional state-value**를 사용한다. MC return을 target으로 학습한 뒤 기대값을 scalar V로 사용한다. 따라서 기존 value 방법이 모두 distributional modeling을 하지 않는다는 비교는 틀리다. DIVL과는 observed return/replay Q라는 학습 target, bootstrap, policy extraction도 다르다.
+
+RECAP baseline은 AWR critic을 쓰되 human intervention 또는 top10% advantage를 positive로 분류한다. prompt에 Advantage condition을 넣고, 훈련 시30% condition dropout, inference에서 CFG scale1을 적용한다. RECAP 비교는 Assembly에만 제공되므로 나머지 세 task의 값을 추가로 추정하지 않는다.
+
+### Main results와 evaluation protocol
+
+| Method | Pack Phone | Folding Laundry | Product Sorting | Phone Assembly |
+| --- | --- | --- | --- | --- |
+| BC warm-start | 5.0 | 15.0 | 5.0 | 10.0 |
+| DAgger | 43.3 | 43.0 | 82.0 | 55.0 |
+| AWR | 65.0 | 52.2 | 80.0 | 80.0 |
+| RECAP | — | — | — | 70.0 |
+| ALOE | 80.0 | 58.7 | 87.0 | 95.0 |
+
+<PaperFigure src="/aloe/table-06.png" alt="ALOE Table 6: 네 task의 warm-start success. LWD의336.6h reference와 다른 출발점이다." caption="ALOE Table 6 · PDF v3 p.19. 네 task의 warm-start success. LWD의336.6h reference와 다른 출발점이다." />
+<PaperFigure src="/aloe/figure-06.png" alt="ALOE Figure 6: 네 task의 final SR과 baseline. 원문은 task당60 evaluation trials로 설명한다." caption="ALOE Figure 6 · PDF v3 p.7. 네 task의 final SR과 baseline. 원문은 task당60 evaluation trials로 설명한다." />
+<PaperFigure src="/aloe/table-09.png" alt="ALOE Table 9: Phone/Laundry/Sorting의 상세 값과 error bars." caption="ALOE Table 9 · PDF v3 p.20. Phone/Laundry/Sorting의 상세 값과 error bars." />
+<PaperFigure src="/aloe/table-10.png" alt="ALOE Table 10: Assembly95%와 DAgger/AWR/RECAP 비교." caption="ALOE Table 10 · PDF v3 p.21. Assembly95%와 DAgger/AWR/RECAP 비교." />
+
+AWR 대비 ALOE의 증가는 Phone15pp, Laundry6.5pp, Sorting7pp, Assembly15pp다. 네 task의 ALOE 단순 평균은80.175%, 약80.2%다. 원문 Table1의75.2%는 **앞의 세 task에 대한 ablation 평균**이다. 네 task 전체 평균이나 LWD .95와 같은 headline으로 사용하지 않는다.
+
+Figure6/Appendix는 final policy를 task당60 trial로 평가했다고 설명한다. 그러나 Table9 Laundry error bar는 DAgger±1.0/AWR±2.0/ALOE±.8로, 60-trial binomial SE 및 Table1의 ALOE±6.4와 맞지 않는다. Sorting87.0·Laundry58.7 등의 rate만으로 정확한 정수 n/total도 복원할 수 없다. 발표된 SR을 보존하고, 추가 seed/round를 추정해 설명하지 않는다.
+
+### Policy iteration·throughput·generalization
+
+Phone의 ALOE iteration0–5는5/10/15/45/65/80%, DAgger는5/5/5/25/55/43.3%, AWR는5/5/5/10/40/65%다. 모든 baseline이 단조 개선되는 것은 아니다. Assembly는 ALOE10/65/75/95%, AWR10/60/55/80%, RECAP10/55/50/70%다.
+
+Sorting Table11의 endpoint는 ALOE5/20/40/**90**%, DAgger5/5/15/**80**%, AWR5/5/38/**75**%다. final Table9는 각각**87/82/80**%다. 원문이 평가 round 차이를 명확히 설명하지 않으므로 두 presentation을 각 출처에 맞춰 보존한다.
+
+<PaperFigure src="/aloe/figure-08.png" alt="ALOE Figure 8: Phone/Sorting/Assembly의 iteration 곡선. 같은 wall-clock·총 interaction 횟수의 비교가 아니다." caption="ALOE Figure 8 · PDF v3 p.8. Phone/Sorting/Assembly의 iteration 곡선. 같은 wall-clock·총 interaction 횟수의 비교가 아니다." />
+<PaperFigure src="/aloe/table-11.png" alt="ALOE Table 11: iteration-wise 값. Sorting endpoint와 final Table9를 구분한다." caption="ALOE Table 11 · PDF v3 p.21. iteration-wise 값. Sorting endpoint와 final Table9를 구분한다." />
+
+| Method | Phone throughput(successes/hour) | Unseen Sorting SR | Laundry disturbance recovery SR |
+| --- | --- | --- | --- |
+| DAgger | 86.1 | 62.5% | 88.5% |
+| AWR | 82.9 | 38.8% | 84.6% |
+| ALOE | 92.5 | 68.8% | 92.3% |
+
+<PaperFigure src="/aloe/figure-07.png" alt="ALOE Figure 7: Phone throughput, unseen shape/color sorting, laundry disturbance." caption="ALOE Figure 7 · PDF v3 p.7. Phone throughput, unseen shape/color sorting, laundry disturbance." />
+<PaperFigure src="/aloe/table-12.png" alt="ALOE Table 12: 원문 값·error bars. throughput은 reset·scene setup을 제외한다." caption="ALOE Table 12 · PDF v3 p.21. 원문 값·error bars. throughput은 reset·scene setup을 제외한다." />
+
+Appendix8.5는 먼저 throughput을 completed episodes/hour라 부르고, 다음에는 successful completions/hour로 명시한다. Figure7/Table12는 후자를 쓰므로 본 페이지도 그 정의를 따른다.92.5를 사람의 reset까지 포함한 end-to-end 생산성으로 해석하지 않는다.
+
+unseen sorting은 물체의 외관/기하를 바꾸고 추가 fine-tuning 없이 평가한다. Laundry disturbance는 실행 중 garment에 가하는 random perturbation과 그 이후의 recovery다. 프로젝트 영상의 Phone19/21은 selected continuous-operation trace이며 공식60-trial 평가와 별도다. Phone case17.8×8.8cm와 container17.5×8.6cm는 명칭·내외부 치수 관계가 불명확해 그 값으로 직접 clearance나 collision constraint를 계산할 수 없다.
+
+### Critic·actor ablation과 diagnostics
+
+Table1은 동일 recipe에서 action conditioning을 제거하고, 이어 off-policy TD를 제거한다. 세 task 평균은**75.2→65.1→58.3%**다. action-masked TD는 state-level variant이고, MC variant는 current-policy Q bootstrap을 유지하는 방법이 아니다.
+
+<PaperFigure src="/aloe/table-01.png" alt="ALOE Table 1: full/action-masked TD/MC 세 조건과3-task 평균." caption="ALOE Table 1 · PDF v3 p.8. full/action-masked TD/MC 세 조건과3-task 평균." />
+
+Q-chunking 1-step/TD5/TD15/TD50에서 Phone throughput은52.9/72.6/75.2/83.3 tasks/h, SR은70/70/80/85%다. 학습 h=50과 inference 실행 prefix25/5는 다른 시간 구조다. component 실험의 TD50 결과는 Main Phone80%/92.5 tasks/h와 같은 행이 아니므로 대체해 쓰지 않는다.
+
+<PaperFigure src="/aloe/figure-09.png" alt="ALOE Figure 9: Q chunk 길이와 ensemble aggregation 두 종류의 ablation." caption="ALOE Figure 9 · PDF v3 p.8. Q chunk 길이와 ensemble aggregation 두 종류의 ablation." />
+<PaperFigure src="/aloe/table-13.png" alt="ALOE Table 13: Phone throughput과 SR. Main 결과와 구분한다." caption="ALOE Table 13 · PDF v3 p.21. Phone throughput과 SR. Main 결과와 구분한다." />
+<PaperFigure src="/aloe/table-14.png" alt="ALOE Table 14: Mean2/Min1/Min2/Min4의 OOD success45/60/70/75%." caption="ALOE Table 14 · PDF v3 p.21. Mean2/Min1/Min2/Min4의 OOD success45/60/70/75%." />
+
+해당 OOD 조건에서는 ensemble을 늘리면 유리하지만, default는 K=2다. Main unseen sorting68.8%와 component Min2의70%도 다른 결과다. min aggregation을 모든 action의 보장된 confidence bound로 해석하지 않는다.
+
+clip/no-clip의 Phone/Laundry/Sorting은80/58.7/87 vs75/55.5/85%, actor-loss std는**.004 vs .032**다. 본문은 AWR-style alternative를 언급하지만 실제 Table7의 두 행은 **ALOE clipping 유무**다. 이 표가 QAM 대 AWR를 비교하거나8배의 성공률 개선을 입증하는 것은 아니다.
+
+<PaperFigure src="/aloe/table-07.png" alt="ALOE Table 7: 실제 row는 clip/no-clip. actor-loss 안정성과 SR을 구분한다." caption="ALOE Table 7 · PDF v3 p.19. 실제 row는 clip/no-clip. actor-loss 안정성과 SR을 구분한다." />
+
+current-policy rollout의 critic-return correlation은 ALOE Spearman.9283/Pearson.9580, AWR/RECAP.9090/.7640다. 실제 rollout에서 유용한 ranking/progress 신호라는 근거이며, 관측하지 않은 모든 counterfactual action의 off-policy error bound는 아니다.
+
+<PaperFigure src="/aloe/table-08.png" alt="ALOE Table 8: 현재 policy rollout에서 측정한 두 상관계수." caption="ALOE Table 8 · PDF v3 p.19. 현재 policy rollout에서 측정한 두 상관계수." />
+<PaperFigure src="/aloe/figure-03.png" alt="ALOE Figure 3: Phone recovery/insertion과 Laundry 실패 동작에서 Q가 어떻게 변하는지 읽는다." caption="ALOE Figure 3 · PDF v3 p.5. Phone recovery/insertion과 Laundry 실패 동작에서 Q가 어떻게 변하는지 읽는다." />
+<PaperFigure src="/aloe/figure-04.png" alt="ALOE Figure 4: 비슷한 관측의 good/bad action 및 무의미한 OOD action의 Q 분포." caption="ALOE Figure 4 · PDF v3 p.5. 비슷한 관측의 good/bad action 및 무의미한 OOD action의 Q 분포." />
+<PaperFigure src="/aloe/figure-05.png" alt="ALOE Figure 5: ALOE의 approach/grasp와 AWR/RECAP의 empty-grasp advantage를 비교한 선택된 trace." caption="ALOE Figure 5 · PDF v3 p.6. ALOE의 approach/grasp와 AWR/RECAP의 empty-grasp advantage를 비교한 선택된 trace." />
+<PaperFigure src="/aloe/figure-13.png" alt="ALOE Figure 13: retrieve→flatten→fold의 Q 변화. qualitative 예시다." caption="ALOE Figure 13 · PDF v3 p.20. retrieve→flatten→fold의 Q 변화. qualitative 예시다." />
+
+critic SigLIP을 unfreeze한 sanity run은1k steps의 loss.0021 vs frozen.0079였고 불안정한 추세가 관측되지 않았다고 설명한다. 그러나 compute/memory가 늘어 Main에서는 고정했다. 이는 training-loss 검사이며 해동한 모델의 전체 task 성공률 재현이 아니다.
+
+### Appendix: intervention·이론·공개 범위
+
+Phone Assembly의 cumulative replay는364055→752184→1083178→1385537 frames다. 마지막 buffer는 human46.1%, BC4.9%, π1 10.8%, π2 17.7%, π3 20.5%다. Figure11의81.2→61.4→26.1→6.0%는 **round별 신규 데이터의 human frame ratio**로, 마지막 누적 buffer에 사람이6%만 남았다는 뜻이 아니다.
+
+round4의 신규302359 frames 중 human 신규18028은 약5.96%다. 누적638539/1385537은 약46.1%다. 두 값의 분모가 다르며 서로 모순되지 않는다. robot frame 비율로 human reset/감독 노동시간까지6%라고 추정할 수는 없다.
+
+<PaperFigure src="/aloe/figure-10.png" alt="ALOE Figure 10: 각 checkpoint/human의 누적 frame 비율·총량." caption="ALOE Figure 10 · PDF v3 p.15. 각 checkpoint/human의 누적 frame 비율·총량." />
+<PaperFigure src="/aloe/figure-11.png" alt="ALOE Figure 11: round별 intervention 비율. Figure10의 cumulative 비율과 다르다." caption="ALOE Figure 11 · PDF v3 p.16. round별 intervention 비율. Figure10의 cumulative 비율과 다르다." />
+
+Appendix8.7의 unclipped KL 해는 `π*(A|s) ∝ πref(A|s) exp(Q(s,A)/β)`다. 여기서 πref는 **replay가 유도한 implicit behavior distribution**이다. 같은 state의 Vπ(s)는 action과 무관한 상수이므로 unclipped advantage weighting의 공통 normalizer만 바꾼다. exact likelihood·unclipped 이상적 objective의 정리를 finite clipped weighted-flow surrogate로 그대로 확장해 exact KL·매 update의 monotonic return을 보장할 수 없다.
+
+공식 [homepage source](https://github.com/AgibotTech/aloe/blob/aafb7e81cf344a29557c116b0b196e565c5e69c7/index.html)의 Code 버튼은 `href="#"`와 Coming Soon이다. tree에는 웹 문서/HTML/CSS/media만 있고 model/loss/train/loader/inference Python 구현이 없다. **웹페이지 소스 공개와 RL 학습 코드 공개는 다르다.** 위 recipe는 PDF Eq.4–7/Algorithm1/Appendix 근거이며 weights/dataset/sampler/actor 상세 설정은 공개 구현 미확인이다.
+
+저자들은 human supervision/reset 의존을 한계로 밝히고 자동 reset을 후속 방향으로 제시한다. current-policy bootstrap은 target mismatch를 줄이려는 방법이지만 bootstrapping·off-policy data·function approximation의 deadly triad를 제거하지는 않는다. ensemble의 효과는 실물 evidence이며 모든 추정오차에 대한 면역 증명이 아니다.
+
+## 두 논문의 비교와 연관성
+
+### 공통 기반과 직접 관계
+
+둘 다 pretrained flow VLA, replay의 실제 action/observation/outcome, human correction과 TD critic으로 target-task 능력을 개선한다. value learning과 policy extraction을 나누고, RECAP/DAgger 계열과 비교한다. 실패 데이터는 버려야 하는 demonstration만이 아니라 value learning에 쓸 수 있는 경험이다.
+
+ALOE 최초 공개는2026-02, LWD는2026-05다. 공통 AgiBot 배경은 있지만 저자 목록이 다르고, 검토한 LWD v4/ALOE v3의 참고문헌에는 **서로 직접 인용한 기록이 없다**. 방법론의 연관성을 비교할 수 있으나 이미 입증된 “ALOE→LWD 업그레이드”나 같은 model series로 분류하지 않는다.
+
+### Value·support·policy update의 차이
+
+| 차원 | LWD | ALOE | 의미 |
+| --- | --- | --- | --- |
+| 추정 대상 | replay action의 Q 분포 → optimistic statistic | 주어진 chunk 실행 후 current policy의 Qπ | implicit improvement bootstrap과 current-policy evaluation target의 차이 |
+| 다음 target | Quantτ(V(s_next)) | A_next~πθ의 Q_target | LWD는 explicit next-action query를 피하고 ALOE는 current candidate의 coverage 위험을 처리 |
+| Distributional 위치 | state-value201 atoms, scalar double-Q | scalar Q ensemble; AWR baseline은256-bin MC value | 단순히 distributional 유무만으로 나눌 수 없음 |
+| 보수/낙관 기제 | double-Q min + entropy-adaptive quantile | ensemble min + bounded advantage weight | minimum과 upper quantile은 서로 다른 위치에 작용 |
+| Actor 신호 | action gradient→adjoint local regression | Q−current-policy baseline→weighted replay flow | 생성 action의 gradient 개선과 기존 action reweighting의 차이 |
+| Reference | fixed demo-BC flow fβ | KL 정리의 implicit replay πref; baseline은 current actor 평균 Q | 같은 reference라는 단어도 distribution이 다름 |
+| Online schedule | asynchronous actor/learner·50-step fanout | collect quota→10000Q→5000actor→다음 round | streaming과 iterative collect/train의 stale-model 구조가 다름 |
+| Fine-tuning | offline full; online actor VLM 고정 | vision encoder 외 actor 전체 | 성능 차이를 critic 하나에만 귀속할 수 없음 |
+
+**flow likelihood에 관한 관계:** LWD는 exact likelihood와 full-generation backprop의 어려움을 QAM의 동기로 든다. ALOE도 exact continuous likelihood를 계산하기 어렵다고 인정하면서 weighted flow surrogate를 선택한다. 서로 다른 최적화 경로이며 모순이 아니다. AWR 계열로 flow VLA를 전혀 학습할 수 없다고 해석하면 안 된다.
+
+**off-policy에 관한 관계:** 둘 다 다른 behavior의 데이터를 재사용하지만 target이 같다며 묶을 수 없다. 기재된 γ를 그대로 적용하면 한 chunk의 discount도 LWD `.9999^30≈.9970`, ALOE `.99^50≈.6050`으로 다르다. reward 정의와 step 단위를 맞추지 않고 return 크기를 직접 비교할 수 없다. LWD의 offline-to-online은 경험 유입·policy improvement 흐름을, ALOE의 off-policy evaluation은 current policy에 맞추려는 평가 대상을 강조한다. 최신 checkpoint의 데이터만 남겨도 human segment·truncation·weak action coverage까지 자동 해결되지는 않는다.
+
+### 실험 범위와 비교 조건
+
+| 계약 | LWD | ALOE |
+| --- | --- | --- |
+| Policy 범위 | 명시적으로 하나의 shared policy로8 task | task별 warm-start/iteration. 통합 multi-task checkpoint 여부는 명확히 입증하지 않음 |
+| Offline 출발점 | 336.6h demo reference +652.5h RL replay | task별50/150 demo +round별 experience |
+| Online budget | 4h wall-clock·약60robot-hours. RECAP round budget 설명에는 차이 있음 | round당50/100 successful trajectory. 전체 attempt/wall-clock 미명시 |
+| Task/robot | 16 AgiBot G1, grocery4+long4 | 두 setup, Phone/Laundry/Sorting/Assembly4 task |
+| Training reward | terminal success1, 그 외0 | success0/intermediate-1/failure-Cfail |
+| 시간 구조 | H30; offline long10chunk/online1chunk | Qh50, 실행 prefix5/25. γ=.99 대 LWD .9999 |
+| Headline metric | grocery binary+long step-score 평균.95 | task episode completion. Assembly95% |
+| Efficiency | success/failure cycle, timeout clip | successes/hour, reset/setup 제외 |
+| 이론/검증 | asymmetric statistic 이상적 등가·fleet 운영 profile | unclipped weighted-likelihood KL 해·current-policy correlation |
+| 공개 재현 범위 | official train code/weights/data 미확인 | official 웹페이지 공개, training code Coming Soon |
+
+이 조건으로 두 연구의 단일 성능 순위를 만들 수 없다. LWD의 강한 근거는 multi-task fleet loop와 long-horizon step-score 개선이며, ALOE의 강한 근거는 action/current-policy critic ablation과 recovery credit·세부 diagnostics다.
+
+### 후속 연구로 연결하는 방법
+
+다음은 **이 페이지의 추론·실험 제안이며 두 논문이 검증한 결합 시스템이 아니다**.
+
+1. **ALOE를 LWD형 fleet infrastructure에서 평가한다.** episode versioning·snapshot consistency·checkpoint fanout은 current-policy critic에도 필요하다. next-action sampling·actor/critic lag·human chunk·task별 shape/normalization을 맞춰야 하므로 loss 이름만 바꾸어 같은 시스템이라 할 수 없다.
+2. **Actor extraction을 따로 비교한다.** 동일 critic/data/reward에서 QAM 대 clipped weighted-flow를 비교하고, actor를 고정해 DIVL 대 current-policy bootstrap을 비교해야 value target과 actor update의 효과를 분리할 수 있다.
+3. **Current-policy evaluation에 distributional 표현을 검토한다.** return distribution/ensemble uncertainty를 연구할 수 있지만 ALOE target을 DIVL quantile로 그대로 치환하면 추정 policy/statistic도 바뀐다. 원래 Qπ 계약이 유지된다고 자동 간주하지 않는다.
+4. **Long-task 평가를 보강한다.** strict completion, partial score, reset 포함 wall-clock throughput, operator 공수, raw attempt와 seed/CI를 함께 보고해야 평균값이 precision placement·장기 신뢰성 차이를 가리지 않는다.
+
+“혼합 데이터에서 어느 action chunk를 더 학습할 것인가”가 질문이면 ALOE를 먼저 읽고, “여러 robot의 task experience를 shared learner로 모아 계속 redeploy하는 구조”가 질문이면 LWD를 먼저 읽는다. 실제 알고리즘 선택은 조건을 맞춘 실험이 필요하다.
+
+## Citation Trail과 사이트 내 읽기
+
+[π0.5](../pi/pi05-open-world-generalization/)는 flow actor의 pretraining/generalization, [RECAP/π*0.6](../pi/pistar06-recap-learns-from-experience/)은 MC value·advantage condition·deployment experience, [RLT](../pi/rlt-efficient-online-rl/)는 online update, [DPPO](../dppo-diffusion-policy-policy-optimization/)는 generative policy의 다른 RL 최적화 경로로 연결된다. 서로 다른 harness/data/policy를 본문의 동일 baseline으로 취급하지 않는다.
+
+기반 방법은 [IQL](https://arxiv.org/abs/2110.06169), [Q-learning with Adjoint Matching](https://arxiv.org/abs/2601.14234), [C51](https://arxiv.org/abs/1707.06887), [AWR](https://arxiv.org/abs/1910.00177), [Reinforcement Learning with Action Chunking](https://arxiv.org/abs/2507.07969)다. 위 링크는 비교의 출발점이며 이 페이지에서 각 기반 논문의 전체 deep dive를 수행한 것은 아니다.
+
+[Latent Action Model](../latent-action-models/) 연구는 영상에서 유용한 action representation을 만드는 문제를 다룬다. 본문의 두 연구는 이미 학습된 VLA를 **reward/value로 post-train**하는 연구이며 새로운 LAM을 제안하지 않는다. 두 단계를 한 pipeline에 연결할 수 있지만 학습 supervision과 검증 질문은 다르다.
+
+## 원문과 그림·표 provenance
+
+| 논문 | PDF SHA-256 | local asset manifest |
+| --- | --- | --- |
+| LWD v4 | `d89f2d800baec4baea1b65651919430ebfca565c5d3d3c1cc4f091591a27a8c3` | `public/lwd/manifest.json` |
+| ALOE v3 | `2be72604a506198a981c401741a01b31ccb62fdd9fd4f388695d5426cbc10234` | `public/aloe/manifest.json` |
+
+## Figure/Table Inventory
+
+두 논문의 Figure23개·Table20개, 총43개 crop을 번호·PDF page·crop bbox·bytes·SHA-256으로 추적한다. 모든 그림·표를 실제 분석 위치에 첨부했다. 같은 결과의 main/appendix 표시는 별도 실험으로 중복 집계하지 않는다.
+
+| 원문 번호 | PDF page | 본문 위치 | 읽을 내용 |
+| --- | --- | --- | --- |
+| LWD Figure 1 | 1 | LWD 문제 설정 | offline 초기화 → fleet experience → shared policy update → redeployment의 flywheel. |
+| LWD Figure 4 | 9 | LWD 시스템 | 16대의 동시 rollout 수집 장면. robot 수와 learner GPU 수는 같은 값이 아니다. |
+| LWD Figure 3 | 9 | LWD task 설정 | Cocktail/Tea/Juice/Shoebox와 네 grocery scenario의 task sequence. |
+| LWD Table IV | 16 | LWD Dataset | task별 demo/successful rollout/failed rollout/play 시간. 소수 한 자리 집계는 일부 행합과 subtotal에0.1h 차이가 있다. |
+| LWD Figure 7 | 16 | LWD Dataset | 시간 기준 task/source/outcome 분포. episode 수나 sampling probability와 같지 않다. |
+| LWD Figure 2 | 5 | LWD Method·모델 | offline/online의 공통 DIVL+QAM objective, actor와 공유 V/Q backbone, 온라인 replay1:1. |
+| LWD Figure 8 | 17 | LWD adaptiveτ 진단 | offline/online entropy 감소와τ 증가의 smoothed curve. 각각의τbase가 다르다. |
+| LWD Table I | 10 | LWD Main results | 각 task의 원값·mixed average. long task는 step-wise score, grocery는 binary SR. |
+| LWD Figure 5 | 10 | LWD 성능·효율 | headline bar와 cycle time. 상세 task 값은 Table I를 기준으로 읽는다. |
+| LWD Table II | 11 | LWD value ablation | short/long·offline/online의 평균과 relative gain. |
+| LWD Table V | 18 | LWD value ablation | 모든 task cell. average gain이 각 task의 일관된 우위를 뜻하지 않는다. |
+| LWD Table III | 12 | LWDτ ablation | constant/adaptive의 task별 결과와 전체 평균. |
+| LWD Figure 6 | 11 | LWD value 진단 | 선택된 성공/실패 Tea episode의 quantile value curve. |
+| LWD Figure 9 | 17 | LWD value 진단 | 동일 episode의 categorical value 분포. 잘 되는 trajectory에서 mode가 이동한다. |
+| LWD Figure 10 | 17 | LWD 데이터 infrastructure | actor upload·event, Coordinator/versioned snapshot, DRB Reader·multi-host learner, policy fanout. |
+| LWD Table VI | 18 | LWD operational latency | 별도8-hour·16-actor profile의 P50/P99. training task evaluation의4-hour budget과 구분한다. |
+| ALOE Figure 1 | 2 | ALOE 문제·구조 | flow actor, action-conditioned ensemble critic, collect/evaluate/improve loop와 네 실물 task. |
+| ALOE Figure 2 | 3 | ALOE 시스템·task | phone packing, laundry, sorting, phone assembly의 stage와 두 setup. |
+| ALOE Table 2 | 16 | ALOE task contract | phone packing의 demo·observation·action/execute horizon·max length. |
+| ALOE Table 3 | 17 | ALOE task contract | laundry의 긴 episode,150 demo와5-step executed prefix. |
+| ALOE Table 4 | 18 | ALOE task contract | sorting의 two-bin cleanup와50 demo. |
+| ALOE Table 5 | 18 | ALOE task contract | assembly의14D proprio·150 demo·5-step prefix. |
+| ALOE Figure 12 | 17 | ALOE 물체 설정 | seen/unseen sorting object와 phone accessories. |
+| ALOE Table 6 | 19 | ALOE BC 기준 | 네 task의 warm-start success. LWD의336.6h reference와 다른 출발점이다. |
+| ALOE Figure 6 | 7 | ALOE Main results | 네 task의 final SR과 baseline. 원문은 task당60 evaluation trials로 설명한다. |
+| ALOE Table 9 | 20 | ALOE final 결과 | Phone/Laundry/Sorting의 상세 값과 error bars. |
+| ALOE Table 10 | 21 | ALOE final 결과 | Assembly95%와 DAgger/AWR/RECAP 비교. |
+| ALOE Figure 8 | 8 | ALOE policy improvement | Phone/Sorting/Assembly의 iteration 곡선. 같은 wall-clock·총 interaction 횟수의 비교가 아니다. |
+| ALOE Table 11 | 21 | ALOE policy improvement | iteration-wise 값. Sorting endpoint와 final Table9를 구분한다. |
+| ALOE Figure 7 | 7 | ALOE 효율·일반화·회복 | Phone throughput, unseen shape/color sorting, laundry disturbance. |
+| ALOE Table 12 | 21 | ALOE 효율·일반화·회복 | 원문 값·error bars. throughput은 reset·scene setup을 제외한다. |
+| ALOE Table 1 | 8 | ALOE critic ablation | full/action-masked TD/MC 세 조건과3-task 평균. |
+| ALOE Figure 9 | 8 | ALOE critic components | Q chunk 길이와 ensemble aggregation 두 종류의 ablation. |
+| ALOE Table 13 | 21 | ALOE Q-chunking | Phone throughput과 SR. Main 결과와 구분한다. |
+| ALOE Table 14 | 21 | ALOE ensemble | Mean2/Min1/Min2/Min4의 OOD success45/60/70/75%. |
+| ALOE Table 7 | 19 | ALOE actor ablation | 실제 row는 clip/no-clip. actor-loss 안정성과 SR을 구분한다. |
+| ALOE Table 8 | 19 | ALOE critic correlation | 현재 policy rollout에서 측정한 두 상관계수. |
+| ALOE Figure 3 | 5 | ALOE action credit | Phone recovery/insertion과 Laundry 실패 동작에서 Q가 어떻게 변하는지 읽는다. |
+| ALOE Figure 4 | 5 | ALOE ranking·OOD | 비슷한 관측의 good/bad action 및 무의미한 OOD action의 Q 분포. |
+| ALOE Figure 5 | 6 | ALOE advantage 위치 | ALOE의 approach/grasp와 AWR/RECAP의 empty-grasp advantage를 비교한 선택된 trace. |
+| ALOE Figure 13 | 20 | ALOE 추가 Q trace | retrieve→flatten→fold의 Q 변화. qualitative 예시다. |
+| ALOE Figure 10 | 15 | ALOE mixed replay | 각 checkpoint/human의 누적 frame 비율·총량. |
+| ALOE Figure 11 | 16 | ALOE intervention | round별 intervention 비율. Figure10의 cumulative 비율과 다르다. |
+
+## 검증 메모
+
+| Pass | 범위 |
+| --- | --- |
+| 1 · Coverage | 두 PDF main/appendix·algorithm·전체23 Figure/20 Table를 본문·inventory와 대조 |
+| 2 · Facts | result·data·model/recipe 수치 재대조. binary/partial, relative/pp, cumulative/per-round, source 내부 불일치를 구분 |
+| 3 · Implementation | 공식 code 공개 범위를 확인. ALOE 홈페이지 tree/고정commit만 공개이며 model/loss/train/loader/inference는 source trace하지 못했음을 명시 |
+| 4 · Relation | 공통기반과 직접citation·algorithm target·평가조건 차이를 분리. 조합 제안은 추론으로 표시 |
+| 5 · Site | 문서118개·등록 이미지285개·내부 링크/metadata/checksum 검사 및 build 통과. 콘텐츠 검사기5 tests, 목록96개·외부 새 탭·전체 등록 이미지·T-Rex3해상도 UI 통과. 통합 페이지의1440/390 viewport·수식/비교/방법 화면과43개 crop 직접 검수 |
+
+공개 논문·프로젝트 자료의 내용 검토이며 모델 training, simulator/실물 success 재현은 수행하지 않았다.

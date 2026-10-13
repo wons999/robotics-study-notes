@@ -1,0 +1,384 @@
+{
+  "source": "https://arxiv.org/pdf/2602.12691v3",
+  "sourceSha256": "2be72604a506198a981c401741a01b31ccb62fdd9fd4f388695d5426cbc10234",
+  "assets": [
+    {
+      "type": "figure",
+      "number": 1,
+      "page": 2,
+      "file": "figure-01.png",
+      "crop": [
+        106,
+        71,
+        506,
+        267
+      ],
+      "bytes": 223206,
+      "sha256": "763e650e7a83c3ba57e4bcfaa090d19d69bab6b4e350e7cbb1cbdf675e056a34"
+    },
+    {
+      "type": "figure",
+      "number": 2,
+      "page": 3,
+      "file": "figure-02.png",
+      "crop": [
+        106,
+        70,
+        506,
+        312
+      ],
+      "bytes": 693865,
+      "sha256": "03e5a992ce7d652160c0e9341d9b495d6ff5068a73e5a502d3a605873967fba0"
+    },
+    {
+      "type": "figure",
+      "number": 3,
+      "page": 5,
+      "file": "figure-03.png",
+      "crop": [
+        106,
+        71,
+        506,
+        269
+      ],
+      "bytes": 325005,
+      "sha256": "99d89cc3382a901d7fbe7b330733f892c3d76fb329f9661140182a8e2d9c9cfb"
+    },
+    {
+      "type": "figure",
+      "number": 4,
+      "page": 5,
+      "file": "figure-04.png",
+      "crop": [
+        106,
+        552,
+        506,
+        723
+      ],
+      "bytes": 167439,
+      "sha256": "5b8704cae0e06f68c222260ce15a21aabe812b26930ff5b8b63d64d73fb8ae57"
+    },
+    {
+      "type": "figure",
+      "number": 5,
+      "page": 6,
+      "file": "figure-05.png",
+      "crop": [
+        106,
+        399,
+        506,
+        527
+      ],
+      "bytes": 163107,
+      "sha256": "052cf4ecf1a78b8f252154f0ea7ad5f2f6b27f08876f8519a86d555f89630637"
+    },
+    {
+      "type": "figure",
+      "number": 6,
+      "page": 7,
+      "file": "figure-06.png",
+      "crop": [
+        106,
+        71,
+        506,
+        175
+      ],
+      "bytes": 38193,
+      "sha256": "7a085b2b23ac9234707ae84b010d441143d022e9c62dfd7c75de544ffc6375ab"
+    },
+    {
+      "type": "figure",
+      "number": 7,
+      "page": 7,
+      "file": "figure-07.png",
+      "crop": [
+        106,
+        183,
+        506,
+        319
+      ],
+      "bytes": 66841,
+      "sha256": "31880435223091446a376f99027133739c8d119f3190cc2e6eccf6589eecdadc"
+    },
+    {
+      "type": "figure",
+      "number": 8,
+      "page": 8,
+      "file": "figure-08.png",
+      "crop": [
+        106,
+        71,
+        506,
+        190
+      ],
+      "bytes": 57339,
+      "sha256": "65b41826abffa205a52dee529f558abc919b226d560f2f897353e67f4b671e15"
+    },
+    {
+      "type": "figure",
+      "number": 9,
+      "page": 8,
+      "file": "figure-09.png",
+      "crop": [
+        106,
+        200,
+        506,
+        339
+      ],
+      "bytes": 72119,
+      "sha256": "1e3ffce8eba2aa4585afad3b4654699009ac685b6e780471dade626ac7e42814"
+    },
+    {
+      "type": "table",
+      "number": 1,
+      "page": 8,
+      "file": "table-01.png",
+      "crop": [
+        106,
+        352,
+        506,
+        466
+      ],
+      "bytes": 74108,
+      "sha256": "edea353f6bf0d3670717f7c8129a0074e12574fc81280fcf652ec9dd3a76faf4"
+    },
+    {
+      "type": "figure",
+      "number": 10,
+      "page": 15,
+      "file": "figure-10.png",
+      "crop": [
+        106,
+        72,
+        506,
+        211
+      ],
+      "bytes": 65074,
+      "sha256": "221efbbd24ea8d4084b317efc1f269e334d9c7a4b949daf784bfa47340948c87"
+    },
+    {
+      "type": "figure",
+      "number": 11,
+      "page": 16,
+      "file": "figure-11.png",
+      "crop": [
+        106,
+        71,
+        506,
+        254
+      ],
+      "bytes": 44898,
+      "sha256": "fb96263ef44779d01189f794d3fa3baf3afc2de67892af4e73c710c574aa10f4"
+    },
+    {
+      "type": "table",
+      "number": 2,
+      "page": 16,
+      "file": "table-02.png",
+      "crop": [
+        141,
+        386,
+        471,
+        542
+      ],
+      "bytes": 54164,
+      "sha256": "fb61c9bcbe858669b3b586eaea0aa0b8eccf3fee5724b0e381f623c70fbbd639"
+    },
+    {
+      "type": "figure",
+      "number": 12,
+      "page": 17,
+      "file": "figure-12.png",
+      "crop": [
+        106,
+        70,
+        506,
+        176
+      ],
+      "bytes": 347028,
+      "sha256": "3ade3788280c7ada66a269f69980ab90e62bf33e05228424048584deaf7df76e"
+    },
+    {
+      "type": "table",
+      "number": 3,
+      "page": 17,
+      "file": "table-03.png",
+      "crop": [
+        141,
+        248,
+        471,
+        393
+      ],
+      "bytes": 52194,
+      "sha256": "9a4d5be5448c75e0158999cd2662c3d7a7b987b7062d7479b78715bc691e51f1"
+    },
+    {
+      "type": "table",
+      "number": 4,
+      "page": 18,
+      "file": "table-04.png",
+      "crop": [
+        141,
+        78,
+        471,
+        233
+      ],
+      "bytes": 58744,
+      "sha256": "b868a0f41c61c74be0a98af61222ec4891a0f07bb0e7af2d0c8ca752b4d3f0bc"
+    },
+    {
+      "type": "table",
+      "number": 5,
+      "page": 18,
+      "file": "table-05.png",
+      "crop": [
+        141,
+        347,
+        471,
+        502
+      ],
+      "bytes": 57733,
+      "sha256": "c6d16438f1840ba3eb370fe6d2f78c691cef7727f1af6ffcf2f6d4acaf40e7a9"
+    },
+    {
+      "type": "table",
+      "number": 6,
+      "page": 19,
+      "file": "table-06.png",
+      "crop": [
+        151,
+        326,
+        462,
+        372
+      ],
+      "bytes": 15099,
+      "sha256": "018b9d6f21424afd1241886de4f7e9e15c9fa3e3ee656bc1c2188036be497259"
+    },
+    {
+      "type": "table",
+      "number": 7,
+      "page": 19,
+      "file": "table-07.png",
+      "crop": [
+        148,
+        499,
+        464,
+        554
+      ],
+      "bytes": 25163,
+      "sha256": "a7f3f81bc7ce97b1c0bc1e0a2b0706cab778586c37b8fc4b24817c3d3676908b"
+    },
+    {
+      "type": "table",
+      "number": 8,
+      "page": 19,
+      "file": "table-08.png",
+      "crop": [
+        106,
+        575,
+        506,
+        668
+      ],
+      "bytes": 42895,
+      "sha256": "3933907cf7f4d38f504d0246a5d99d414f8a4b553aeaec7dfa6595ebabf0ea33"
+    },
+    {
+      "type": "figure",
+      "number": 13,
+      "page": 20,
+      "file": "figure-13.png",
+      "crop": [
+        106,
+        71,
+        506,
+        364
+      ],
+      "bytes": 457064,
+      "sha256": "c14f3b9941a0c4509a5e20c9f23c863ed953d98aa42dabe7635f2bd664e857f2"
+    },
+    {
+      "type": "table",
+      "number": 9,
+      "page": 20,
+      "file": "table-09.png",
+      "crop": [
+        133,
+        371,
+        479,
+        441
+      ],
+      "bytes": 27290,
+      "sha256": "8d750ea92b6c4ef5c2b4bf004c8de67d8e5b4a3236dd874cba361a87eb11a728"
+    },
+    {
+      "type": "table",
+      "number": 10,
+      "page": 21,
+      "file": "table-10.png",
+      "crop": [
+        155,
+        90,
+        457,
+        163
+      ],
+      "bytes": 23256,
+      "sha256": "b9c1d20044764ca25d46376ca3c0ce27a21dfafd96185d25e4b6fbd3f035aa3d"
+    },
+    {
+      "type": "table",
+      "number": 11,
+      "page": 21,
+      "file": "table-11.png",
+      "crop": [
+        106,
+        191,
+        506,
+        349
+      ],
+      "bytes": 78170,
+      "sha256": "6b463693a5057f6d785b9be96e21c85cdabb63881f9460c6ac6017c027e8717b"
+    },
+    {
+      "type": "table",
+      "number": 12,
+      "page": 21,
+      "file": "table-12.png",
+      "crop": [
+        106,
+        378,
+        506,
+        471
+      ],
+      "bytes": 43625,
+      "sha256": "70eb8fb712ab127760b402a0ee7bb913ce2605c3f4a0aa58a0774ad45397d1ff"
+    },
+    {
+      "type": "table",
+      "number": 13,
+      "page": 21,
+      "file": "table-13.png",
+      "crop": [
+        106,
+        506,
+        506,
+        590
+      ],
+      "bytes": 33682,
+      "sha256": "2c9084beae96fb51cbd5a6f311bec2d7f48eb9d5c09e35493b8afa2aa259da8e"
+    },
+    {
+      "type": "table",
+      "number": 14,
+      "page": 21,
+      "file": "table-14.png",
+      "crop": [
+        106,
+        619,
+        506,
+        710
+      ],
+      "bytes": 26316,
+      "sha256": "ac245eb2c4bad5bad58096096c08960354d41bc9958d071bb018a0286a2ce8bd"
+    }
+  ]
+}

@@ -136,6 +136,14 @@ frontmatter의 `title`이 페이지 H1을 생성하므로 같은 제목을 본�
 - head replacement, runtime latent decoder, representation alignment를 나누고 inference loop에 실제 future observation이 들어가는지 확인한다. imagined video·token accuracy·action probe·실제 completion은 다른 지표다.
 - benchmark 이름이 같아도 embodiment·task set·fine-tuning demo 수·view·metric·trial count가 다르면 headline 수치를 하나의 순위로 합치지 않는다.
 
+## 여러 논문을 한 페이지에서 비교할 때
+
+- 사용자가 한 페이지 정리를 요청하면 그 형식을 따른다. 앞쪽의 짧은 비교 안내, 논문별 상세 섹션, 뒤쪽의 관계·평가 조건 비교를 두고 개별 논문의 method/data/recipe/result/appendix 깊이를 유지한다.
+- 논문별 version·공개일·원문 URL·검토 범위와 provenance manifest를 분리한다. frontmatter의 단일 `research.source`에는 대표 원문을 두고 본문 metadata에는 모든 원문을 연결한다.
+- 번호가 겹치는 그림·표는 caption/alt/inventory에 논문 이름을 함께 적는다. asset manifest는 각각 검사하고, 단일 route의 UI 그림 개수는 전체 crop의 합으로 등록한다.
+- 직접 citation·공통 기반·저자/기관 관계와 방법론적 연결 추론을 나눈다. 한 논문이 먼저 나왔거나 같은 기관이라는 이유만으로 후속 버전·상호 우열·상속 관계를 단정하지 않는다.
+- headline 값이 같아도 reward·completion/progress rubric·trial/seed·interaction budget·policy 범위가 다르면 같은 성공률로 묶지 않는다. 결합 알고리즘·추가 실험 제안은 원문의 검증된 결과와 구분한다.
+
 ## Family Overview와 Paper Deep Dive 분리
 
 - family overview 문서는 모델 계열, 버전 차이, 공개 checkpoint, 코드/데이터 공개 상태, 어떤 개별 논문을 읽어야 하는지 안내하는 index 역할을 한다.

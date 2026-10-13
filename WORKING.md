@@ -19,6 +19,11 @@ T-Rex landing은 `/seminars/t-rex/`, 실제 slide route는 `/seminars/t-rex/slid
 
 ## 이번 변경
 
+- 2026-10-13: LWD(2605.00416v4)·ALOE(2602.12691v3)를 사용자 요청에 따라 한 페이지 `/paper-notes/lwd-aloe-vla-post-training/`에서 상세 정리하고 비교했다. 전체40쪽 main/appendix·알고리즘, Figure23개/Table20개를 검토하고43개 crop·별도 source checksum manifest를 첨부했다.
+- DIVL의 replay-Q distribution/quantile 대 current-policy Q bootstrap, QAM 대 clipped weighted-flow, fleet streaming 대 iterative collection을 구분했다. mixed partial/binary metric, reward·budget, source 수치·error-bar·architecture 차이, cumulative/per-round intervention 분모와 공개 code 범위를 기록했다. LWD official train code는 미확인이고 ALOE GitHub는 홈페이지 소스·Coming Soon 상태다.
+- 공통 주제·RECAP에서 통합 노트를 연결하고 두 manifest·단일 route43-image 검사를 등록했다. 여러 논문을 한 페이지에서 비교하는 제작 규칙을 `rules/survey.md`에 추가했다.
+- 검증: 문서118개·이미지285개, Astro 오류/경고/hint0, 콘텐츠 검사기5 tests, 목록96개·외부 링크·등록 이미지·T-Rex3해상도 UI 통과. 통합 문서1440/390 폭·수식/방법/비교 화면과 전체 crop을 직접 확인했다. 모델 학습·실물 성능 재현은 수행하지 않았다.
+
 - Latent Action Model 후속 자료: 계열 overview와 LAPA(2410.11758v2), Moto(2412.04445v4), UniVLA(2505.06111v3), LAOM(2502.00379v5) 개별 상세 Survey를 추가했다. main/appendix·공식 model/loss/training/loader/inference를 고정 commit으로 대조하고 총105개 figure/table crop과 PDF/asset checksum manifest를 첨부했다.
 - LARA와 reciprocal link, action/data/VLA 주제 읽기 경로, asset/UI 검사를 갱신했다. LAM의 timestamp·capacity·supervision 단계·runtime decoder·metric 비교 규칙을 `rules/survey.md`에 기록했다.
 - 검증: 문서117개·이미지242개 검사, Astro 오류/경고/hint0, 콘텐츠 검사기5 tests, 목록95개·외부 새 탭/내부 이동·전체 등록 이미지·T-Rex 세 해상도 UI 통과. 새5문서의 desktop1440/mobile390 폭·방법/비교 화면을 확인했다. source 내부 수치 차이, Moto LPIPS gradient 및 UniVLA old-code restart를 포함한 paper/code 차이를 기록했다. 모델 학습·성공률 재현은 수행하지 않았다.
@@ -39,9 +44,9 @@ T-Rex landing은 `/seminars/t-rex/`, 실제 slide route는 `/seminars/t-rex/slid
 
 ## 확인용 사이트
 
-- 현재 사용자용 URL: `http://127.0.0.1:4388/robotics-study-notes/paper-notes/latent-action-models/`.
+- 현재 사용자용 URL: `http://127.0.0.1:4388/robotics-study-notes/paper-notes/lwd-aloe-vla-post-training/`.
 - 서버는 build output을 제공하는 preview다. 코드·콘텐츠 변경 시 source 사본을 동기화하고 동일한 site/base로 다시 build해야 한다.
-- 서버·터널 위치와 PID는 작업 채팅에 기록되어 있다. 이 URL의 가용성은 일시적인 실행 상태이므로 다음 작업 시작 시 실제 응답을 확인한다. 영구 명령과 인계 절차는 README와 `rules/contributing.md`를 따른다.
+- 2026-10-13 확인: cwh preview npm PID215915/node PID215929, port4388; local SSH tunnel PID430297, control socket `/tmp/robotics-notes-01a10eb1-preview-ssh.sock`. preview log는 cwh의 `/tmp/robotics-notes-01a10eb1/papers-preview.log`다. 이 URL의 가용성은 일시적인 실행 상태이므로 다음 작업 시작 시 실제 응답을 확인한다. 영구 명령과 인계 절차는 README와 `rules/contributing.md`를 따른다.
 
 ## 남은 관리 과제
 

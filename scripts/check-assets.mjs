@@ -11,6 +11,8 @@ const inventories = [
   ['moto', 24],
   ['univla', 23],
   ['laom', 25],
+  ['lwd', 16],
+  ['aloe', 27],
 ];
 let total = 0;
 for (const [directory, count] of inventories) {
